@@ -1,0 +1,21 @@
+{
+  "name": "wanthat",
+  "private": true,
+  "version": "0.0.0",
+  "packageManager": "pnpm@9.7.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "turbo run lint",
+    "synth": "turbo run synth --filter=@wanthat/infra",
+    "diff": "turbo run diff --filter=@wanthat/infra",
+    "deploy": "turbo run deploy --filter=@wanthat/infra"
+  },
+  "devDependencies": {
+    "turbo": "^2.0.0",
+    "typescript": "^5.5.0",
+    "@types/node": "^20.14.0"
+  }
+}

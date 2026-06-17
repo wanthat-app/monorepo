@@ -1,0 +1,15 @@
+{
+  "name": "@wanthat/redirect",
+  "version": "0.0.0",
+  "private": true,
+  "main": "dist/handler.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "echo \"no tests yet\""
+  },
+  "dependencies": {
+    "@wanthat/contracts": "workspace:*",
+    "@wanthat/config": "workspace:*"
+  }
+}

@@ -1,0 +1,12 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "tasks": {
+    "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
+    "typecheck": { "dependsOn": ["^build"] },
+    "test": { "dependsOn": ["^build"] },
+    "lint": {},
+    "synth": { "dependsOn": ["^build"], "outputs": ["cdk.out/**"] },
+    "diff": { "dependsOn": ["^build"], "cache": false },
+    "deploy": { "dependsOn": ["^build"], "cache": false }
+  }
+}

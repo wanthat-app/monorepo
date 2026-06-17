@@ -1,0 +1,10 @@
+{
+  "name": "@wanthat/web",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "echo \"web app TBD (Next.js/React SPA)\"",
+    "typecheck": "echo \"web typecheck TBD\"",
+    "test": "echo \"no tests yet\""
+  }
+}

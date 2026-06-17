@@ -1,0 +1,22 @@
+{
+  "name": "@wanthat/infra",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "synth": "cdk synth",
+    "diff": "cdk diff",
+    "deploy": "cdk deploy",
+    "test": "echo \"no tests yet\""
+  },
+  "dependencies": {
+    "aws-cdk-lib": "^2.150.0",
+    "constructs": "^10.3.0",
+    "@wanthat/config": "workspace:*"
+  },
+  "devDependencies": {
+    "aws-cdk": "^2.150.0",
+    "ts-node": "^10.9.2"
+  }
+}
