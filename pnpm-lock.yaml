@@ -183,6 +183,18 @@ importers:
         specifier: workspace:*
         version: link:../../packages/domain
 
+  services/fx-rates:
+    dependencies:
+      '@aws-lambda-powertools/logger':
+        specifier: ^2.8.0
+        version: 2.33.1
+      '@wanthat/config':
+        specifier: workspace:*
+        version: link:../../packages/config
+      '@wanthat/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+
   services/redirect:
     dependencies:
       '@wanthat/config':

@@ -32,6 +32,7 @@ services/
   redirect/                public redirect service (non-VPC → DynamoDB)
   conversion-poller/       scheduled poll writer (in-VPC)
   retailer-proxy/          sole non-VPC egress to retailer APIs (link.generate, order.listbyindex)
+  fx-rates/                scheduled FX rate cache updater (non-VPC → fx_rate)
 packages/
   contracts/  domain/  aliexpress/  config/
 infra/                     AWS CDK app (stacks → see infra/lib/README.md)

@@ -6,7 +6,8 @@ contracts in [`packages/contracts`](../packages/contracts) and the SQL in
 relationships, and where each lives, and is updated as use cases are designed.*
 
 **Coverage so far:** UC1 Onboard · UC2 Sign-in · UC3 Create recommendation · UC4 Click-through ·
-UC5 Wallet · UC6 Profile · UC7 Conversion ingestion (system) — all use cases have contracts.
+UC5 Wallet · UC6 Profile · UC7 Conversion ingestion (system) · UC8 FX rate update (system) — all
+use cases have contracts.
 
 The model spans two stores (ADR-0003), shown as separate diagrams. **Aurora holds only PII
 (Customer) + money (Wallet ledger + audit)** — the data that needs ACID, engine-enforced
@@ -95,6 +96,12 @@ erDiagram
     json value "validated per-key by the contracts registry"
     timestamptz updated_at
   }
+  FX_RATE {
+    string base PK "settlement currency, e.g. USD"
+    string quote PK "display currency, e.g. ILS"
+    string rate "decimal, quote per 1 base"
+    timestamptz as_of "provider quote time (staleness)"
+  }
 ```
 
 ## Notes
@@ -128,6 +135,11 @@ erDiagram
   matches our receivable, so no FX float risk. Displayed converted to the member's currency for
   convenience; the real conversion happens only **at withdrawal**. `Money` is currency-agnostic and
   the wallet returns one balance **per currency** held.
+- **UC8 — FX rate update (system flow).** A scheduled, non-VPC `fx-rates` updater (EventBridge →
+  external FX provider → upsert `FX_RATE`) keeps the rate cache fresh on an admin-tunable period
+  (CONFIG `fx.updateIntervalMinutes`). The pure `convertMinor` in `packages/domain` reads `FX_RATE` +
+  `fx.conversionCommissionBps` to produce the ILS display figure and the withdrawal-time amount —
+  exact bigint math, never a float. Failures keep the last-known-good rate.
 - **Passkeys are Cognito-managed** (ADR-0006) — `credential_id` keyed, linked via the Cognito
   `sub`; not a table we own.
 - **`CONFIG` is a generic key-value store** for admin-tunable **runtime** settings (distinct from
@@ -143,6 +155,7 @@ erDiagram
 | **Customer (PII)**, **WalletEntry + AuditLog (money)** | **Aurora (SQL)** |
 | Product, Recommendation, guest_attribution | **DynamoDB (KV)** |
 | Runtime config (admin-tunable key-value, e.g. `landing.countdownSeconds`) — `CONFIG` table | **DynamoDB (KV)** |
+| FX rate cache (`(base, quote) → rate`, refreshed by the `fx-rates` updater) — `FX_RATE` table | **DynamoDB (KV)** |
 | Passkeys + user pool | **Cognito** |
 | impression / click / conversion events | **Firehose → S3 (Athena)** |
 
@@ -176,12 +189,11 @@ erDiagram
   integration** (admin-tunable, so widenable in prod without a redeploy). **Other integration risks
   to test:** the AliExpress `status` enum → `pending/confirmed/clawback` mapping, and that
   `custom_parameters` round-trips the redirect-appended values.
-- **FX / multi-currency (decided, build pending).** The wallet is held in the settlement currency;
-  display + payout convert to the member's currency **net of `fx.conversionCommissionBps`** (config
-  key added), and withdrawal is gated on the **current converted (ILS)** value. Still to build:
-  (a) a cached-rate store — a new DynamoDB `FX_RATE` table keyed by `(base, quote)` with an `asOf`;
-  (b) a **rates-update function** (scheduled service + FX provider adapter) that refreshes it;
-  (c) a pure **conversion function** in `packages/domain` (`amountMinor × rate × (1 − commission)`,
-  exact bigint math); (d) surfacing the converted withdrawable figure on `WalletBalance`. Open:
-  the ₪50 threshold is evaluated on the converted value, and the FX provider + spread/rounding
-  policy.
+- **FX / multi-currency.** The wallet is held in the settlement currency; display + payout convert to
+  the member's currency **net of `fx.conversionCommissionBps`**, and withdrawal is gated on the
+  **current converted (ILS)** value. *Built:* the `FX_RATE` cache table + `ExchangeRate` contract, the
+  scheduled `fx-rates` updater (stub) on CONFIG `fx.updateIntervalMinutes`, and the pure `convertMinor`
+  in `packages/domain`. *Still to build:* surfacing the converted withdrawable figure on
+  `WalletBalance`, and wiring the updater to a real provider. *Open decisions:* the **FX provider** +
+  spread/rounding policy, a **staleness threshold** beyond which withdrawal blocks rather than
+  converts on a stale rate, and the ₪50 threshold evaluated on the converted value.

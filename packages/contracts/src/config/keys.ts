@@ -36,6 +36,8 @@ export const CashbackConsumerBps = Bps;
  * real, all-in rate the member would receive at withdrawal (UC5 #1). Admin-tunable.
  */
 export const FxConversionCommissionBps = Bps;
+/** How often the FX rates-updater refreshes the fx_rate cache, in minutes (UC8). */
+export const FxUpdateIntervalMinutes = z.number().int().min(1).max(1440);
 
 /** How often the conversion poller runs, in minutes — admin-api applies it to the EventBridge schedule. */
 export const PollerIntervalMinutes = z.number().int().min(1).max(1440);
@@ -48,6 +50,7 @@ export const CONFIG_KEYS = [
   "cashback.referrerBps",
   "cashback.consumerBps",
   "fx.conversionCommissionBps",
+  "fx.updateIntervalMinutes",
   "poller.intervalMinutes",
   "poller.lookbackHours",
 ] as const;
@@ -61,6 +64,7 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "cashback.referrerBps": CashbackReferrerBps,
   "cashback.consumerBps": CashbackConsumerBps,
   "fx.conversionCommissionBps": FxConversionCommissionBps,
+  "fx.updateIntervalMinutes": FxUpdateIntervalMinutes,
   "poller.intervalMinutes": PollerIntervalMinutes,
   "poller.lookbackHours": PollerLookbackHours,
 };
@@ -75,6 +79,7 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "cashback.referrerBps": 5000,
   "cashback.consumerBps": 0,
   "fx.conversionCommissionBps": 200,
+  "fx.updateIntervalMinutes": 720, // twice daily; the conversion commission absorbs intraday drift
   "poller.intervalMinutes": 60,
   // Lookback must cover an order's full maturation; 72h is a placeholder — tune at integration
   // to AliExpress's confirm/return latency (see ADR-0009).

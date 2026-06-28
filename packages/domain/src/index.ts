@@ -51,3 +51,21 @@ export function splitCommission(
   const marginMinor = grossMinor - referrerMinor - consumerRewardMinor;
   return { referrerMinor, consumerRewardMinor, marginMinor };
 }
+
+/**
+ * Convert a minor-unit amount from one currency to another (ADR-0003; UC8 FX rates) using a
+ * decimal FX `rate` (quote units per **1** base unit, e.g. `"3.7215"`, from the `fx_rate` cache)
+ * and withholding a conversion commission in basis points (CONFIG `fx.conversionCommissionBps`).
+ * Exact integer math — the rate is parsed to a scaled bigint, never a float. Used for the ILS
+ * display figure and committed at withdrawal.
+ *
+ * ASSUMES `base` and `quote` share the same minor-unit exponent (true for USD↔ILS, both 2 places);
+ * a fully general version would rescale by the exponent difference (JPY=0, KWD=3).
+ */
+export function convertMinor(amountMinor: bigint, rate: string, commissionBps: number): bigint {
+  const [whole, frac = ""] = rate.split(".");
+  const scale = 10n ** BigInt(frac.length);
+  const scaledRate = BigInt(whole + frac); // rate × scale, exact
+  const gross = (amountMinor * scaledRate) / scale;
+  return (gross * BigInt(10_000 - commissionBps)) / BPS_DENOMINATOR;
+}
