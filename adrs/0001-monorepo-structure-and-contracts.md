@@ -6,7 +6,7 @@
 ## Context
 
 The system spans a web SPA, four backend compute units (an identity+links+wallet Lambdalith,
-an admin API, a public redirect service, and a scheduled conversion poller), shared domain
+an admin API, a public landing service, and a scheduled conversion poller), shared domain
 logic, and AWS infrastructure. Two questions: how to lay the code out, and how to share
 contracts/types across all of it. The codebase is TypeScript-only, owned by one small team.
 
@@ -20,7 +20,7 @@ wanthat/
 ├─ services/
 │  ├─ app-api/                    # identity+links+wallet Lambdalith
 │  ├─ admin-api/                  # admin Lambda
-│  ├─ redirect/                   # redirect service (non-VPC → DynamoDB)
+│  ├─ landing/                    # landing service (non-VPC → DynamoDB)
 │  ├─ conversion-poller/          # scheduled poll writer (in-VPC)
 │  └─ retailer-proxy/             # sole non-VPC egress to retailer APIs
 ├─ packages/
@@ -57,7 +57,7 @@ preserved.
   cross-language drift / external-consumer / governance problems we don't have (TS-only, single
   team, one monorepo); adds a codegen pipeline + drift risk for no current payoff.
 - **tRPC as the primary API style** — rejected: RPC-only / TS-only fights the REST contracts
-  and the public redirect + future-partner surfaces.
+  and the public landing + future-partner surfaces.
 
 ## Consequences
 

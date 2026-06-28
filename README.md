@@ -10,7 +10,7 @@ apps/web/                  Next.js/React SPA
 services/
   app-api/                 identity + links + wallet Lambdalith
   admin-api/               admin Lambda (separate role/exposure)
-  redirect/                public redirect service (non-VPC → DynamoDB)
+  landing/                 public landing service (non-VPC → DynamoDB)
   conversion-poller/       scheduled poll writer (in-VPC)
   retailer-proxy/          sole non-VPC egress to retailer APIs (link.generate, order.listbyindex)
 packages/

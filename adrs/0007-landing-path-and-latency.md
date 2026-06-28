@@ -1,4 +1,4 @@
-# ADR 0007 — Redirect path & latency
+# ADR 0007 — Landing path & latency
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
@@ -20,7 +20,7 @@ with product-specific OG tags regardless.
 
 ## Decision
 
-**Redirect is a non-VPC Lambda fronted by a CloudFront → Lambda Function URL (`/p/*`), not API
+**The landing service is a non-VPC Lambda fronted by a CloudFront → Lambda Function URL (`/p/*`), not API
 Gateway.** Two steps:
 
 1. **`GET /p/{recommendation_id}`** → resolve `recommendation_id` in DynamoDB (ADR-0003) and return a minimal

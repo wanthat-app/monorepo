@@ -1,5 +1,5 @@
 /**
- * FX rates updater (UC8 — FX rate update; ADR-0003). Non-VPC, like the redirect/retailer-proxy
+ * FX rates updater (UC8 — FX rate update; ADR-0003). Non-VPC, like the landing/retailer-proxy
  * (external HTTPS egress + DynamoDB, no VPC). Triggered by EventBridge Scheduler on an admin-tunable
  * period (CONFIG `fx.updateIntervalMinutes`; admin-api updates the schedule), and also on demand via
  * POST /admin/fx-rates/refresh.
@@ -17,8 +17,15 @@
  * default. Open: BoI commercial-licensing consent (Product/Legal issue), spread/rounding policy, and
  * a staleness threshold beyond which withdrawal should block rather than convert on a stale rate.
  *
- * Stub.
+ * Walking skeleton — returns `not_implemented` (never throws, so a scheduled invoke does not trip
+ * retries/alarms). Real provider adapter + cache upsert land with the FX slice (ADR-0017).
  */
-export const handler = async (): Promise<unknown> => {
-  throw new Error("not implemented");
+import { Logger } from "@aws-lambda-powertools/logger";
+
+const SERVICE = "fx-rates";
+const logger = new Logger({ serviceName: SERVICE });
+
+export const handler = async (): Promise<{ status: "not_implemented"; service: string }> => {
+  logger.info("not_implemented");
+  return { status: "not_implemented", service: SERVICE };
 };

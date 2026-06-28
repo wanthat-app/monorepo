@@ -13,7 +13,7 @@ import { NetworkStack } from "../lib/network-stack";
  *   IdentityStack       Cognito (native SMS OTP + passkeys) + Post-Confirmation trigger
  *   ApiStack            HTTP API + JWT authorizer + app-api Lambdalith (in-VPC) (+ regional WAF)
  *   AdminStack          admin Lambda (in-VPC, own role/exposure)
- *   EdgeServicesStack   redirect Lambda (non-VPC -> DynamoDB); conversion poller (non-VPC
+ *   EdgeServicesStack   landing Lambda (non-VPC -> DynamoDB); conversion poller (non-VPC
  *                       Retailer Proxy + in-VPC writer); EventBridge Scheduler
  *   EdgeStack           CloudFront + S3 site + ACM cert + CloudFront WAF (us-east-1)
  *   ObservabilityStack  dashboards, alarms, SMS kill-switch wiring

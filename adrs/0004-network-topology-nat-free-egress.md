@@ -40,7 +40,7 @@ outside it. Retailer egress happens only from non-VPC functions. No NAT Gateway.
 
 | Function | In VPC? | Reaches | Internet egress |
 |---|---|---|---|
-| Redirect | No | DynamoDB (`recommendation_id→url`) | none |
+| Landing | No | DynamoDB (`recommendation_id→url`) | none |
 | Lambdalith / admin | Yes | Aurora, DynamoDB (gateway endpoint) | none |
 | **Retailer Proxy** | No | retailer API, Secrets Mgr, DynamoDB | yes (direct) |
 | Poller **writer** | Yes | Aurora only | none |

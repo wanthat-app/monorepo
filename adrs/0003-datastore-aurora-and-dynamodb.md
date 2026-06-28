@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
-- **Related:** [ADR-0002](0002-app-compute-topology.md) (compute), [ADR-0004](0004-network-topology-nat-free-egress.md) (network), [ADR-0005](0005-disaster-recovery-posture.md) (DR), [ADR-0007](0007-redirect-path-and-latency.md) (redirect)
+- **Related:** [ADR-0002](0002-app-compute-topology.md) (compute), [ADR-0004](0004-network-topology-nat-free-egress.md) (network), [ADR-0005](0005-disaster-recovery-posture.md) (DR), [ADR-0007](0007-landing-path-and-latency.md) (landing)
 
 ## Context
 

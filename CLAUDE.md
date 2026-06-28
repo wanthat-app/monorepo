@@ -29,7 +29,7 @@ apps/web/                  Next.js/React SPA (placeholder)
 services/
   app-api/                 identity + links + wallet Lambdalith (in-VPC)
   admin-api/               admin Lambda (in-VPC, separate role/exposure)
-  redirect/                public redirect service (non-VPC → DynamoDB)
+  landing/                 public landing service (non-VPC → DynamoDB)
   conversion-poller/       scheduled poll writer (in-VPC)
   retailer-proxy/          sole non-VPC egress to retailer APIs (link.generate, order.listbyindex)
   fx-rates/                scheduled FX rate cache updater (non-VPC → fx_rate)
@@ -60,7 +60,7 @@ pnpm deploy              # cdk deploy
 ## Architecture (big picture)
 
 Four compute units, sliced by real seams (ADR-0002): the `app-api` Lambdalith
-(identity+links+wallet), a separate `admin-api`, the public `redirect` service, and the
+(identity+links+wallet), a separate `admin-api`, the public `landing` service, and the
 scheduled `conversion-poller` — plus a shared non-VPC **Retailer Proxy** (the sole egress to
 retailer APIs, used by link generation and the poller). Money mutations flow only through the
 poller-writer into the append-only ledger + hash-chained audit log.
@@ -71,11 +71,11 @@ DynamoDB (catalog/operational, non-PII).
 
 **Network is NAT-free (ADR-0004):** the only things in the VPC are Aurora and the functions that
 touch it (Lambdalith, admin, poller-writer) — they connect directly via IAM database auth (no
-RDS Proxy), capped by reserved concurrency. Everything else runs **outside** the VPC: `redirect`
+RDS Proxy), capped by reserved concurrency. Everything else runs **outside** the VPC: `landing`
 reads DynamoDB; all retailer calls (AliExpress et al., which are IPv4-only) go through a single
 non-VPC **Retailer Proxy** that holds the secret-scoped retailer credential and invokes in-VPC
 **writer** functions. The app is **cookieless** — the SPA carries the Cognito JWT as a Bearer
-header; `redirect` serves an OG landing page and resolves identity client-side (member token /
+header; `landing` serves an OG landing page and resolves identity client-side (member token /
 `guestId` in localStorage), so it sits behind a Function URL, not the JWT authorizer (ADR-0007).
 
 - **Stack boundaries / order:** `Network → Data → Identity → Api / Admin / EdgeServices →
