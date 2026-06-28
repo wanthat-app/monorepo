@@ -37,12 +37,19 @@ export const CashbackConsumerBps = Bps;
  */
 export const FxConversionCommissionBps = Bps;
 
+/** How often the conversion poller runs, in minutes — admin-api applies it to the EventBridge schedule. */
+export const PollerIntervalMinutes = z.number().int().min(1).max(1440);
+/** How far back each poll re-scans to catch status maturation, in hours — read by the poller at run time. */
+export const PollerLookbackHours = z.number().int().min(1).max(2160);
+
 /** Known config keys. Dotted namespaces group related settings. */
 export const CONFIG_KEYS = [
   "landing.countdownSeconds",
   "cashback.referrerBps",
   "cashback.consumerBps",
   "fx.conversionCommissionBps",
+  "poller.intervalMinutes",
+  "poller.lookbackHours",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -54,6 +61,8 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "cashback.referrerBps": CashbackReferrerBps,
   "cashback.consumerBps": CashbackConsumerBps,
   "fx.conversionCommissionBps": FxConversionCommissionBps,
+  "poller.intervalMinutes": PollerIntervalMinutes,
+  "poller.lookbackHours": PollerLookbackHours,
 };
 
 /**
@@ -66,6 +75,10 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "cashback.referrerBps": 5000,
   "cashback.consumerBps": 0,
   "fx.conversionCommissionBps": 200,
+  "poller.intervalMinutes": 60,
+  // Lookback must cover an order's full maturation; 72h is a placeholder — tune at integration
+  // to AliExpress's confirm/return latency (see ADR-0009).
+  "poller.lookbackHours": 72,
 };
 
 /** Validate a value against its key's schema — use in the config API handler before persisting. */

@@ -25,8 +25,11 @@ event-log ledger keyed (order_id, kind, status) → derive balance + audit.`
   gateway). `order.listbyindex` is **time-window based** (`start_time`/`end_time`, format
   `yyyy-MM-dd HH:mm:ss`, **GMT+8**), **cursor-paginated** (`start_query_index_id`), filterable by
   `status`.
-- **Scheduler period is configurable** (env/SSM-driven; default hourly, tunable per environment).
-- Window = `[watermark − overlap, now]` in GMT+8; re-read overlapping windows so status
+- **Scheduler period and lookback are admin-tunable** via CONFIG (not just env): `poller.intervalMinutes`
+  (default 60 — `admin-api` applies a change to the EventBridge schedule) and `poller.lookbackHours`
+  (default 72 — read by the poller at run time to size the window). The lookback must cover an order's
+  full status maturation; 72h is a placeholder pending AliExpress's confirm/return latency.
+- Window = `[now − lookback, now]` in GMT+8; re-read overlapping windows so status
   transitions are captured. The ledger is an **append-only event log** keyed `(order_id, kind,
   status)`: a reward advances `pending → confirmed → clawback` as **separate immutable rows**, while
   a re-read of an unchanged order no-ops (the row already exists). The balance is **derived** (take

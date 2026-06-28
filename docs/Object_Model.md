@@ -120,7 +120,10 @@ erDiagram
 - **Cashback = retailer commission × our split.** The retailer's `commission_bps` (network rate)
   lives on Product; **our split** (`referrer_bps` / `consumer_bps`) is admin policy in `CONFIG`,
   **snapshotted onto the Recommendation at creation** so a link's economics are locked (later admin
-  changes affect only new links). The shown estimate is derived, never stored.
+  changes affect only new links). The shown estimate is derived, never stored. Both rewards are
+  carved from the commission, so margin = commission − referrer − consumer ≥ 0 while the split sums
+  to ≤ 100%; if a misconfigured policy exceeds 100% the split function **normalizes proportionally to
+  100% and logs a warning** (never fails a conversion), and the admin panel guards the sum at input.
 - **The wallet is held in the retailer's settlement (origin) currency** (e.g. USD) — our liability
   matches our receivable, so no FX float risk. Displayed converted to the member's currency for
   convenience; the real conversion happens only **at withdrawal**. `Money` is currency-agnostic and
@@ -166,6 +169,11 @@ erDiagram
 - Attribution mechanism + the `short_id → recommendation_id` rename are now in the ADRs (edited in
   place); ADR-0017 is no longer needed.
 - UC4–7 entities added here as designed.
+- **Poller cadence is admin-tunable** (CONFIG `poller.intervalMinutes` → EventBridge schedule via
+  `admin-api`; `poller.lookbackHours` read at run time to size the re-scan window). **Integration
+  risk to test:** the AliExpress `status` enum → `pending/confirmed/clawback` mapping, that
+  `custom_parameters` round-trips the redirect-appended values, and the lookback that actually covers
+  AliExpress's confirm/return latency (the 72h default is a placeholder).
 - **FX / multi-currency (decided, build pending).** The wallet is held in the settlement currency;
   display + payout convert to the member's currency **net of `fx.conversionCommissionBps`** (config
   key added), and withdrawal is gated on the **current converted (ILS)** value. Still to build:
