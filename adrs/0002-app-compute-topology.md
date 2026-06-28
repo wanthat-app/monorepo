@@ -1,0 +1,71 @@
+# ADR 0002 — Application compute topology & least-privilege model
+
+- **Status:** Accepted
+- **Date:** 2026-06-28
+- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (datastore), [ADR-0004](0004-network-topology-nat-free-egress.md) (VPC placement & egress)
+
+## Context
+
+Compute should be sliced by **real seams** — divergent workload, exposure, privilege, scaling,
+and deploy cadence — not by the domain diagram. The core identity/links/wallet domain shares one
+relational schema; splitting it along module lines would invite distributed-transaction
+complexity and ops overhead a small team can't justify. At the same time, a single monolithic
+function gives one execution role the union of every permission, which is wrong for the
+money-writing and admin surfaces.
+
+## Decision
+
+### Four compute units, each at a real seam
+
+1. **`identity + links + wallet` Lambdalith** — one Lambda, internal HTTP framework, behind an
+   API Gateway HTTP API. These share one Postgres schema and cross-table transactions
+   (registration provisions customer+wallet+referral atomically) and carry similar modest load,
+   so keeping them together avoids distributed transactions and keeps the function warm.
+2. **`admin`** — its own Lambda. Different audience (internal operators), highest privilege (the
+   only app surface that may write money, via audited adjustments), and different exposure
+   (separate hostname / tighter WAF). Isolating it shrinks the public API blast radius and gives
+   the high-privilege surface its own tight role.
+3. **`redirect`** — separate (public, viral-spiky, latency-critical). **Non-VPC**: it resolves
+   `short_id → affiliate_url` in DynamoDB (ADR-0003), so it never touches Aurora and needs no
+   VPC attachment, internet egress, or DB credentials.
+4. **`conversion poller`** — separate (scheduled, sole money writer). Realised as a **non-VPC
+   fetcher** (calls the IPv4-only retailer API, resolves attribution in DynamoDB) that invokes
+   an **in-VPC writer** (drives the Aurora ledger + audit). See ADR-0004.
+
+### VPC placement
+
+The only thing that pins a function to the VPC is **Aurora access**. Aurora-touching code
+(Lambdalith, admin, poller-writer, link writer) runs **in-VPC and connects directly to Aurora
+via IAM database authentication — no RDS Proxy**. **Reserved-concurrency caps** on these
+low-concurrency functions keep total connections under Aurora `max_connections`. Everything else
+runs outside the VPC.
+
+### Least-privilege model
+
+- Lambda IAM is **coarse per function** (one role = that function's needs); we don't pretend
+  to do per-module IAM inside the Lambdalith.
+- The **money guarantee is enforced at the database**, via per-function Postgres roles/GRANTs:
+  Lambdalith + admin-read → **read-only** on `wallet_entry` / `audit_log`; admin adjustments (if
+  enabled) → a narrow, audited append path; conversion poller-writer → **append-only** (INSERT,
+  no UPDATE/DELETE). This isolates money-write capability by DB grant regardless of Lambda IAM.
+- The **retailer secret** lives only in the non-VPC fetcher, under a secret-scoped role
+  (ADR-0004); in-VPC money/PII functions never hold it and have no internet egress.
+
+## Alternatives considered
+
+- **Single modular-monolith function** — one IAM role = union of all permissions; can't give the
+  admin/money surface its own privilege or exposure.
+- **Microservice-per-domain-module on the shared DB** — distributed transactions and ops
+  overhead for no isolation we actually need.
+- **Always-on Fargate** — pays for idle while the scale-to-zero DB (ADR-0003) is paused; Lambda
+  pairs scale-to-zero compute with scale-to-zero data.
+- **RDS Proxy for connection pooling** — its only must-have justification was the redirect viral
+  burst, which is gone once redirect resolves in DynamoDB; the remaining low-concurrency callers
+  connect directly under reserved-concurrency caps.
+
+## Consequences
+
+- Four deploy units; admin isolation cleanly resolves the highest-privilege surface.
+- The integrity property — the app API cannot mutate money tables — holds via DB grants + the
+  isolated poller-writer, over direct IAM-auth connections, with no standing proxy cost.
+- Lambda-vs-container is settled as Lambda.

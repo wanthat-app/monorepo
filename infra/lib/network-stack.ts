@@ -4,9 +4,11 @@ import type { Construct } from "constructs";
 /**
  * NetworkStack — VPC + subnets + security groups.
  *
- * Required because the datastore is in-VPC Aurora Serverless v2 (ADR-0006): all app
- * Lambdas attach to this VPC and reach Postgres via RDS Proxy. Private isolated subnets
- * for the DB; egress (NAT or VPC endpoints) for Lambdas that call AliExpress / SNS / etc.
+ * Scoped to Aurora and the functions that touch it (ADR-0003/0004): the Lambdalith, admin, and
+ * poller-writer attach here and reach Postgres directly via IAM database auth — no RDS Proxy.
+ * Private isolated subnets for the DB; DynamoDB is reached via a free gateway endpoint. There is
+ * **no NAT Gateway**: redirect and the retailer fetchers run outside the VPC, so nothing in-VPC
+ * needs internet egress.
  *
  * Stub — define the VPC here.
  */

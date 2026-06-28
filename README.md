@@ -24,7 +24,7 @@ adrs/                      architecture decision records
 ## Tooling
 
 pnpm workspaces + Turborepo. TypeScript everywhere. Contracts are schema-first (Zod);
-an OpenAPI spec is derived on demand only when an external/non-TS consumer appears (ADR-0008).
+an OpenAPI spec is derived on demand only when an external/non-TS consumer appears (ADR-0001).
 
 ## Commands
 
@@ -40,5 +40,8 @@ pnpm deploy          # cdk deploy
 
 ## Decisions
 
-Architecture decisions live in [`adrs/`](./adrs) (ADR-0001–0008). Read those before changing
-the topology, datastore, attribution, or auth.
+Architecture decisions live in [`adrs/`](./adrs) (ADR-0001–0009; see the
+[index](./adrs/README.md)). Read those before changing structure, compute, datastore, network,
+attribution, or auth. The data layer is polyglot — Aurora (PII + ledger) + DynamoDB (redirect
+path) — with **no RDS Proxy** and a **NAT-free** network (ADR-0003 / ADR-0004). ADRs are locked;
+revise by adding a superseding ADR.
