@@ -11,13 +11,13 @@
 > - **Attribution (ADR-0008):** via injected `custom_parameters` (`ref`/`c`/`g`) — **no `click_id` click-log lookup**.
 > - **Conversion (ADR-0009):** scheduled `order.listbyindex` reconciliation **poller**, not a `conversion-webhook` postback.
 
-| | |
-| :--- | :--- |
-| **Status** | Draft v0.2 — for review |
-| **Author** | Architecture |
-| **Source** | Wanthat PRD v1.0 (`Wanthat_PRD_v1.md`) |
+| |                                                                                                                                                              |
+| :--- |:-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **Status** | Draft v0.3 — for review                                                                                                                                      |
+| **Author** | Architecture                                                                                                                                                 |
+| **Source** | Wanthat PRD v1.0 (`Wanthat_PRD_v1.md`)                                                                                                                       |
 | **Scope** | Full MVP feature set (below). **Payouts/withdrawals are deferred to a later phase.** Full target-state architecture: `wanthat-poc/docs/AWS_Architecture.md`. |
-| **Date** | June 2026 |
+| **Date** | June 2026                                                                                                                                                    |
 
 ---
 

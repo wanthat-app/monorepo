@@ -170,10 +170,12 @@ erDiagram
   place); ADR-0017 is no longer needed.
 - UC4–7 entities added here as designed.
 - **Poller cadence is admin-tunable** (CONFIG `poller.intervalMinutes` → EventBridge schedule via
-  `admin-api`; `poller.lookbackHours` read at run time to size the re-scan window). **Integration
-  risk to test:** the AliExpress `status` enum → `pending/confirmed/clawback` mapping, that
-  `custom_parameters` round-trips the redirect-appended values, and the lookback that actually covers
-  AliExpress's confirm/return latency (the 72h default is a placeholder).
+  `admin-api`; `poller.lookbackHours` read at run time to size the re-scan window).
+- **Open integration point — `poller.lookbackHours`:** the window must cover an order's full
+  confirm/return maturation; the 72h default is a placeholder and **the value is deferred to
+  integration** (admin-tunable, so widenable in prod without a redeploy). **Other integration risks
+  to test:** the AliExpress `status` enum → `pending/confirmed/clawback` mapping, and that
+  `custom_parameters` round-trips the redirect-appended values.
 - **FX / multi-currency (decided, build pending).** The wallet is held in the settlement currency;
   display + payout convert to the member's currency **net of `fx.conversionCommissionBps`** (config
   key added), and withdrawal is gated on the **current converted (ILS)** value. Still to build:

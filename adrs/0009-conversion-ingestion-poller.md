@@ -76,3 +76,7 @@ event-log ledger keyed (order_id, kind, status) → derive balance + audit.`
 - **To confirm at integration:** the full `status` enum including the rejected/invalid state used
   for clawbacks, and that `custom_parameters` reliably round-trips the per-click value on the
   `api-sg` gateway.
+- **Open integration point — `poller.lookbackHours`.** The re-scan window must cover an order's full
+  maturation (confirm + return latency), which depends on AliExpress's real behaviour. The 72h
+  default is a placeholder; **the value is to be decided during integration** once that latency is
+  observed (it is admin-tunable, so it can be widened in production without a redeploy).
