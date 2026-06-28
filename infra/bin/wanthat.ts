@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as cdk from "aws-cdk-lib";
+import { NetworkStack } from "../lib/network-stack";
 
 /**
  * Wanthat infrastructure entrypoint (AWS CDK).
@@ -12,8 +13,8 @@ import * as cdk from "aws-cdk-lib";
  *   IdentityStack       Cognito (native SMS OTP + passkeys) + Post-Confirmation trigger
  *   ApiStack            HTTP API + JWT authorizer + app-api Lambdalith (in-VPC) (+ regional WAF)
  *   AdminStack          admin Lambda (in-VPC, own role/exposure)
- *   EdgeServicesStack   redirect Lambda (non-VPC -> DynamoDB); conversion poller as a non-VPC
- *                       fetcher + in-VPC writer; retailer fetcher(s); EventBridge Scheduler
+ *   EdgeServicesStack   redirect Lambda (non-VPC -> DynamoDB); conversion poller (non-VPC
+ *                       Retailer Proxy + in-VPC writer); EventBridge Scheduler
  *   EdgeStack           CloudFront + S3 site + ACM cert + CloudFront WAF (us-east-1)
  *   ObservabilityStack  dashboards, alarms, SMS kill-switch wiring
  */
@@ -23,10 +24,8 @@ const app = new cdk.App();
 const region = process.env.CDK_DEFAULT_REGION ?? "il-central-1";
 const env: cdk.Environment = { account: process.env.CDK_DEFAULT_ACCOUNT, region };
 
-// TODO: instantiate per-environment stacks, e.g.:
-//   const network = new NetworkStack(app, "wanthat-dev-network", { env });
-//   new DataStack(app, "wanthat-dev-data", { env, vpc: network.vpc });
-// The EdgeStack (CloudFront cert + WAF) must be created in us-east-1 regardless of `region`.
+// Per-environment stacks (ADR-0005). Only NetworkStack exists so far; the remaining stacks
+// are stubs to be implemented. The EdgeStack (CloudFront cert + WAF) must live in us-east-1.
+new NetworkStack(app, "wanthat-dev-network", { env });
 
-void env;
 app.synth();

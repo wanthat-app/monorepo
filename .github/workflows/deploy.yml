@@ -1,0 +1,39 @@
+name: Deploy
+
+# OIDC-assumed per-environment role (no static keys); cdk diff gate; prod behind a
+# GitHub Environment approval (ADR-0015). main auto-deploys dev; promote via dispatch.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [dev, staging, prod]
+        default: dev
+
+permissions:
+  id-token: write # required for OIDC
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 9.7.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.CDK_DEPLOY_ROLE_ARN }} # per-env OIDC role
+          aws-region: il-central-1
+      - run: pnpm diff # cdk diff — required review gate before any change
+      - run: pnpm deploy # cdk deploy (prod gated by Environment approval)

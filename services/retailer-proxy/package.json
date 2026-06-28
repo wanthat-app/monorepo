@@ -1,5 +1,5 @@
 {
-  "name": "@wanthat/app-api",
+  "name": "@wanthat/retailer-proxy",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,11 +11,8 @@
   },
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.8.0",
-    "@aws-sdk/client-lambda": "^3.600.0",
+    "@wanthat/aliexpress": "workspace:*",
     "@wanthat/config": "workspace:*",
-    "@wanthat/contracts": "workspace:*",
-    "@wanthat/db": "workspace:*",
-    "@wanthat/domain": "workspace:*",
-    "hono": "^4.6.0"
+    "@wanthat/contracts": "workspace:*"
   }
 }
