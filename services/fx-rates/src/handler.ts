@@ -4,14 +4,17 @@
  * period (CONFIG `fx.updateIntervalMinutes`; admin-api updates the schedule), and also on demand via
  * POST /admin/fx-rates/refresh.
  *
- * Per run: fetch the current rate for each tracked pair (settlement currency → display currency, e.g.
- * USD → ILS) from an external FX provider, then upsert the DynamoDB `fx_rate` cache as an
- * ExchangeRate (`@wanthat/contracts`) keyed (base, quote) with the provider's `asOf`. The pure
- * `convertMinor` (@wanthat/domain) reads that cache for the ILS display figure and the
- * withdrawal-time conversion. Failures leave the prior cached rate in place (last-known-good).
+ * Per run: fetch the current representative rate for each tracked pair (settlement → display, e.g.
+ * USD → ILS) and upsert the DynamoDB `fx_rate` cache as an ExchangeRate (`@wanthat/contracts`) keyed
+ * (base, quote) with the provider's `asOf`. The pure `convertMinor` (@wanthat/domain) reads that
+ * cache for the ILS display figure and the withdrawal-time conversion. Failures leave the prior
+ * cached rate in place (last-known-good).
  *
- * Open: the FX provider + spread/rounding policy, the tracked-pair set, and a staleness threshold
- * beyond which withdrawal should block rather than convert on a stale rate.
+ * Provider (MVP, ADR-0017): Bank of Israel representative rate via the series DB (SDMX, no key) —
+ * GET https://edge.boi.gov.il/FusionEdgeServer/sdmx/v2/data/dataflow/BOI.STATISTICS/EXR/1.0/RER_USD_ILS
+ * Behind an adapter, so swappable to ECB/Frankfurter if BoI commercial-use consent isn't secured.
+ * Open: BoI commercial-licensing consent, spread/rounding policy, and a staleness threshold beyond
+ * which withdrawal should block rather than convert on a stale rate.
  *
  * Stub.
  */

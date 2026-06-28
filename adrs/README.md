@@ -3,7 +3,8 @@
 Each ADR is a self-contained decision: context, the decision, alternatives considered, and
 consequences. **0001–0009** cover the architecture (foundation-first: structure → compute → data
 → network → DR, then the consumer journey: identity → redirect → attribution → conversion);
-**0010–0016** cover the implementation stack.
+**0010–0016** cover the implementation stack; **0017** extends the architecture set with the
+currency / FX model.
 
 | # | Decision |
 |---|---|
@@ -23,6 +24,7 @@ consequences. **0001–0009** cover the architecture (foundation-first: structur
 | [0014](0014-dev-tooling-biome.md) | Dev tooling: Biome (lint + format) |
 | [0015](0015-cicd-and-environment-promotion.md) | CI/CD & environment promotion: GitHub Actions + OIDC |
 | [0016](0016-frontend-stack.md) | Frontend stack: Vite + React SPA |
+| [0017](0017-currency-model-and-fx-rate-sourcing.md) | Currency model & FX rate sourcing (hold settlement currency, convert at withdrawal, Bank of Israel rate) |
 
 ## Status & change policy
 

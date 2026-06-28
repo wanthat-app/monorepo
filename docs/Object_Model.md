@@ -193,7 +193,9 @@ erDiagram
   the member's currency **net of `fx.conversionCommissionBps`**, and withdrawal is gated on the
   **current converted (ILS)** value. *Built:* the `FX_RATE` cache table + `ExchangeRate` contract, the
   scheduled `fx-rates` updater (stub) on CONFIG `fx.updateIntervalMinutes`, and the pure `convertMinor`
-  in `packages/domain`. *Still to build:* surfacing the converted withdrawable figure on
-  `WalletBalance`, and wiring the updater to a real provider. *Open decisions:* the **FX provider** +
+  in `packages/domain`. **Provider locked for MVP (ADR-0017): Bank of Israel** representative rate
+  (series DB, SDMX, no key) — but **commercial-licensing needs BoI written consent** or a swap to
+  ECB/Frankfurter before launch. *Still to build:* surfacing the converted withdrawable figure on
+  `WalletBalance`, and wiring the updater to BoI. *Open decisions:* the licensing consent, the
   spread/rounding policy, a **staleness threshold** beyond which withdrawal blocks rather than
   converts on a stale rate, and the ₪50 threshold evaluated on the converted value.
