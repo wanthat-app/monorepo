@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1; }
+  body { margin:0; }
+  @keyframes wspin { to { transform: rotate(360deg); } }
+  .wspin { animation: wspin 0.8s linear infinite; transform-origin:50% 50%; }
+  @keyframes wpulse { 0%,100% { opacity:1; transform:scale(1); } 50% { opacity:.5; transform:scale(.9); } }
+  .wpulse { animation: wpulse 1.1s ease-in-out infinite; transform-origin:50% 50%; }
+</style>
+</helmet>
+
+<div style="background:#F4F6F5; min-height:100vh; font-family:'Hanken Grotesk',sans-serif; color:#15201C; padding:48px 24px 80px;">
+  <div style="max-width:1080px; margin:0 auto;">
+
+    <!-- ===== HEADER ===== -->
+    <div style="display:flex; align-items:flex-end; justify-content:space-between; gap:24px; flex-wrap:wrap; margin-bottom:14px;">
+      <div style="display:flex; align-items:center; gap:13px;">
+        <img src="assets/wanthat-mark.png" alt="" style="height:42px; width:auto;">
+        <div>
+          <div style="font-family:'Space Grotesk',sans-serif; font-size:30px; font-weight:700; letter-spacing:-0.03em; line-height:1;">wanthat</div>
+          <div style="font-size:14px; color:#6B7B73; margin-top:4px;">Design System</div>
+        </div>
+      </div>
+      <div style="display:flex; gap:8px; flex-wrap:wrap;">
+        <span style="font-size:12px; font-weight:600; color:#1F7A57; background:#E7F1EC; border:1px solid #D2E3D9; padding:6px 12px; border-radius:20px;">Evergreen Trust</span>
+        <span style="font-size:12px; font-weight:600; color:#6B7B73; background:#fff; border:1px solid #E6EBE8; padding:6px 12px; border-radius:20px;">v1.0</span>
+        <span style="font-size:12px; font-weight:600; color:#6B7B73; background:#fff; border:1px solid #E6EBE8; padding:6px 12px; border-radius:20px;">EN · עברית (RTL)</span>
+      </div>
+    </div>
+    <p style="font-size:16px; color:#5C6B64; line-height:1.55; max-width:680px; margin:0 0 44px;">The visual system behind the Wanthat consumer app — a clean, trustworthy fintech look built on a cool neutral base, a single evergreen accent, and tabular figures for money. Every token and component below is used verbatim across the live flow.</p>
+
+    <!-- ===== FOUNDATIONS: COLOR ===== -->
+    <div style="font-size:12px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:#1F7A57; margin-bottom:6px;">Foundations</div>
+    <h2 style="font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:700; letter-spacing:-0.02em; margin:0 0 20px;">Color</h2>
+
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:12px; margin-bottom:18px;">
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#F4F6F5; border-bottom:1px solid #E6EBE8;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Base</div><div class="num" style="font-size:12px; color:#6B7B73;">#F4F6F5</div></div></div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#FFFFFF; border-bottom:1px solid #E6EBE8;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Surface</div><div class="num" style="font-size:12px; color:#6B7B73;">#FFFFFF</div></div></div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#15201C;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Ink</div><div class="num" style="font-size:12px; color:#6B7B73;">#15201C</div></div></div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#6B7B73;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Muted</div><div class="num" style="font-size:12px; color:#6B7B73;">#6B7B73</div></div></div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#E6EBE8;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Hairline</div><div class="num" style="font-size:12px; color:#6B7B73;">#E6EBE8</div></div></div>
+    </div>
+    <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(150px, 1fr)); gap:12px; margin-bottom:18px;">
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#1F7A57;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Evergreen <span style="color:#1F7A57;">— accent</span></div><div class="num" style="font-size:12px; color:#6B7B73;">#1F7A57</div></div></div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#7FE0B0;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Mint</div><div class="num" style="font-size:12px; color:#6B7B73;">#7FE0B0</div></div></div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#E7F1EC; border-bottom:1px solid #D2E3D9;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Accent soft</div><div class="num" style="font-size:12px; color:#6B7B73;">#E7F1EC</div></div></div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#B07A1E;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Pending</div><div class="num" style="font-size:12px; color:#6B7B73;">#B07A1E</div></div></div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; overflow:hidden;"><div style="height:72px; background:#B0473A;"></div><div style="padding:11px 13px;"><div style="font-size:13px; font-weight:700;">Rejected</div><div class="num" style="font-size:12px; color:#6B7B73;">#B0473A</div></div></div>
+    </div>
+    <p style="font-size:13px; color:#8A968F; line-height:1.5; margin:0 0 48px;">Confirmed states reuse Evergreen. Status hues share a muted, earthy chroma so they never feel alarming on a money surface.</p>
+
+    <!-- ===== FOUNDATIONS: TYPE ===== -->
+    <h2 style="font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:700; letter-spacing:-0.02em; margin:0 0 20px;">Typography</h2>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:14px; margin-bottom:20px;">
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:18px; padding:22px;">
+        <div style="font-size:12px; font-weight:700; color:#6B7B73; margin-bottom:10px;">Space Grotesk · display & wordmark</div>
+        <div style="font-family:'Space Grotesk',sans-serif; font-size:40px; font-weight:700; letter-spacing:-0.03em; line-height:1;">Cashback,<br>simplified.</div>
+      </div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:18px; padding:22px;">
+        <div style="font-size:12px; font-weight:700; color:#6B7B73; margin-bottom:10px;">Hanken Grotesk · UI & body</div>
+        <div style="font-size:18px; font-weight:700; margin-bottom:4px;">Available cashback</div>
+        <div style="font-size:15px; color:#5C6B64; line-height:1.5;">Shop AliExpress through wanthat and earn real money back.</div>
+      </div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:18px; padding:22px;">
+        <div style="font-size:12px; font-weight:700; color:#6B7B73; margin-bottom:10px;">Heebo · Hebrew (RTL)</div>
+        <div dir="rtl" style="font-family:'Heebo',sans-serif;"><div style="font-size:18px; font-weight:700; margin-bottom:4px;">קאשבק זמין</div><div style="font-size:15px; color:#5C6B64; line-height:1.5;">קנו ב-AliExpress דרך wanthat והרוויחו כסף אמיתי בחזרה.</div></div>
+      </div>
+    </div>
+    <div style="background:#fff; border:1px solid #E6EBE8; border-radius:18px; padding:8px 22px; margin-bottom:18px;">
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid #EEF2F0;"><span style="font-family:'Space Grotesk',sans-serif; font-size:40px; font-weight:700; letter-spacing:-0.03em;">Display</span><span style="font-size:12px; color:#8A968F;">Space Grotesk · 40–46 / 700</span></div>
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid #EEF2F0;"><span style="font-family:'Space Grotesk',sans-serif; font-size:27px; font-weight:700; letter-spacing:-0.02em;">Heading</span><span style="font-size:12px; color:#8A968F;">Space Grotesk · 22–30 / 700</span></div>
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid #EEF2F0;"><span style="font-size:18px; font-weight:700;">Title</span><span style="font-size:12px; color:#8A968F;">Hanken Grotesk · 15–18 / 700</span></div>
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid #EEF2F0;"><span style="font-size:15px;">Body — the quick brown fox</span><span style="font-size:12px; color:#8A968F;">Hanken Grotesk · 14–15 / 400–500</span></div>
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:14px 0; border-bottom:1px solid #EEF2F0;"><span style="font-size:12px; font-weight:600; color:#6B7B73;">Label / caption</span><span style="font-size:12px; color:#8A968F;">11–13 / 500–600</span></div>
+      <div style="display:flex; align-items:baseline; justify-content:space-between; gap:16px; padding:14px 0;"><span class="num" style="font-size:26px; font-weight:700; letter-spacing:-0.02em;">₪142.50</span><span style="font-size:12px; color:#8A968F;">Tabular numerals · money</span></div>
+    </div>
+    <p style="font-size:13px; color:#8A968F; line-height:1.5; margin:0 0 48px;">All monetary figures use tabular numerals and stay LTR even in Hebrew, with the ₪ symbol leading.</p>
+
+    <!-- ===== SPACING & RADIUS ===== -->
+    <h2 style="font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:700; letter-spacing:-0.02em; margin:0 0 20px;">Radius &amp; elevation</h2>
+    <div style="display:flex; gap:16px; flex-wrap:wrap; align-items:flex-end; margin-bottom:20px;">
+      <div style="text-align:center;"><div style="width:80px; height:64px; background:#fff; border:1px solid #E6EBE8; border-radius:12px;"></div><div style="font-size:12px; color:#6B7B73; margin-top:8px;">12 · input</div></div>
+      <div style="text-align:center;"><div style="width:80px; height:64px; background:#fff; border:1px solid #E6EBE8; border-radius:16px;"></div><div style="font-size:12px; color:#6B7B73; margin-top:8px;">16 · chip card</div></div>
+      <div style="text-align:center;"><div style="width:80px; height:64px; background:#fff; border:1px solid #E6EBE8; border-radius:20px;"></div><div style="font-size:12px; color:#6B7B73; margin-top:8px;">20 · card</div></div>
+      <div style="text-align:center;"><div style="width:80px; height:64px; background:#fff; border:1px solid #E6EBE8; border-radius:24px;"></div><div style="font-size:12px; color:#6B7B73; margin-top:8px;">24 · feature</div></div>
+      <div style="text-align:center;"><div style="width:80px; height:64px; background:#fff; border:1px solid #E6EBE8; border-radius:46px;"></div><div style="font-size:12px; color:#6B7B73; margin-top:8px;">46 · device</div></div>
+      <div style="text-align:center;"><div style="width:80px; height:64px; background:#fff; border-radius:20px; box-shadow:0 1px 2px rgba(0,0,0,.04), 0 18px 36px -22px rgba(20,40,30,.4);"></div><div style="font-size:12px; color:#6B7B73; margin-top:8px;">card shadow</div></div>
+    </div>
+    <p style="font-size:13px; color:#8A968F; line-height:1.5; margin:0 0 56px;">Cards use hairline borders first, shadow only for lifted surfaces (the device frame, modals). Tap targets never below 44px.</p>
+
+    <!-- ===== COMPONENTS ===== -->
+    <div style="font-size:12px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:#1F7A57; margin-bottom:6px;">Components</div>
+    <h2 style="font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:700; letter-spacing:-0.02em; margin:0 0 20px;">Buttons</h2>
+    <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:24px; margin-bottom:18px; display:flex; gap:14px; flex-wrap:wrap; align-items:center;">
+      <button style="background:#1F7A57; color:#fff; border:none; border-radius:15px; padding:14px 22px; font-family:inherit; font-size:15px; font-weight:700; cursor:pointer;">Primary</button>
+      <button style="background:#15201C; color:#fff; border:none; border-radius:15px; padding:14px 22px; font-family:inherit; font-size:15px; font-weight:700; cursor:pointer;">Ink</button>
+      <button style="background:#fff; color:#15201C; border:1px solid #E0E6E3; border-radius:15px; padding:14px 22px; font-family:inherit; font-size:15px; font-weight:700; cursor:pointer;">Outline</button>
+      <button style="background:none; color:#1F7A57; border:none; padding:14px 8px; font-family:inherit; font-size:15px; font-weight:700; cursor:pointer;">Text link</button>
+      <button disabled style="background:#E7F1EC; color:#1F7A57; border:none; border-radius:15px; padding:14px 22px; font-family:inherit; font-size:15px; font-weight:700; display:inline-flex; align-items:center; gap:9px;"><svg class="wspin" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1F7A57" stroke-width="2.6" stroke-linecap="round"><path d="M12 3a9 9 0 1 0 9 9"></path></svg>Loading</button>
+    </div>
+    <div style="background:#15201C; border-radius:20px; padding:24px; margin-bottom:48px; display:flex; gap:14px; flex-wrap:wrap; align-items:center;">
+      <button style="background:#7FE0B0; color:#0E1A14; border:none; border-radius:14px; padding:14px 22px; font-family:inherit; font-size:15px; font-weight:700; cursor:pointer;">Mint — on ink</button>
+      <span style="font-size:13px; color:#9DB6AB;">The mint CTA only appears on the dark balance/offer surfaces.</span>
+    </div>
+
+    <!-- INPUTS -->
+    <h2 style="font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:700; letter-spacing:-0.02em; margin:0 0 20px;">Inputs &amp; controls</h2>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:14px; margin-bottom:48px;">
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:22px;">
+        <div style="font-size:12px; font-weight:700; color:#6B7B73; margin-bottom:10px;">Text field</div>
+        <input type="text" placeholder="Paste product link…" style="width:100%; background:#F4F6F5; border:1px solid #E0E6E3; border-radius:14px; padding:14px 16px; font-size:14px; color:#15201C; outline:none;">
+      </div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:22px;">
+        <div style="font-size:12px; font-weight:700; color:#6B7B73; margin-bottom:10px;">One-time code</div>
+        <input type="text" value="4 1 9 2" readonly class="num" style="width:100%; text-align:center; letter-spacing:0.5em; background:#F4F6F5; border:1px solid #E0E6E3; border-radius:14px; padding:14px; font-family:'Space Grotesk',sans-serif; font-size:26px; font-weight:700; color:#15201C; outline:none;">
+      </div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:22px;">
+        <div style="font-size:12px; font-weight:700; color:#6B7B73; margin-bottom:10px;">Segmented toggle</div>
+        <div style="display:inline-flex; background:#F4F6F5; border:1px solid #E2E7E4; border-radius:10px; padding:2px;">
+          <span style="background:#fff; color:#15201C; border-radius:8px; padding:7px 16px; font-size:13px; font-weight:700; box-shadow:0 1px 2px rgba(0,0,0,.08);">EN</span>
+          <span style="color:#6B7B73; padding:7px 16px; font-size:13px; font-weight:700;">עברית</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- CHIPS -->
+    <h2 style="font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:700; letter-spacing:-0.02em; margin:0 0 20px;">Status &amp; badges</h2>
+    <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:24px; margin-bottom:48px; display:flex; gap:12px; flex-wrap:wrap; align-items:center;">
+      <span style="font-size:12px; font-weight:700; color:#1F7A57; background:#F4F6F5; padding:6px 13px; border-radius:20px;">Confirmed</span>
+      <span style="font-size:12px; font-weight:700; color:#B07A1E; background:#F4F6F5; padding:6px 13px; border-radius:20px;">Pending</span>
+      <span style="font-size:12px; font-weight:700; color:#B0473A; background:#F4F6F5; padding:6px 13px; border-radius:20px;">Rejected</span>
+      <span style="font-size:12px; font-weight:600; color:#6B7B73; background:#F4F6F5; padding:6px 13px; border-radius:20px;">3 cashbacks</span>
+      <span style="font-size:11px; font-weight:600; color:#7FE0B0; background:rgba(127,224,176,.14); padding:4px 9px; border-radius:20px;">ILS</span>
+      <span style="font-size:12px; font-weight:700; color:#1F7A57; background:#E7F1EC; padding:5px 12px; border-radius:20px;">On</span>
+    </div>
+
+    <!-- CARDS -->
+    <h2 style="font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:700; letter-spacing:-0.02em; margin:0 0 20px;">Cards</h2>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(280px, 1fr)); gap:16px; margin-bottom:24px;">
+      <div style="background:#15201C; border-radius:24px; padding:22px 20px 18px; color:#EAF2EE;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;"><span style="font-size:13px; color:#9DB6AB;">Available cashback</span><span style="font-size:11px; font-weight:600; color:#7FE0B0; background:rgba(127,224,176,.12); padding:4px 9px; border-radius:20px;">ILS</span></div>
+        <div class="num" style="font-size:42px; font-weight:700; letter-spacing:-0.03em; line-height:1; margin-bottom:14px;">₪142<span style="font-size:26px; color:#9DB6AB;">.50</span></div>
+        <button style="width:100%; background:#7FE0B0; color:#0E1A14; border:none; border-radius:14px; padding:13px; font-family:inherit; font-size:15px; font-weight:700; cursor:pointer;">Withdraw to bank</button>
+      </div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:18px;">
+        <div style="font-size:15px; font-weight:700; margin-bottom:3px;">Turn a link into cashback</div>
+        <div style="font-size:12.5px; color:#6B7B73; margin-bottom:14px; line-height:1.4;">Paste any AliExpress product and share your reward link.</div>
+        <div style="display:flex; gap:8px; align-items:center;"><div style="flex:1; background:#F4F6F5; border:1px solid #E2E7E4; border-radius:12px; padding:11px 13px; font-size:13px; color:#9aa8a1;">Paste product link…</div><div style="background:#1F7A57; color:#fff; border-radius:12px; padding:11px 16px; font-size:14px; font-weight:700;">Create</div></div>
+      </div>
+      <div style="background:#E7F1EC; border:1px solid #D2E3D9; border-radius:18px; padding:14px; display:flex; align-items:center; gap:13px;">
+        <div style="width:42px; height:42px; border-radius:12px; background:#1F7A57; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="21" height="21" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8V6a2 2 0 0 1 2-2h2"></path><path d="M16 4h2a2 2 0 0 1 2 2v2"></path><path d="M20 16v2a2 2 0 0 1-2 2h-2"></path><path d="M8 20H6a2 2 0 0 1-2-2v-2"></path><path d="M9 10.5v.5M15 10.5v.5"></path><path d="M9.5 15a3.5 3.5 0 0 0 5 0"></path></svg></div>
+        <div style="flex:1;"><div style="font-size:14px; font-weight:700;">Set up Face ID</div><div style="font-size:12px; color:#3F6B57;">Log in instantly next time.</div></div>
+        <button style="background:#1F7A57; color:#fff; border:none; border-radius:11px; padding:9px 14px; font-family:inherit; font-size:13px; font-weight:700; cursor:pointer;">Turn on</button>
+      </div>
+    </div>
+
+    <!-- LIST ROW + AVATARS -->
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px; margin-bottom:48px;">
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:6px 18px;">
+        <div style="display:flex; align-items:center; gap:13px; padding:13px 0; border-bottom:1px solid #EEF2F0;">
+          <div style="width:44px; height:44px; border-radius:13px; background:#fff; border:1px solid #E6EBE8; overflow:hidden; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><img src="assets/product-feeder.jpg" alt="" style="max-width:100%; max-height:100%; object-fit:contain;"></div>
+          <div style="flex:1; min-width:0;"><div style="font-size:14.5px; font-weight:600;">Jebao Fish Feeder</div><div style="font-size:12px; color:#6B7B73;">Your link · 3 purchases</div></div>
+          <div style="text-align:right;"><div class="num" style="font-size:14.5px; font-weight:700; color:#1F7A57;">+₪37.20</div><div style="font-size:11px; font-weight:600; color:#6B7B73;">3 cashbacks</div></div>
+        </div>
+        <div style="display:flex; align-items:center; gap:13px; padding:13px 0;">
+          <div style="width:44px; height:44px; border-radius:13px; background:repeating-linear-gradient(135deg,#EDF1EF,#EDF1EF 5px,#F4F6F5 5px,#F4F6F5 10px); border:1px solid #E6EBE8; flex-shrink:0;"></div>
+          <div style="flex:1; min-width:0;"><div style="font-size:14.5px; font-weight:600;">USB-C 7-in-1 Hub</div><div style="font-size:12px; color:#6B7B73;">Your order · 2 days ago</div></div>
+          <div style="text-align:right;"><div class="num" style="font-size:14.5px; font-weight:700; color:#B07A1E;">+₪3.10</div><div style="font-size:11px; font-weight:600; color:#B07A1E;">Pending</div></div>
+        </div>
+      </div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:24px; display:flex; gap:16px; align-items:center; flex-wrap:wrap;">
+        <div style="text-align:center;"><div style="width:48px; height:48px; border-radius:50%; background:#E7F1EC; border:1px solid #D2E3D9; display:flex; align-items:center; justify-content:center; font-weight:700; color:#1F7A57;">M</div><div style="font-size:11px; color:#6B7B73; margin-top:7px;">Initial</div></div>
+        <div style="text-align:center;"><div style="width:48px; height:48px; border-radius:13px; background:#fff; border:1px solid #E6EBE8; overflow:hidden; display:flex; align-items:center; justify-content:center;"><img src="assets/product-feeder.jpg" alt="" style="max-width:100%; max-height:100%; object-fit:contain;"></div><div style="font-size:11px; color:#6B7B73; margin-top:7px;">Product</div></div>
+        <div style="text-align:center;"><div style="width:48px; height:48px; border-radius:13px; background:repeating-linear-gradient(135deg,#EDF1EF,#EDF1EF 5px,#F4F6F5 5px,#F4F6F5 10px); border:1px solid #E6EBE8;"></div><div style="font-size:11px; color:#6B7B73; margin-top:7px;">Placeholder</div></div>
+      </div>
+    </div>
+
+    <!-- NAV -->
+    <h2 style="font-family:'Space Grotesk',sans-serif; font-size:24px; font-weight:700; letter-spacing:-0.02em; margin:0 0 20px;">Navigation</h2>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(300px, 1fr)); gap:16px; margin-bottom:24px;">
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:10px 30px 14px; display:flex; justify-content:space-between; align-items:center;">
+        <div style="display:flex; flex-direction:column; align-items:center; gap:4px; color:#1F7A57;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 10.5L12 3l9 7.5"></path><path d="M5 9.5V20h14V9.5"></path></svg><span style="font-size:10.5px; font-weight:700;">Home</span></div>
+        <div style="background:#1F7A57; width:52px; height:52px; border-radius:17px; display:flex; align-items:center; justify-content:center; color:#fff; box-shadow:0 8px 18px -6px rgba(31,122,87,.6);"><svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"></path></svg></div>
+        <div style="display:flex; flex-direction:column; align-items:center; gap:4px; color:#A6B2AC;"><svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 18V9M9 18V5M14 18v-6M19 18v-9"></path></svg><span style="font-size:10.5px; font-weight:700;">Activity</span></div>
+      </div>
+      <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:13px 20px; display:flex; align-items:center; gap:8px;">
+        <div style="display:flex; align-items:center; gap:8px;"><img src="assets/wanthat-mark.png" alt="" style="height:22px;"><span style="font-family:'Space Grotesk',sans-serif; font-size:17px; font-weight:700; letter-spacing:-0.03em;">wanthat</span></div>
+        <div style="display:flex; gap:4px; margin-left:18px;"><span style="background:#E7F1EC; color:#1F7A57; border-radius:10px; padding:7px 13px; font-size:13px; font-weight:700;">Home</span><span style="color:#5C6B64; padding:7px 13px; font-size:13px; font-weight:700;">Activity</span></div>
+        <span style="margin-left:auto; background:#1F7A57; color:#fff; border-radius:11px; padding:8px 14px; font-size:13px; font-weight:700;">+ Create</span>
+      </div>
+    </div>
+
+    <p style="font-size:13px; color:#8A968F; line-height:1.55; margin:40px 0 0; border-top:1px solid #E2E7E4; padding-top:24px;">Bilingual by construction — every surface flips to Hebrew RTL via a logical layout, with Heebo for Hebrew copy and tabular ₪ figures kept LTR. Motion is limited to a Face-ID pulse and a fetch spinner. This system is the source of truth for the Wanthat consumer app.</p>
+
+  </div>
+</div>
+</x-dc>
+</body>
+</html>

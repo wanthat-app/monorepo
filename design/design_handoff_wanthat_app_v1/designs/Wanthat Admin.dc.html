@@ -1,0 +1,580 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700;800&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { box-sizing: border-box; }
+  .num { font-variant-numeric: tabular-nums; font-feature-settings:"tnum" 1; }
+  .scr { -ms-overflow-style:none; scrollbar-width:none; }
+  .scr::-webkit-scrollbar { display:none; }
+  input, textarea, button { font-family:inherit; }
+  input::placeholder { color:#A6B2AC; }
+  body { margin:0; }
+  input[type=range]{ -webkit-appearance:none; appearance:none; height:6px; border-radius:6px; outline:none; }
+  input[type=range]::-webkit-slider-thumb{ -webkit-appearance:none; width:22px; height:22px; border-radius:50%; background:#fff; border:1px solid #D7DEDA; box-shadow:0 1px 3px rgba(0,0,0,.15); cursor:pointer; }
+</style>
+</helmet>
+
+<div style="height:100vh; display:flex; font-family:'Hanken Grotesk',sans-serif; color:#15201C; background:#E9EDEB; overflow:hidden;">
+
+  <!-- ============ SIDEBAR ============ -->
+  <div style="{{ sidebarStyle }}">
+    <div style="display:flex; align-items:center; gap:11px; padding:4px 6px 0;">
+      <img src="assets/wanthat-mark.png" alt="" style="height:30px; width:auto;">
+      <div>
+        <div style="font-family:'Space Grotesk',sans-serif; font-size:21px; font-weight:700; letter-spacing:-0.03em; line-height:1; color:{{ logoColor }};">wanthat</div>
+        <div style="font-size:11px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; margin-top:3px; color:{{ sideMuted }};">Operations</div>
+      </div>
+    </div>
+
+    <div style="height:1px; background:{{ sideHair }}; margin:22px 0 18px;"></div>
+
+    <div style="font-size:10.5px; font-weight:700; letter-spacing:0.13em; text-transform:uppercase; color:{{ sideMuted }}; padding:0 6px 9px;">Overview</div>
+    <button onClick="{{ goDashboard }}" style="{{ navDashboard }}">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="9" rx="1.5"></rect><rect x="14" y="3" width="7" height="5" rx="1.5"></rect><rect x="14" y="12" width="7" height="9" rx="1.5"></rect><rect x="3" y="16" width="7" height="5" rx="1.5"></rect></svg>
+      Dashboard
+    </button>
+
+    <div style="font-size:10.5px; font-weight:700; letter-spacing:0.13em; text-transform:uppercase; color:{{ sideMuted }}; padding:20px 6px 9px;">Settings</div>
+    <button onClick="{{ goConfig }}" style="{{ navConfig }}">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h10"></path><circle cx="17" cy="6" r="2.4"></circle><path d="M20 12H10"></path><circle cx="7" cy="12" r="2.4"></circle><path d="M4 18h10"></path><circle cx="17" cy="18" r="2.4"></circle></svg>
+      Configuration
+    </button>
+
+    <div style="margin-top:auto; padding-top:18px;">
+      <div style="display:flex; align-items:center; gap:10px; background:{{ sideCardBg }}; border:1px solid {{ sideHair }}; border-radius:14px; padding:10px 12px;">
+        <div style="width:34px; height:34px; border-radius:11px; background:{{ accent }}; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; flex-shrink:0;">RK</div>
+        <div style="min-width:0; flex:1;">
+          <div style="font-size:13px; font-weight:700; color:{{ logoColor }}; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">Roni Katz</div>
+          <div style="font-size:11px; color:{{ sideMuted }};">Platform admin</div>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="{{ sideMuted }}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H6a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3"></path><path d="M16 17l5-5-5-5"></path><path d="M21 12H9"></path></svg>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ MAIN ============ -->
+  <div style="flex:1; display:flex; flex-direction:column; min-width:0;">
+
+    <!-- topbar -->
+    <div style="flex-shrink:0; background:#fff; border-bottom:1px solid #E2E7E4; padding:16px 32px; display:flex; align-items:center; gap:20px;">
+      <div style="min-width:0;">
+        <h1 style="font-family:'Space Grotesk',sans-serif; font-size:23px; font-weight:700; letter-spacing:-0.025em; margin:0; line-height:1.1;">{{ pageTitle }}</h1>
+        <div style="font-size:13px; color:#6B7B73; margin-top:3px;">{{ pageSub }}</div>
+      </div>
+      <div style="margin-left:auto; display:flex; align-items:center; gap:12px;">
+        <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex; align-items:center; gap:9px; background:#F4F6F5; border:1px solid #E2E7E4; border-radius:12px; padding:10px 14px; width:260px;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9aa8a1" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg>
+            <input type="text" placeholder="Search users, links, payouts…" style="border:none; background:none; outline:none; font-size:13.5px; width:100%; color:#15201C;">
+          </div>
+        </sc-if>
+        <button style="position:relative; width:42px; height:42px; border-radius:12px; background:#F4F6F5; border:1px solid #E2E7E4; display:flex; align-items:center; justify-content:center; cursor:pointer;">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#15201C" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"></path><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"></path></svg>
+          <span style="position:absolute; top:9px; right:10px; width:8px; height:8px; border-radius:50%; background:{{ accent }}; border:2px solid #F4F6F5;"></span>
+        </button>
+      </div>
+    </div>
+
+    <!-- scroll area -->
+    <div class="scr" style="flex:1; overflow-y:auto; padding:28px 32px 60px;">
+
+      <!-- ======================= DASHBOARD ======================= -->
+      <sc-if value="{{ isDashboard }}" hint-placeholder-val="{{ true }}">
+        <div>
+          <!-- MERCHANT FILTER -->
+          <div style="display:flex; align-items:center; gap:12px; margin-bottom:18px; flex-wrap:wrap;">
+            <span style="font-size:11px; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; color:#9aa8a1;">Merchant</span>
+            <div style="display:flex; gap:8px; flex-wrap:wrap;">
+              <sc-for list="{{ merchantTabs }}" as="m" hint-placeholder-count="5">
+                <button onClick="{{ m.select }}" style="{{ m.style }}">{{ m.name }}</button>
+              </sc-for>
+            </div>
+          </div>
+
+          <!-- KPI ROW -->
+          <div style="display:grid; grid-template-columns:repeat(4, 1fr); gap:16px; margin-bottom:18px;">
+
+            <div style="background:#fff; border:1px solid #E6EBE8; border-radius:18px; padding:18px 19px;">
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <span style="font-size:12.5px; font-weight:600; color:#6B7B73;">Cashback paid</span>
+                <div style="width:30px; height:30px; border-radius:9px; background:#E7F1EC; display:flex; align-items:center; justify-content:center; color:{{ accent }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg></div>
+              </div>
+              <div class="num" style="font-size:30px; font-weight:700; letter-spacing:-0.03em; margin-top:12px; line-height:1;">{{ kpiPaid }}</div>
+              <div style="display:flex; align-items:center; gap:6px; margin-top:10px;"><span style="font-size:11.5px; font-weight:700; color:{{ accent }}; background:#E7F1EC; padding:3px 8px; border-radius:20px;">{{ kpiPaidDelta }}</span><span style="font-size:11.5px; color:#8A968F;">vs last 30d</span></div>
+            </div>
+
+            <div style="background:#fff; border:1px solid #E6EBE8; border-radius:18px; padding:18px 19px;">
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <span style="font-size:12.5px; font-weight:600; color:#6B7B73;">Pending payouts</span>
+                <div style="width:30px; height:30px; border-radius:9px; background:#FAF3E6; display:flex; align-items:center; justify-content:center; color:#B07A1E;"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"></circle><path d="M12 7v5l3 2"></path></svg></div>
+              </div>
+              <div class="num" style="font-size:30px; font-weight:700; letter-spacing:-0.03em; margin-top:12px; line-height:1;">{{ kpiPending }}</div>
+              <div style="display:flex; align-items:center; gap:6px; margin-top:10px;"><span style="font-size:11.5px; font-weight:700; color:#B07A1E; background:#FAF3E6; padding:3px 8px; border-radius:20px;">{{ kpiPendingReq }}</span><span style="font-size:11.5px; color:#8A968F;">awaiting review</span></div>
+            </div>
+
+            <div style="background:#fff; border:1px solid #E6EBE8; border-radius:18px; padding:18px 19px;">
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <span style="font-size:12.5px; font-weight:600; color:#6B7B73;">Active users</span>
+                <div style="width:30px; height:30px; border-radius:9px; background:#E7F1EC; display:flex; align-items:center; justify-content:center; color:{{ accent }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M22 21v-2a4 4 0 0 0-3-3.87"></path></svg></div>
+              </div>
+              <div class="num" style="font-size:30px; font-weight:700; letter-spacing:-0.03em; margin-top:12px; line-height:1;">{{ kpiUsers }}</div>
+              <div style="display:flex; align-items:center; gap:6px; margin-top:10px;"><span style="font-size:11.5px; font-weight:700; color:{{ accent }}; background:#E7F1EC; padding:3px 8px; border-radius:20px;">{{ kpiNew }}</span><span style="font-size:11.5px; color:#8A968F;">new this week</span></div>
+            </div>
+
+            <div style="background:#fff; border:1px solid #E6EBE8; border-radius:18px; padding:18px 19px;">
+              <div style="display:flex; align-items:center; justify-content:space-between;">
+                <span style="font-size:12.5px; font-weight:600; color:#6B7B73;">Link conversion</span>
+                <div style="width:30px; height:30px; border-radius:9px; background:#E7F1EC; display:flex; align-items:center; justify-content:center; color:{{ accent }};"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 7-7"></path><path d="M14 8h6v6"></path></svg></div>
+              </div>
+              <div class="num" style="font-size:30px; font-weight:700; letter-spacing:-0.03em; margin-top:12px; line-height:1;">{{ kpiConv }}</div>
+              <div style="display:flex; align-items:center; gap:6px; margin-top:10px;"><span style="font-size:11.5px; font-weight:700; color:{{ accent }}; background:#E7F1EC; padding:3px 8px; border-radius:20px;">{{ kpiConvD }}</span><span style="font-size:11.5px; color:#8A968F;">{{ kpiLinks }}</span></div>
+            </div>
+
+          </div>
+
+          <!-- CHART + STATUS -->
+          <div style="display:grid; grid-template-columns:1.7fr 1fr; gap:16px; margin-bottom:18px;">
+
+            <!-- chart -->
+            <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:22px 24px 18px;">
+              <div style="display:flex; align-items:flex-start; justify-content:space-between; gap:16px; margin-bottom:22px;">
+                <div>
+                  <div style="font-size:15px; font-weight:700;">Cashback paid out</div>
+                  <div class="num" style="font-size:13px; color:#6B7B73; margin-top:3px;">{{ chartTotal }} this period</div>
+                </div>
+                <div style="display:flex; background:#F4F6F5; border:1px solid #E2E7E4; border-radius:10px; padding:2px;">
+                  <button onClick="{{ setP7 }}" style="{{ segP7 }}">7d</button>
+                  <button onClick="{{ setP30 }}" style="{{ segP30 }}">30d</button>
+                  <button onClick="{{ setP90 }}" style="{{ segP90 }}">90d</button>
+                </div>
+              </div>
+              <div style="display:flex; align-items:flex-end; gap:10px; height:188px;">
+                <sc-for list="{{ bars }}" as="bar" hint-placeholder-count="7">
+                  <div style="flex:1; display:flex; flex-direction:column; align-items:center; gap:9px; height:100%; justify-content:flex-end;">
+                    <div class="num" style="font-size:11px; font-weight:700; color:#6B7B73;">{{ bar.label2 }}</div>
+                    <div style="{{ bar.barStyle }}"></div>
+                    <div style="font-size:11.5px; font-weight:600; color:#8A968F;">{{ bar.label }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <!-- status breakdown -->
+            <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:22px 24px;">
+              <div style="font-size:15px; font-weight:700; margin-bottom:4px;">Cashback status</div>
+              <div style="font-size:13px; color:#6B7B73; margin-bottom:18px;">{{ stEvents }} events tracked</div>
+              <div style="display:flex; height:14px; border-radius:8px; overflow:hidden; margin-bottom:22px;">
+                <div style="width:{{ stConfW }}; background:{{ accent }};"></div>
+                <div style="width:{{ stPendW }}; background:#D9A23E;"></div>
+                <div style="width:{{ stRejW }}; background:#C16A5C;"></div>
+              </div>
+              <div style="display:flex; flex-direction:column; gap:14px;">
+                <div style="display:flex; align-items:center; gap:11px;"><span style="width:11px; height:11px; border-radius:3px; background:{{ accent }}; flex-shrink:0;"></span><span style="font-size:13.5px; font-weight:600; flex:1;">Confirmed</span><span class="num" style="font-size:13.5px; font-weight:700;">{{ stConfPct }}</span><span class="num" style="font-size:12px; color:#8A968F; width:54px; text-align:right;">{{ stConf }}</span></div>
+                <div style="display:flex; align-items:center; gap:11px;"><span style="width:11px; height:11px; border-radius:3px; background:#D9A23E; flex-shrink:0;"></span><span style="font-size:13.5px; font-weight:600; flex:1;">Pending</span><span class="num" style="font-size:13.5px; font-weight:700;">{{ stPendPct }}</span><span class="num" style="font-size:12px; color:#8A968F; width:54px; text-align:right;">{{ stPend }}</span></div>
+                <div style="display:flex; align-items:center; gap:11px;"><span style="width:11px; height:11px; border-radius:3px; background:#C16A5C; flex-shrink:0;"></span><span style="font-size:13.5px; font-weight:600; flex:1;">Rejected</span><span class="num" style="font-size:13.5px; font-weight:700;">{{ stRejPct }}</span><span class="num" style="font-size:12px; color:#8A968F; width:54px; text-align:right;">{{ stRej }}</span></div>
+              </div>
+              <div style="height:1px; background:#EEF2F0; margin:20px 0 16px;"></div>
+              <div style="display:flex; align-items:center; justify-content:space-between;"><span style="font-size:13px; color:#6B7B73;">Avg. approval time</span><span class="num" style="font-size:14px; font-weight:700;">{{ stAvg }}</span></div>
+            </div>
+          </div>
+
+          <!-- APPROVALS + TOP LINKS -->
+          <div style="display:grid; grid-template-columns:1.7fr 1fr; gap:16px;">
+
+            <!-- pending approvals -->
+            <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:8px 8px 10px;">
+              <div style="display:flex; align-items:center; justify-content:space-between; padding:15px 16px 13px;">
+                <div style="font-size:15px; font-weight:700;">Pending approvals</div>
+                <span style="font-size:12px; font-weight:700; color:#B07A1E; background:#FAF3E6; padding:4px 11px; border-radius:20px;">{{ queueCount }}</span>
+              </div>
+              <div style="display:flex; align-items:center; padding:0 16px 9px; font-size:11px; font-weight:700; letter-spacing:0.04em; text-transform:uppercase; color:#9aa8a1;">
+                <span style="flex:1.5;">User &amp; product</span>
+                <span style="width:172px;">Merchant status</span>
+                <span style="width:84px; text-align:right;">Amount</span>
+                <span style="width:84px; text-align:right;">Override</span>
+              </div>
+              <sc-for list="{{ approvals }}" as="row" hint-placeholder-count="4">
+                <div style="display:flex; align-items:center; padding:11px 16px; border-top:1px solid #EEF2F0;">
+                  <div style="flex:1.5; display:flex; align-items:center; gap:12px; min-width:0;">
+                    <div style="width:40px; height:40px; border-radius:11px; background:{{ row.thumbBg }}; border:1px solid #E6EBE8; flex-shrink:0; overflow:hidden; display:flex; align-items:center; justify-content:center;">{{ row.thumb }}</div>
+                    <div style="min-width:0;">
+                      <div style="font-size:13.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ row.product }}</div>
+                      <div style="font-size:12px; color:#6B7B73;">{{ row.user }} · {{ row.when }}</div>
+                    </div>
+                  </div>
+                  <div style="width:172px;">
+                    <span style="{{ row.statusChip }}"><span style="{{ row.statusDot }}"></span>{{ row.statusLabel }}</span>
+                  </div>
+                  <div class="num" style="width:84px; text-align:right; font-size:14px; font-weight:700; color:{{ accent }};">{{ row.amount }}</div>
+                  <div style="width:84px; display:flex; gap:6px; justify-content:flex-end;">
+                    <button onClick="{{ row.approve }}" title="Approve manually" style="{{ row.approveStyle }}">{{ row.approveGlyph }}</button>
+                    <button onClick="{{ row.reject }}" title="Reject" style="{{ row.rejectStyle }}">{{ row.rejectGlyph }}</button>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+
+            <!-- top links -->
+            <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:20px 22px;">
+              <div style="font-size:15px; font-weight:700; margin-bottom:16px;">Top earning links</div>
+              <sc-for list="{{ topLinks }}" as="link" hint-placeholder-count="4">
+                <div style="display:flex; align-items:center; gap:12px; padding:11px 0; border-top:1px solid #EEF2F0;">
+                  <div class="num" style="font-size:13px; font-weight:700; color:#A6B2AC; width:16px;">{{ link.rank }}</div>
+                  <div style="width:38px; height:38px; border-radius:11px; background:{{ link.thumbBg }}; border:1px solid #E6EBE8; flex-shrink:0; overflow:hidden; display:flex; align-items:center; justify-content:center;">{{ link.thumb }}</div>
+                  <div style="flex:1; min-width:0;">
+                    <div style="font-size:13px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ link.product }}</div>
+                    <div style="font-size:11.5px; color:#6B7B73;">{{ link.merchant }} · {{ link.purchases }} purchases</div>
+                  </div>
+                  <div class="num" style="font-size:13.5px; font-weight:700; color:{{ accent }};">{{ link.earned }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <!-- ======================= CONFIGURATION ======================= -->
+      <sc-if value="{{ isConfig }}" hint-placeholder-val="{{ true }}">
+        <div style="max-width:860px;">
+
+          <!-- GENERAL -->
+          <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:6px 26px; margin-bottom:16px;">
+            <div style="padding:20px 0 6px;"><div style="font-size:16px; font-weight:700;">Margins &amp; rewards</div><div style="font-size:13px; color:#6B7B73; margin-top:2px;">How affiliate commission is split between wanthat, referrers and buyers.</div></div>
+
+            <div style="display:flex; align-items:center; gap:20px; padding:20px 0; border-top:1px solid #EEF2F0;">
+              <div style="flex:1;"><div style="font-size:14px; font-weight:600;">Operating margin rate</div><div style="font-size:12.5px; color:#6B7B73; margin-top:2px;">wanthat's share of affiliate commission, kept before rewards are paid.</div></div>
+              <div style="display:flex; align-items:center; gap:16px; width:300px;">
+                <input type="range" min="0" max="90" step="1" value="{{ marginRate }}" onChange="{{ onMargin }}" oninput="{{ onMargin }}" style="{{ marginRangeStyle }}; flex:1;">
+                <div class="num" style="width:62px; text-align:right; font-size:20px; font-weight:700;">{{ marginLabel }}</div>
+              </div>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:20px; padding:20px 0; border-top:1px solid #EEF2F0;">
+              <div style="flex:1;"><div style="font-size:14px; font-weight:600;">Referrer–buyer split</div><div style="font-size:12.5px; color:#6B7B73; margin-top:2px;">How the remaining reward divides between the referrer and the buyer.</div></div>
+              <div style="width:300px;">
+                <div style="display:flex; justify-content:space-between; margin-bottom:8px;"><span class="num" style="font-size:13px; font-weight:700; color:{{ accent }};">Referrer {{ splitReferrer }}</span><span class="num" style="font-size:13px; font-weight:700; color:#6B7B73;">Buyer {{ splitBuyer }}</span></div>
+                <input type="range" min="0" max="100" step="5" value="{{ split }}" onChange="{{ onSplit }}" oninput="{{ onSplit }}" style="{{ splitRangeStyle }}; width:100%;">
+              </div>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:20px; padding:20px 0; border-top:1px solid #EEF2F0;">
+              <div style="flex:1;"><div style="font-size:14px; font-weight:600;">Payout currency</div><div style="font-size:12.5px; color:#6B7B73; margin-top:2px;">Figures stay LTR with the symbol leading.</div></div>
+              <div style="display:flex; background:#F4F6F5; border:1px solid #E2E7E4; border-radius:11px; padding:3px;">
+                <button onClick="{{ setILS }}" style="{{ curILS }}">₪ ILS</button>
+                <button onClick="{{ setUSD }}" style="{{ curUSD }}">$ USD</button>
+                <button onClick="{{ setEUR }}" style="{{ curEUR }}">€ EUR</button>
+              </div>
+            </div>
+
+            <div style="display:flex; align-items:center; gap:20px; padding:20px 0; border-top:1px solid #EEF2F0;">
+              <div style="flex:1;"><div style="font-size:14px; font-weight:600;">App languages</div><div style="font-size:12.5px; color:#6B7B73; margin-top:2px;">Hebrew renders RTL with Heebo.</div></div>
+              <div style="display:flex; gap:9px;">
+                <button onClick="{{ toggleEn }}" style="{{ langEnStyle }}">English</button>
+                <button onClick="{{ toggleHe }}" style="{{ langHeStyle }}">עברית</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- PAYOUTS -->
+          <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:6px 26px; margin-bottom:16px;">
+            <div style="padding:20px 0 6px;"><div style="font-size:16px; font-weight:700;">Payouts</div><div style="font-size:13px; color:#6B7B73; margin-top:2px;">Withdrawal threshold and the methods shoppers can cash out to.</div></div>
+
+            <div style="display:flex; align-items:center; gap:20px; padding:20px 0; border-top:1px solid #EEF2F0;">
+              <div style="flex:1;"><div style="font-size:14px; font-weight:600;">Minimum withdrawal</div><div style="font-size:12.5px; color:#6B7B73; margin-top:2px;">Balance required before a payout can be requested.</div></div>
+              <div style="display:flex; align-items:center; gap:10px; background:#F4F6F5; border:1px solid #E0E6E3; border-radius:12px; padding:11px 15px; width:160px;">
+                <span style="font-size:15px; font-weight:700; color:#6B7B73;">{{ curSymbol }}</span>
+                <input type="number" value="{{ minPayout }}" onChange="{{ onMin }}" oninput="{{ onMin }}" class="num" style="border:none; background:none; outline:none; font-size:16px; font-weight:700; width:100%; color:#15201C;">
+              </div>
+            </div>
+
+            <div style="padding:18px 0 22px; border-top:1px solid #EEF2F0;">
+              <div style="font-size:14px; font-weight:600; margin-bottom:14px;">Enabled payout methods</div>
+              <div style="display:grid; grid-template-columns:1fr 1fr; gap:11px;">
+                <div style="display:flex; align-items:center; gap:13px; background:#F7FAF8; border:1px solid #EAEFEC; border-radius:14px; padding:13px 15px;">
+                  <div style="width:38px; height:38px; border-radius:11px; background:#fff; border:1px solid #E6EBE8; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#15201C" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M3 21h18"></path><path d="M5 21V10M19 21V10M9 21V10M15 21V10"></path><path d="M12 3 21 8H3z"></path></svg></div>
+                  <div style="flex:1;"><div style="font-size:14px; font-weight:600;">Bank transfer</div><div style="font-size:12px; color:#6B7B73;">1–2 business days</div></div>
+                  <div onClick="{{ tg_methodBank }}" style="{{ tog.methodBank.track }}"><div style="{{ tog.methodBank.knob }}"></div></div>
+                </div>
+                <div style="display:flex; align-items:center; gap:13px; background:#F7FAF8; border:1px solid #EAEFEC; border-radius:14px; padding:13px 15px;">
+                  <div style="width:38px; height:38px; border-radius:11px; background:#fff; border:1px solid #E6EBE8; display:flex; align-items:center; justify-content:center; flex-shrink:0;"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#15201C" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="20" height="14" rx="2.5"></rect><path d="M2 10h20"></path></svg></div>
+                  <div style="flex:1;"><div style="font-size:14px; font-weight:600;">Debit card</div><div style="font-size:12px; color:#6B7B73;">Instant</div></div>
+                  <div onClick="{{ tg_methodCard }}" style="{{ tog.methodCard.track }}"><div style="{{ tog.methodCard.knob }}"></div></div>
+                </div>
+                <div style="display:flex; align-items:center; gap:13px; background:#F7FAF8; border:1px solid #EAEFEC; border-radius:14px; padding:13px 15px;">
+                  <div style="width:38px; height:38px; border-radius:11px; background:#fff; border:1px solid #E6EBE8; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-weight:800; font-size:13px; color:#15201C;">bit</div>
+                  <div style="flex:1;"><div style="font-size:14px; font-weight:600;">Bit</div><div style="font-size:12px; color:#6B7B73;">Instant</div></div>
+                  <div onClick="{{ tg_methodBit }}" style="{{ tog.methodBit.track }}"><div style="{{ tog.methodBit.knob }}"></div></div>
+                </div>
+                <div style="display:flex; align-items:center; gap:13px; background:#F7FAF8; border:1px solid #EAEFEC; border-radius:14px; padding:13px 15px;">
+                  <div style="width:38px; height:38px; border-radius:11px; background:#fff; border:1px solid #E6EBE8; display:flex; align-items:center; justify-content:center; flex-shrink:0; font-weight:800; font-size:11px; color:#15201C;">PayBox</div>
+                  <div style="flex:1;"><div style="font-size:14px; font-weight:600;">PayBox</div><div style="font-size:12px; color:#6B7B73;">Instant</div></div>
+                  <div onClick="{{ tg_methodPaybox }}" style="{{ tog.methodPaybox.track }}"><div style="{{ tog.methodPaybox.knob }}"></div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- AUTOMATION -->
+          <div style="background:#fff; border:1px solid #E6EBE8; border-radius:20px; padding:6px 26px; margin-bottom:16px;">
+            <div style="padding:20px 0 6px;"><div style="font-size:16px; font-weight:700;">Automation &amp; features</div><div style="font-size:13px; color:#6B7B73; margin-top:2px;">Review automation and consumer-facing capabilities.</div></div>
+
+            <div style="display:flex; align-items:center; gap:20px; padding:18px 0; border-top:1px solid #EEF2F0;">
+              <div style="flex:1;"><div style="font-size:14px; font-weight:600;">Auto-approve small cashbacks</div><div style="font-size:12.5px; color:#6B7B73; margin-top:2px;">Confirm without manual review under the threshold below.</div></div>
+              <div style="display:flex; align-items:center; gap:14px;">
+                <div style="display:flex; align-items:center; gap:8px; background:#F4F6F5; border:1px solid #E0E6E3; border-radius:11px; padding:9px 13px; width:118px;"><span style="font-size:13px; font-weight:700; color:#6B7B73;">{{ curSymbol }}</span><input type="number" value="{{ autoThreshold }}" onChange="{{ onThreshold }}" oninput="{{ onThreshold }}" class="num" style="border:none; background:none; outline:none; font-size:14px; font-weight:700; width:100%; color:#15201C;"></div>
+                <div onClick="{{ tg_autoApprove }}" style="{{ tog.autoApprove.track }}"><div style="{{ tog.autoApprove.knob }}"></div></div>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- SAVE BAR -->
+          <div style="position:sticky; bottom:-60px; margin:0 -32px -60px; padding:16px 32px; background:linear-gradient(to top, rgba(233,237,235,1) 60%, rgba(233,237,235,0)); display:flex; align-items:center; gap:14px;">
+            <div style="font-size:13px; color:#6B7B73;">{{ saveHint }}</div>
+            <div style="margin-left:auto; display:flex; gap:10px;">
+              <button style="background:#fff; color:#15201C; border:1px solid #E0E6E3; border-radius:13px; padding:12px 20px; font-size:14px; font-weight:700; cursor:pointer;">Discard</button>
+              <button onClick="{{ save }}" style="{{ saveBtnStyle }}">{{ saveLabel }}</button>
+            </div>
+          </div>
+
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#1F7A57&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;sidebarTheme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Dark&quot;,&quot;Light&quot;],&quot;default&quot;:&quot;Dark&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;section&quot;:&quot;Theme&quot;},&quot;showDeltas&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+class Component extends DCLogic {
+  state = {
+    view: 'dashboard',
+    merchant: 'all',
+    period: '7d',
+    saved: false,
+    approved: {},
+    config: {
+      marginRate: 35, split: 60, currency: 'ILS', minPayout: 50, autoThreshold: 20,
+      langEn: true, langHe: true,
+      autoApprove: true,
+      methodBank: true, methodCard: true, methodBit: false, methodPaybox: true,
+    },
+  };
+
+  setView(v) { this.setState({ view: v }); }
+  toggleCfg(k) { this.setState(s => ({ config: { ...s.config, [k]: !s.config[k] }, saved: false })); }
+
+  renderVals() {
+    const s = this.state;
+    const cfg = s.config;
+    const accent = this.props.accent ?? '#1F7A57';
+    const dark = (this.props.sidebarTheme ?? 'Dark') === 'Dark';
+    const isDash = s.view === 'dashboard';
+
+    // ----- sidebar theming -----
+    const sidebarStyle = {
+      width: '248px', flexShrink: 0, padding: '24px 18px', display: 'flex', flexDirection: 'column',
+      background: dark ? '#15201C' : '#fff',
+      borderRight: dark ? '1px solid #1E2C26' : '1px solid #E2E7E4',
+    };
+    const logoColor = dark ? '#F4F6F5' : '#15201C';
+    const sideMuted = dark ? '#7E9389' : '#8A968F';
+    const sideHair = dark ? '#243530' : '#EEF2F0';
+    const sideCardBg = dark ? '#1B2924' : '#F7FAF8';
+
+    const navItem = (on) => {
+      const base = 'display:flex; align-items:center; gap:12px; width:100%; border:none; border-radius:12px; padding:11px 13px; font-family:inherit; font-size:14px; font-weight:700; cursor:pointer; text-align:left;';
+      if (on) return base + 'background:' + accent + '; color:#fff;';
+      return base + 'background:none; color:' + (dark ? '#B6C7BF' : '#5C6B64') + ';';
+    };
+
+    // ----- merchants -----
+    const merchants = [
+      { key: 'all',    name: 'All merchants', share: 1,    conv: '31.4%', convD: '▲ 2.1pt', paidD: '▲ 8.4%', conf: 68, pend: 24, rej: 8,  avg: '3.2 days' },
+      { key: 'ali',    name: 'AliExpress',    share: 0.52, conv: '33.1%', convD: '▲ 2.6pt', paidD: '▲ 9.1%', conf: 70, pend: 22, rej: 8,  avg: '2.9 days' },
+      { key: 'amazon', name: 'Amazon',        share: 0.27, conv: '29.4%', convD: '▲ 1.4pt', paidD: '▲ 6.2%', conf: 66, pend: 26, rej: 8,  avg: '3.6 days' },
+      { key: 'shein',  name: 'Shein',         share: 0.14, conv: '28.0%', convD: '▼ 0.5pt', paidD: '▲ 3.4%', conf: 60, pend: 30, rej: 10, avg: '4.1 days' },
+      { key: 'ebay',   name: 'eBay',          share: 0.07, conv: '22.6%', convD: '▲ 0.8pt', paidD: '▲ 4.0%', conf: 64, pend: 28, rej: 8,  avg: '3.3 days' },
+    ];
+    const mSel = merchants.find(m => m.key === s.merchant) || merchants[0];
+    const sh = mSel.share;
+    const ils = (n) => '₪' + Math.round(n).toLocaleString('en-US');
+    const cnt = (n) => Math.round(n).toLocaleString('en-US');
+
+    const kpiPaid = ils(486210 * sh);
+    const kpiPending = ils(38640 * sh);
+    const kpiPendingReq = cnt(142 * sh) + ' requests';
+    const queueCount = cnt(142 * sh) + ' in queue';
+    const kpiUsers = cnt(12480 * sh);
+    const kpiNew = '+' + cnt(842 * sh);
+    const kpiLinks = cnt(5210 * sh) + ' active links';
+
+    const stEventsN = Math.round(18902 * sh);
+
+    const merchantTabs = merchants.map(m => ({
+      name: m.name,
+      select: () => this.setState({ merchant: m.key }),
+      style: (m.key === s.merchant)
+        ? 'background:#15201C; color:#fff; border:1px solid #15201C; border-radius:20px; padding:8px 15px; font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap;'
+        : 'background:#fff; color:#5C6B64; border:1px solid #E0E6E3; border-radius:20px; padding:8px 15px; font-family:inherit; font-size:13px; font-weight:700; cursor:pointer; white-space:nowrap;',
+    }));
+
+    // ----- chart datasets (scaled by merchant) -----
+    const baseDs = {
+      '7d': [['Mon', 2100], ['Tue', 2640], ['Wed', 1980], ['Thu', 3120], ['Fri', 3680], ['Sat', 2380], ['Sun', 2840]],
+      '30d': [['W1', 14200], ['W2', 17600], ['W3', 15800], ['W4', 19200], ['W5', 4400]],
+      '90d': [['Apr', 62400], ['May', 71200], ['Jun', 81000]],
+    };
+    const rawBars = baseDs[s.period].map(([l, v]) => [l, Math.round(v * sh)]);
+    const maxV = Math.max(...rawBars.map(b => b[1]), 1);
+    const fmtK = (n) => n >= 1000 ? (n / 1000).toFixed(n >= 10000 ? 0 : 1) + 'k' : String(n);
+    const bars = rawBars.map(([label, v]) => ({
+      label,
+      label2: '₪' + fmtK(v),
+      barStyle: 'width:100%; height:' + Math.max(6, Math.round(v / maxV * 100)) + '%; min-height:6px; background:' + accent + '; border-radius:7px 7px 3px 3px;',
+    }));
+    const chartTotal = ils(rawBars.reduce((a, b) => a + b[1], 0));
+
+    const seg = (on) => on
+      ? 'background:#fff; color:#15201C; border:none; border-radius:8px; padding:6px 12px; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.08);'
+      : 'background:none; color:#6B7B73; border:none; border-radius:8px; padding:6px 12px; font-family:inherit; font-size:12.5px; font-weight:700; cursor:pointer;';
+
+    // ----- approvals -----
+    const stripe = 'repeating-linear-gradient(135deg,#EDF1EF,#EDF1EF 5px,#F4F6F5 5px,#F4F6F5 10px)';
+    const feederImg = React.createElement('img', { src: 'assets/product-feeder.jpg', alt: '', style: { maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' } });
+    const rawApprovals = [
+      { id: 'a1', product: 'Jebao Fish Feeder', user: 'Maya L.', mk: 'ali', merchant: 'AliExpress', when: '2h ago', amount: '₪37.20', img: true, status: 'confirmed' },
+      { id: 'a2', product: 'Echo Dot (5th gen)', user: 'Daniel R.', mk: 'amazon', merchant: 'Amazon', when: '5h ago', amount: '₪3.10', img: false, status: 'awaiting' },
+      { id: 'a3', product: 'Mechanical Keyboard', user: 'Noa B.', mk: 'ali', merchant: 'AliExpress', when: '8h ago', amount: '₪12.80', img: false, status: 'confirmed' },
+      { id: 'a4', product: 'Oversized Hoodie', user: 'Yossi K.', mk: 'shein', merchant: 'Shein', when: 'Yesterday', amount: '₪5.40', img: false, status: 'awaiting' },
+      { id: 'a5', product: 'Vintage Camera Lens', user: 'Tal G.', mk: 'ebay', merchant: 'eBay', when: 'Yesterday', amount: '₪9.20', img: false, status: 'declined' },
+      { id: 'a6', product: 'Smart Plug 4-pack', user: 'Avi M.', mk: 'amazon', merchant: 'Amazon', when: '2d ago', amount: '₪6.70', img: false, status: 'confirmed' },
+    ];
+    const statusStyles = {
+      confirmed: { label: (m) => m + ' confirmed', color: accent, bg: '#E7F1EC', dot: accent },
+      awaiting:  { label: (m) => 'Awaiting ' + m,  color: '#B07A1E', bg: '#FAF3E6', dot: '#D9A23E' },
+      declined:  { label: (m) => m + ' declined',  color: '#B0473A', bg: '#F7ECEA', dot: '#C16A5C' },
+    };
+    const chipBase = 'display:inline-flex; align-items:center; gap:7px; font-size:12px; font-weight:700; padding:5px 11px; border-radius:20px;';
+    const ghostBtn = 'display:inline-flex; align-items:center; justify-content:center; width:30px; height:30px; background:#fff; border:1px solid #E6EBE8; border-radius:9px; font-family:inherit; font-size:13px; font-weight:700; cursor:pointer;';
+    const approvals = rawApprovals
+      .filter(r => !s.approved[r.id])
+      .filter(r => s.merchant === 'all' || r.mk === s.merchant)
+      .map(r => {
+        const ss = statusStyles[r.status];
+        return {
+          product: r.product, user: r.user, when: r.when, amount: r.amount,
+          thumbBg: r.img ? '#fff' : stripe,
+          thumb: r.img ? feederImg : '',
+          statusChip: chipBase + 'color:' + ss.color + '; background:' + ss.bg + ';',
+          statusDot: 'width:7px; height:7px; border-radius:50%; flex-shrink:0; background:' + ss.dot + ';',
+          statusLabel: ss.label(r.merchant),
+          approve: () => this.setState(st => ({ approved: { ...st.approved, [r.id]: true } })),
+          reject: () => this.setState(st => ({ approved: { ...st.approved, [r.id]: true } })),
+          approveGlyph: '✓',
+          approveStyle: ghostBtn + 'color:#9aa8a1;',
+          rejectGlyph: '✕',
+          rejectStyle: ghostBtn + 'color:#A6B2AC;',
+        };
+      });
+
+    const topLinks = [
+      { product: 'Jebao Fish Feeder', mk: 'ali', merchant: 'AliExpress', purchases: 142, earned: '₪1,840', img: true },
+      { product: 'Echo Dot (5th gen)', mk: 'amazon', merchant: 'Amazon', purchases: 98, earned: '₪1,210', img: false },
+      { product: 'Oversized Hoodie', mk: 'shein', merchant: 'Shein', purchases: 76, earned: '₪960', img: false },
+      { product: 'USB-C 7-in-1 Hub', mk: 'ali', merchant: 'AliExpress', purchases: 61, earned: '₪742', img: false },
+      { product: 'Vintage Camera Lens', mk: 'ebay', merchant: 'eBay', purchases: 54, earned: '₪690', img: false },
+    ]
+      .filter(l => s.merchant === 'all' || l.mk === s.merchant)
+      .map((l, i) => ({ ...l, rank: i + 1, thumbBg: l.img ? '#fff' : stripe, thumb: l.img ? feederImg : '' }));
+
+    // ----- toggles -----
+    const tkeys = ['autoApprove', 'methodBank', 'methodCard', 'methodBit', 'methodPaybox'];
+    const tog = {}; const handlers = {};
+    tkeys.forEach(k => {
+      const on = cfg[k];
+      tog[k] = {
+        track: 'width:46px; height:27px; border-radius:20px; flex-shrink:0; cursor:pointer; position:relative; transition:background .15s; background:' + (on ? accent : '#D2DAD6') + ';',
+        knob: 'position:absolute; top:3px; left:' + (on ? '22px' : '3px') + '; width:21px; height:21px; border-radius:50%; background:#fff; box-shadow:0 1px 2px rgba(0,0,0,.2); transition:left .15s;',
+      };
+      handlers['tg_' + k] = () => this.toggleCfg(k);
+    });
+
+    const curSymbol = { ILS: '₪', USD: '$', EUR: '€' }[cfg.currency];
+    const curSeg = (on) => on
+      ? 'background:#fff; color:#15201C; border:none; border-radius:9px; padding:9px 15px; font-family:inherit; font-size:13.5px; font-weight:700; cursor:pointer; box-shadow:0 1px 2px rgba(0,0,0,.08);'
+      : 'background:none; color:#6B7B73; border:none; border-radius:9px; padding:9px 15px; font-family:inherit; font-size:13.5px; font-weight:700; cursor:pointer;';
+    const langBtn = (on) => on
+      ? 'background:#E7F1EC; color:' + accent + '; border:1px solid #CFE3D8; border-radius:12px; padding:10px 17px; font-family:inherit; font-size:13.5px; font-weight:700; cursor:pointer;'
+      : 'background:#fff; color:#9aa8a1; border:1px solid #E6EBE8; border-radius:12px; padding:10px 17px; font-family:inherit; font-size:13.5px; font-weight:700; cursor:pointer;';
+
+    return {
+      accent, sidebarStyle, logoColor, sideMuted, sideHair, sideCardBg,
+      isDashboard: isDash, isConfig: !isDash,
+      goDashboard: () => this.setView('dashboard'),
+      goConfig: () => this.setView('config'),
+      navDashboard: navItem(isDash), navConfig: navItem(!isDash),
+      pageTitle: isDash ? 'Dashboard' : 'Configuration',
+      pageSub: isDash ? 'Cashback performance across the platform' : 'Reward rules, payouts and feature flags',
+
+      // merchant slicing
+      merchantTabs,
+      kpiPaid, kpiPaidDelta: mSel.paidD, kpiPending, kpiPendingReq,
+      kpiUsers, kpiNew, kpiConv: mSel.conv, kpiConvD: mSel.convD, kpiLinks,
+      queueCount,
+      stEvents: stEventsN.toLocaleString('en-US'),
+      stConfPct: mSel.conf + '%', stPendPct: mSel.pend + '%', stRejPct: mSel.rej + '%',
+      stConfW: mSel.conf + '%', stPendW: mSel.pend + '%', stRejW: mSel.rej + '%',
+      stConf: cnt(stEventsN * mSel.conf / 100), stPend: cnt(stEventsN * mSel.pend / 100), stRej: cnt(stEventsN * mSel.rej / 100),
+      stAvg: mSel.avg,
+
+      // chart
+      bars, chartTotal,
+      setP7: () => this.setState({ period: '7d' }),
+      setP30: () => this.setState({ period: '30d' }),
+      setP90: () => this.setState({ period: '90d' }),
+      segP7: seg(s.period === '7d'), segP30: seg(s.period === '30d'), segP90: seg(s.period === '90d'),
+
+      approvals, topLinks,
+
+      // config values
+      marginRate: cfg.marginRate, marginLabel: cfg.marginRate + '%',
+      onMargin: (e) => this.setState(st => ({ config: { ...st.config, marginRate: parseInt(e.target.value, 10) }, saved: false })),
+      marginRangeStyle: 'background:linear-gradient(to right,' + accent + ' ' + (cfg.marginRate / 90 * 100) + '%, #E2E7E4 ' + (cfg.marginRate / 90 * 100) + '%);',
+      split: cfg.split, splitReferrer: cfg.split + '%', splitBuyer: (100 - cfg.split) + '%',
+      onSplit: (e) => this.setState(st => ({ config: { ...st.config, split: parseInt(e.target.value, 10) }, saved: false })),
+      splitRangeStyle: 'background:linear-gradient(to right,' + accent + ' ' + cfg.split + '%, #C9B07A ' + cfg.split + '%);',
+      curSymbol,
+      minPayout: cfg.minPayout,
+      onMin: (e) => this.setState(st => ({ config: { ...st.config, minPayout: e.target.value }, saved: false })),
+      autoThreshold: cfg.autoThreshold,
+      onThreshold: (e) => this.setState(st => ({ config: { ...st.config, autoThreshold: e.target.value }, saved: false })),
+      setILS: () => this.setState(st => ({ config: { ...st.config, currency: 'ILS' }, saved: false })),
+      setUSD: () => this.setState(st => ({ config: { ...st.config, currency: 'USD' }, saved: false })),
+      setEUR: () => this.setState(st => ({ config: { ...st.config, currency: 'EUR' }, saved: false })),
+      curILS: curSeg(cfg.currency === 'ILS'), curUSD: curSeg(cfg.currency === 'USD'), curEUR: curSeg(cfg.currency === 'EUR'),
+      toggleEn: () => this.toggleCfg('langEn'), toggleHe: () => this.toggleCfg('langHe'),
+      langEnStyle: langBtn(cfg.langEn), langHeStyle: langBtn(cfg.langHe),
+
+      tog, ...handlers,
+
+      saved: s.saved,
+      saveHint: s.saved ? 'All changes saved.' : 'You have unsaved changes.',
+      saveLabel: s.saved ? '✓ Saved' : 'Save changes',
+      saveBtnStyle: 'background:' + (s.saved ? '#15201C' : accent) + '; color:#fff; border:none; border-radius:13px; padding:12px 22px; font-family:inherit; font-size:14px; font-weight:700; cursor:pointer;',
+      save: () => this.setState({ saved: true }),
+    };
+  }
+}
+</script>
+</body>
+</html>
