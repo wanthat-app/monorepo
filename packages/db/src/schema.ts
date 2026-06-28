@@ -23,7 +23,7 @@ export interface CustomerTable {
 export interface WalletEntryTable {
   id: Generated<string>;
   customer_id: string;
-  kind: "referrer_cashback" | "consumer_reward" | "adjustment";
+  kind: "referrer_cashback" | "consumer_reward" | "adjustment" | "withdrawal";
   amount_minor: ColumnType<bigint, bigint, never>;
   currency: ColumnType<string, string, never>;
   order_id: ColumnType<string | null, string | null, never>;

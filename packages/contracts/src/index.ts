@@ -4,6 +4,7 @@
  * (API I/O, retailer payloads, custom_parameters, env). Modules are added as designed.
  */
 export * from "./common";
+export * from "./config";
 export * from "./conversion";
 export * from "./identity";
 export * from "./recommendations";

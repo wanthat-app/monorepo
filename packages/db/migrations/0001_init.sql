@@ -16,13 +16,21 @@ CREATE TABLE customer (
   updated_at  timestamptz NOT NULL DEFAULT now() -- maintained by the app on mutation
 );
 
--- Append-only money ledger. A balance is SUM(amount_minor) over confirmed entries.
+-- Append-only money ledger (event log). Each row is one immutable event; nothing is ever
+-- updated. A reward advances through statuses as SEPARATE rows — (order_id, kind) walks
+-- pending → confirmed → clawback, one row per state reached. The balance is DERIVED, not stored:
+-- per (order_id, kind) take its furthest-advanced status, then
+--   confirmed balance = Σ amount of rewards whose terminal state is 'confirmed'
+--                       + adjustments − withdrawals;
+--   pending balance   = Σ amount of rewards whose terminal state is 'pending';
+--   a 'clawback' terminal state contributes 0.
 -- recommendation_id is a soft ref to the recommendation (DynamoDB) the conversion was
--- attributed to (ADR-0008); no FK — it crosses stores.
+-- attributed to (ADR-0008); no FK — it crosses stores. adjustment/withdrawal are standalone
+-- events (order_id NULL): a withdrawal is a negative event that reduces the withdrawable balance.
 CREATE TABLE wallet_entry (
   id                uuid PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id       uuid NOT NULL REFERENCES customer (id),
-  kind              text NOT NULL CHECK (kind IN ('referrer_cashback', 'consumer_reward', 'adjustment')),
+  kind              text NOT NULL CHECK (kind IN ('referrer_cashback', 'consumer_reward', 'adjustment', 'withdrawal')),
   amount_minor      bigint NOT NULL,
   currency          text NOT NULL,
   order_id          text,
@@ -31,9 +39,12 @@ CREATE TABLE wallet_entry (
   created_at        timestamptz NOT NULL DEFAULT now()
 );
 CREATE INDEX wallet_entry_customer_idx ON wallet_entry (customer_id);
--- Poller idempotency: at most one entry per (order_id, kind).
-CREATE UNIQUE INDEX wallet_entry_order_kind_idx
-  ON wallet_entry (order_id, kind) WHERE order_id IS NOT NULL;
+-- Poller idempotency + lifecycle: at most one row per (order_id, kind, status), so a reward can
+-- advance pending → confirmed → clawback as distinct append-only rows while a re-read of an
+-- unchanged order no-ops. Standalone events (adjustment, withdrawal) have order_id NULL and are
+-- exempt from this index.
+CREATE UNIQUE INDEX wallet_entry_order_kind_status_idx
+  ON wallet_entry (order_id, kind, status) WHERE order_id IS NOT NULL;
 
 -- Hash-chained, append-only audit log (tamper-evidence; ADR-0005 §14).
 CREATE TABLE audit_log (

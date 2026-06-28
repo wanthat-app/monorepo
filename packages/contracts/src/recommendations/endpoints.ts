@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { PageQuery, page, RecommendationId } from "../common";
+import { CashbackEstimate } from "./cashback";
 import { Product, StoreId, StoreProductId } from "./product";
 import { Recommendation, RecommendationSummary } from "./recommendation";
 import { Review } from "./review";
@@ -9,7 +10,9 @@ import { Review } from "./review";
 export const ResolveProductBody = z.object({ url: z.string().url() });
 export type ResolveProductBody = z.infer<typeof ResolveProductBody>;
 
-export const ResolveProductResponse = z.object({ product: Product });
+// `estimate` is computed from the **current** CONFIG split policy (no recommendation exists yet);
+// CreateRecommendation then snapshots that policy onto the link.
+export const ResolveProductResponse = z.object({ product: Product, estimate: CashbackEstimate });
 export type ResolveProductResponse = z.infer<typeof ResolveProductResponse>;
 
 // POST /recommendations — generate this member's shareable recommendation (+ optional review).

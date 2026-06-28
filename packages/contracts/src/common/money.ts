@@ -20,3 +20,7 @@ export const Money = z.object({
   currency: Currency,
 });
 export type Money = z.infer<typeof Money>;
+
+/** Basis points — 1/100 of a percent. `0`–`10000` spans 0–100%. Used for commission/cashback rates. */
+export const Bps = z.number().int().min(0).max(10000);
+export type Bps = z.infer<typeof Bps>;

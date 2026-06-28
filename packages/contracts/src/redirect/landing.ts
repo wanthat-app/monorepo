@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { RecommendationId } from "../common";
-import { Product, Review } from "../recommendations";
+import { LandingCountdownSeconds } from "../config";
+import { CashbackEstimate, Product, Review } from "../recommendations";
 
 /**
  * Public landing view for `GET /p/{recommendationId}` (ADR-0007) — the data the OG-tagged
@@ -12,11 +13,20 @@ export const LandingView = z.object({
   recommendationId: RecommendationId,
   product: Product,
   review: Review.nullable(),
+  estimate: CashbackEstimate, // derived from the recommendation's snapshot split, in origin currency
 });
 export type LandingView = z.infer<typeof LandingView>;
 
 export const GetLandingParams = z.object({ recommendationId: RecommendationId });
 export type GetLandingParams = z.infer<typeof GetLandingParams>;
 
-export const GetLandingResponse = z.object({ landing: LandingView });
+/**
+ * The landing payload plus the current admin-tunable countdown (RuntimeConfig, ADR-0003): the
+ * server reads the config value and bundles it here so the branded landing knows how long to
+ * count down before the auto-redirect — no extra round-trip on the hot path.
+ */
+export const GetLandingResponse = z.object({
+  landing: LandingView,
+  countdownSeconds: LandingCountdownSeconds,
+});
 export type GetLandingResponse = z.infer<typeof GetLandingResponse>;

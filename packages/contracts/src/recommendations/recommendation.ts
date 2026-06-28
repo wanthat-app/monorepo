@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { IsoDateTime, RecommendationId } from "../common";
+import { CashbackEstimate, CashbackSplit } from "./cashback";
 import { Product } from "./product";
 import { Review } from "./review";
 
@@ -7,11 +8,16 @@ import { Review } from "./review";
  * A member's shareable recommendation of a `Product` (with an optional review). Identified
  * by `recommendationId`; the public URL is `/p/{recommendationId}`. The retailer affiliate
  * URL is redirect-internal (ADR-0007) and is **never** exposed — the member shares `shareUrl`.
+ *
+ * `cashback` is the split snapshot taken at creation (the locked rates of record); `estimate` is
+ * the derived per-side amount for display, in the settlement (origin) currency.
  */
 export const Recommendation = z.object({
   recommendationId: RecommendationId,
   shareUrl: z.string().url(),
   product: Product,
+  cashback: CashbackSplit,
+  estimate: CashbackEstimate,
   review: Review.nullable(),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,

@@ -2,11 +2,17 @@ import { z } from "zod";
 import { IsoDateTime, Money, RecommendationId, Uuid } from "../common";
 
 /**
- * A member earns as a **recommender** (`referrer_cashback`, when someone buys through their
- * recommendation) and as a **buyer** (`consumer_reward`, their own cashback); `adjustment`
- * covers manual corrections. Mirrors the append-only `wallet_entry` ledger in Aurora (ADR-0002).
+ * The type of ledger movement. A member earns as a **recommender** (`referrer_cashback`, when
+ * someone buys through their recommendation) and as a **buyer** (`consumer_reward`, their own
+ * cashback); `adjustment` is a manual correction; `withdrawal` is money leaving the wallet (a
+ * negative event). Mirrors the append-only `wallet_entry` event log in Aurora (ADR-0002).
  */
-export const WalletEntryKind = z.enum(["referrer_cashback", "consumer_reward", "adjustment"]);
+export const WalletEntryKind = z.enum([
+  "referrer_cashback",
+  "consumer_reward",
+  "adjustment",
+  "withdrawal",
+]);
 export type WalletEntryKind = z.infer<typeof WalletEntryKind>;
 
 /**
