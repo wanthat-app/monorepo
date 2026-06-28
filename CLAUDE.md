@@ -15,7 +15,7 @@ change a decision by adding a new superseding ADR, not by editing an accepted on
 - **IaC:** AWS CDK v2 (`aws-cdk-lib`) in `infra/`.
 - **Cloud (serverless-first):** Lambda, API Gateway HTTP API, Cognito (SMS OTP + passkeys),
   **Aurora Serverless v2** (PostgreSQL, scale-to-zero) for PII + ledger, **DynamoDB** (on-demand)
-  for the redirect projection + guest attribution, Kinesis Firehose → S3 + Athena, EventBridge
+  for the redirect projection + guest attribution + runtime config (key-value), Kinesis Firehose → S3 + Athena, EventBridge
   Scheduler, CloudFront + WAF, Secrets Manager. **No RDS Proxy and no NAT Gateway**; Lambdas use
   IAM database authentication.
 - **Contracts:** schema-first with **Zod** in `packages/contracts` (single source of truth —
@@ -64,9 +64,9 @@ scheduled `conversion-poller` — plus a shared non-VPC **Retailer Proxy** (the 
 retailer APIs, used by link generation and the poller). Money mutations flow only through the
 poller-writer into the append-only ledger + hash-chained audit log.
 
-**Datastore is polyglot (ADR-0003):** Aurora holds all PII + the money ledger + audit log +
-referral graph + authoritative links; DynamoDB holds the two non-PII hot-path lookups
-(`short_id → affiliate_url` and `guest_attribution`).
+**Datastore is polyglot (ADR-0003):** Aurora holds **only PII (customer) + money (wallet ledger +
+audit log)**; everything else — **products, recommendations, and `guest_attribution`** — lives in
+DynamoDB (catalog/operational, non-PII).
 
 **Network is NAT-free (ADR-0004):** the only things in the VPC are Aurora and the functions that
 touch it (Lambdalith, admin, poller-writer) — they connect directly via IAM database auth (no

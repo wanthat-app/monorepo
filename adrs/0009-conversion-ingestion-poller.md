@@ -18,8 +18,8 @@ we need to credit (SubID, commission, currency) lives in the pull API.
 
 Ingest conversions with a **scheduled reconciliation poller**:
 
-`EventBridge Scheduler → fetch via aliexpress.affiliate.order.listbyindex → idempotent upsert by
-order_id → drive pending→confirmed→clawback → ledger + audit.`
+`EventBridge Scheduler → fetch via aliexpress.affiliate.order.listbyindex → append to the
+event-log ledger keyed (order_id, kind, status) → derive balance + audit.`
 
 - Query the **`api-sg.aliexpress.com/sync` gateway with HMAC-SHA256** (not the legacy MD5
   gateway). `order.listbyindex` is **time-window based** (`start_time`/`end_time`, format
@@ -27,13 +27,23 @@ order_id → drive pending→confirmed→clawback → ledger + audit.`
   `status`.
 - **Scheduler period is configurable** (env/SSM-driven; default hourly, tunable per environment).
 - Window = `[watermark − overlap, now]` in GMT+8; re-read overlapping windows so status
-  transitions are captured. Idempotent upsert by `order_id` makes re-reads safe. Persist a
-  **watermark/cursor**.
-- Status → ledger: `Payment Completed` → `commission_pending`; `Buyer Confirmed Receipt` /
-  finished → `commission_confirmed`; invalid/rejected → `clawback`.
+  transitions are captured. The ledger is an **append-only event log** keyed `(order_id, kind,
+  status)`: a reward advances `pending → confirmed → clawback` as **separate immutable rows**, while
+  a re-read of an unchanged order no-ops (the row already exists). The balance is **derived** (take
+  each reward's furthest-advanced status). Persist a **watermark/cursor**.
+- Status → ledger event: `Payment Completed` → a `pending` row; `Buyer Confirmed Receipt` /
+  finished → a `confirmed` row; invalid/rejected → a `clawback` (terminal, contributes 0). Entry
+  `kind` ∈ `referrer_cashback` / `consumer_reward` / `adjustment` / `withdrawal` (a withdrawal is a
+  negative standalone event with `order_id` null; the payout flow itself is deferred).
+- **Cashback amounts** = the **recommendation's snapshotted split rates** (referrer/consumer bps,
+  locked at link creation — ADR-0008) applied to the retailer's reported commission, and are
+  credited in the retailer's **settlement currency** (USD for AliExpress): the wallet is held in
+  that currency and converted to ILS only at withdrawal, not at credit — so our liability matches
+  our receivable (zero FX float).
 - Realised as `EventBridge → Retailer Proxy.listOrders` (makes the IPv4-only retailer call,
-  resolves attribution from `custom_parameters` incl. the DynamoDB `guest_attribution` lookup)
-  `→ invokes an in-VPC writer` (drives the Aurora ledger + audit). See ADR-0002 / ADR-0004.
+  resolves attribution from `custom_parameters` — `ref` → recommendation → referrer + product;
+  `c`/`g` → consumer, incl. the DynamoDB `guest_attribution` lookup) `→ invokes an in-VPC writer`
+  (drives the Aurora ledger + audit). See ADR-0002 / ADR-0004 / ADR-0008.
 - **Conversion events → analytics.** The in-VPC writer emits a **conversion event** (resolved
   attribution, amount, `pending`/`confirmed`/`clawback` status) as a structured `console.log` line
   that a **CloudWatch Logs subscription → Firehose → S3** ships — the same off-band mechanism as

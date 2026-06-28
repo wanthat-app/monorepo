@@ -4,10 +4,10 @@
 > **Authoritative-source note.** This SDD is the original detailed design; the **[`../adrs/`](../adrs)
 > (ADR-0001–0009) now supersede it where they differ** and are authoritative. Key supersessions:
 > - **Compute (ADR-0002):** four Lambda units (Lambdalith + admin + redirect + poller), not a single modular monolith.
-> - **Datastore (ADR-0003):** polyglot — Aurora (PII + ledger) + DynamoDB (`short_id→url`, `guest_attribution`); **no RDS Proxy**, IAM database auth.
+> - **Datastore (ADR-0003):** polyglot — Aurora (PII + ledger) + DynamoDB (`recommendation_id→url`, `guest_attribution`); **no RDS Proxy**, IAM database auth.
 > - **Network (ADR-0004):** NAT-free; only Aurora-touching functions are in-VPC; retailer calls go through non-VPC fetchers.
 > - **Identity (ADR-0006):** SMS OTP + passkeys; WhatsApp deferred; layered SMS kill switch.
-> - **Redirect (ADR-0007):** resolves `short_id` in DynamoDB (not Postgres) on a non-VPC Lambda.
+> - **Redirect (ADR-0007):** resolves `recommendation_id` in DynamoDB (not Postgres) on a non-VPC Lambda.
 > - **Attribution (ADR-0008):** via injected `custom_parameters` (`ref`/`c`/`g`) — **no `click_id` click-log lookup**.
 > - **Conversion (ADR-0009):** scheduled `order.listbyindex` reconciliation **poller**, not a `conversion-webhook` postback.
 
@@ -37,7 +37,7 @@ Cross-cutting, applied to **all** of the above: **observability** (§13) and **a
 
 **Out of scope (later phases):** payouts/withdrawals; group sharing; the full brand-analytics product (beyond the simple admin stats here); native mobile app; additional networks (Awin, CJ, eBay, Amazon, Temu, Shein, iHerb, Banggood …); Chrome extension; product reviews.
 
-> **Why the consumer-side features are feasible now:** attribution rides on a **SubID** (= our internal `short_id`) on a single publisher tracking ID, and Wanthat owns the `/p/{id}` redirect. We therefore do **not** depend on AliExpress per-user tracking IDs — which is exactly what makes the consumer redirect, guest handling, and two-sided wallet buildable in MVP (see §8.1 attribution).
+> **Why the consumer-side features are feasible now:** attribution rides on a **SubID** (= our internal `recommendation_id`) on a single publisher tracking ID, and Wanthat owns the `/p/{id}` redirect. We therefore do **not** depend on AliExpress per-user tracking IDs — which is exactly what makes the consumer redirect, guest handling, and two-sided wallet buildable in MVP (see §8.1 attribution).
 
 ---
 
@@ -96,7 +96,7 @@ Functional requirements per feature, traced to the PRD. The **Source** column re
 | F2-R6 | Unsupported retailer fails gracefully + logs demand signal | UC-04 |
 | F2-R7 | Link generation < 1.5s from paste to ready | PRD §10.3 |
 | F2-R8 | Editable Hebrew/English WhatsApp share template with disclosure | UC-01 step 4; PRD §9.1 |
-| F2-R9 | Per-recommender attribution via SubID (= `short_id`), single publisher tracking ID | UC-01; design |
+| F2-R9 | Per-recommender attribution via SubID (= `recommendation_id`), single publisher tracking ID | UC-01; design |
 | F2-R10 | Generating a link for a product the referrer already shared **reuses their existing active link** — no duplicate link per (customer, product) | UC-06; review directive |
 | F2-R11 | A **review belongs to a product** (not a link) and is authored by a customer; writing/editing a review is a **separate action**, not part of link generation. The share flow encourages it; it's woven into the share message and shown as social proof | review directive; PRD §8.3 |
 
@@ -113,7 +113,7 @@ Functional requirements per feature, traced to the PRD. The **Source** column re
 | F3-R6 | A guest who registers later within the attribution window is linked to the prior click (best-effort) | UC-02; design |
 | F3-R7 | Open-redirect safe — only redirect to Wanthat-generated affiliate URLs | Security |
 | F3-R8 | Click ingestion must not degrade under a viral burst | PRD §10.3; scalability |
-| F3-R9 | The anonymous `/p/{short_id}` landing page carries Open Graph tags (product title + thumbnail + description) so WhatsApp unfurls a rich preview — **no separate crawler/user-agent path** | UC-01 step 6; review directive |
+| F3-R9 | The anonymous `/p/{recommendation_id}` landing page carries Open Graph tags (product title + thumbnail + description) so WhatsApp unfurls a rich preview — **no separate crawler/user-agent path** | UC-01 step 6; review directive |
 
 ### 4.4 Feature 4 — Wallet & Balance
 
@@ -126,7 +126,7 @@ Functional requirements per feature, traced to the PRD. The **Source** column re
 | F4-R5 | On a confirmed conversion: credit referrer commission and (if attributed + registered) consumer reward, split from gross commission | PRD §8.2 |
 | F4-R6 | **Payouts/withdrawals are NOT in MVP** — balances accrue | review directive |
 | F4-R7 | Every wallet mutation is auditable | §14 |
-| F4-R8 | Commissions received in a foreign currency (USD from AliExpress) are **converted to the wallet currency (ILS) at credit time** using a reference rate locked on the conversion; original amount/currency + rate retained | review directive; PRD ILS-first |
+| F4-R8 | The wallet is **held in the retailer's settlement currency** (USD from AliExpress) — our liability matches our receivable (zero FX float). Commissions are credited in that settlement currency; the balance is **displayed** converted to the member's currency (ILS) net of a conversion commission (CONFIG `fx.conversionCommissionBps`); the **real conversion happens only at withdrawal** (gated on the current converted ILS value) | review directive; PRD ILS-first |
 
 ### 4.5 Feature 5 — Admin Dashboard
 
@@ -136,7 +136,7 @@ Functional requirements per feature, traced to the PRD. The **Source** column re
 | F5-R2 | Simple stats: customers, links, impressions, clicks, click-through rate, conversions, conversion rate, GMV, gross commission, wallet liabilities (pending/confirmed) | PRD §3.2; ops need |
 | F5-R3 | Simple trends over time (signups, links, conversions) | PRD §3.2 |
 | F5-R4 | Top links / top referrers | UC-06; ops need |
-| F5-R5 | Operational health snapshot (redirect latency, AliExpress error rate, webhook lag) | §13 |
+| F5-R5 | Operational health snapshot (redirect latency, AliExpress error rate, conversion-poller lag) | §13 |
 | F5-R6 | Read-only in MVP (any manual wallet adjustment is audited — §14) | review directive |
 
 ---
@@ -198,7 +198,7 @@ Per the optimization-priority assumption (§3), each cost driver is modeled at t
         │ /api/*                                 │ /p/*
         ▼                                        ▼
    API Gateway (HTTP API) ──jwt──► Cognito   Redirect service (Lambda)
-        │   (groups: user, admin)   User Pool      │  • resolve short_id
+        │   (groups: user, admin)   User Pool      │  • resolve recommendation_id
         ├─ /auth/*   ─► identity module             │  • member → auto-redirect
         ├─ /links    ─► links module ─► AliExpress  │  • anon → OG landing page
         ├─ /wallet   ─► wallet module      Affiliate │  • on go: click → stream, 301 + SubID
@@ -206,15 +206,15 @@ Per the optimization-priority assumption (§3), each cost driver is modeled at t
               │                │                     ▼
               ▼                ▼               Kinesis Firehose ─► S3 (clicks/conv)
         PostgreSQL  ◄── Secrets Manager              │
-        (customer, link,     (AliExpress creds)      │ network conversion postback
+        (customer, link,     (AliExpress creds)      │ scheduled pull (no postback)
          referral, ledger,                           ▼
-         conversion, audit)  ◄──────────  conversion-webhook (Lambda)
-                                          • match SubID → link/referrer/consumer
-                                          • write ledger (pending→confirmed)
+         conversion, audit)  ◄──────────  conversion poller (EventBridge → listOrders)
+                                          • resolve custom_parameters (ref/c/g) → referrer/consumer (no click log)
+                                          • append event-log ledger (order_id, kind, status)
                                           • write audit log
 ```
 
-The app API is a modular monolith (`identity`, `links`, `wallet`, `admin`). The **redirect service** and the **conversion-webhook** are separated because they are public, bursty, and latency-critical (D1, D7). All money mutations flow through the ledger and the audit log (§10, §14).
+The app API is a modular monolith (`identity`, `links`, `wallet`, `admin`). The **redirect service** and the **scheduled conversion poller** (ADR-0009 — not a webhook) are separated because they are public/bursty and latency- or schedule-driven (D1, D7). All money mutations flow through the ledger and the audit log (§10, §14).
 
 ---
 
@@ -313,8 +313,8 @@ interface RetailerAdapter {
 **AliExpress client.** Signed client for the AliExpress Affiliate Open Platform using **HMAC-SHA256 on the current System Interface gateway** (`api-sg.aliexpress.com/sync`). We deliberately do **not** implement the legacy MD5 / `gw.api.taobao.com` path: it's a deprecated gateway with a weak hash, and a greenfield MVP has no reason to use it — dropping it also shrinks the signing and test surface (consistent with the security posture). Link via `aliexpress.affiliate.link.generate`; metadata via `aliexpress.affiliate.productdetail.get`. Signing spec in Appendix A. Credentials from Secrets Manager, cached per warm instance.
 
 **Attribution — SubID, not per-user tracking IDs.** Wanthat stays a single registered publisher per network with *one* tracking ID per network/channel. We never mint a per-user network tracking ID (AliExpress tracking IDs are coarse campaign buckets with limits). Attribution is **two-level**:
-- **Link-level → referrer.** The static `short_id` is baked into the generated link as the network's **SubID** and echoed back in the order report. It identifies the **referrer's link** (referrer + product) — *not* a referrer+consumer pair: many consumers click the same link and all carry the same SubID. Referrer attribution is therefore always available and robust.
-- **Click-level → consumer.** Because we own the `/p/{short_id}` redirect (§9), at click time we append a **per-click sub-value** (our `click_id`) to the outgoing affiliate URL, which AliExpress records and returns in its Live-Order report. That lets us map a confirmed order back to the *specific click*, and from our own click log to the **consumer** — but only when that click belonged to a known/registered consumer (guests have none). Consumer attribution is thus best-effort.
+- **Link-level → referrer.** The static `recommendation_id` is baked into the generated link as the network's **SubID** and echoed back in the order report. It identifies the **referrer's link** (referrer + product) — *not* a referrer+consumer pair: many consumers click the same link and all carry the same SubID. Referrer attribution is therefore always available and robust.
+- **Click-level → consumer.** Because we own the `/p/{recommendation_id}` redirect (§9), at resolve time we append a **consumer key** to `custom_parameters` on the outgoing affiliate URL — `c` = the member's `customer_id` (Bearer token resolved client-side) or `g` = an opaque `guestId` from localStorage — which AliExpress echoes back in its order report. There is **no click log**: at conversion `c` credits the member directly, while `g` is resolved via the DynamoDB `guest_attribution[g] → customer_id` mapping (a guest who later registered) — else it stays a guest. Consumer attribution is thus best-effort (ADR-0008).
 
 How these drive crediting (referrer always; consumer when attributed, funded from margin) is detailed in §10.1.
 
@@ -333,7 +333,7 @@ Temu, Shein, iHerb, Banggood run through one of the networks above and inherit i
 
 **Products & links.** A pasted URL is resolved to a **`product`** — a shared entity keyed by `(retailer, normalized_url)` — that caches the title, thumbnail and commission rate. A `link` is one referrer's tracked link *to a product*; many referrers can link to the same product. Product metadata is fetched once and reused.
 
-**Reuse, no duplicate links (F2-R10).** A referrer has at most one **active** link per product. `POST /links` for a product the caller already shared **returns their existing active link** rather than minting a new one, so clicks/conversions keep accumulating on a single link (UC-06). Enforced by a partial unique index on `(customer_id, product_id) WHERE status='active'`. Mint a URL-safe `short_id` (~48-bit, collision-checked) only when creating.
+**Reuse, no duplicate links (F2-R10).** A referrer has at most one **active** link per product. `POST /links` for a product the caller already shared **returns their existing active link** rather than minting a new one, so clicks/conversions keep accumulating on a single link (UC-06). Enforced by a partial unique index on `(customer_id, product_id) WHERE status='active'`. Mint a URL-safe `recommendation_id` (~48-bit, collision-checked) only when creating.
 
 **Reviews are product-scoped and separate (F2-R11).** A **review belongs to a product** and is authored by a customer; it is **not** created during link generation and is not stored on the link. Writing/editing a review is its own action (`PUT /products/{id}/review`, §8.4). The share flow *encourages* the referrer to add/update their review for the product, but link generation succeeds with or without one. A present review is woven into the share message and surfaced on the consumer interstitial (§9.1) as social proof; reviews aggregate per product, seeding the verified-recommender review layer (PRD §8.3). Review text is user-generated content — moderated (§17).
 
@@ -346,9 +346,9 @@ Temu, Shein, iHerb, Banggood run through one of the networks above and inherit i
 3. `links` selects an adapter via `matches()`. Unsupported → `400` UC-04 + `retailer_demand` row.
 4. Resolve/`upsert` the `product` by `(retailer, normalized_url)` (caching title/thumbnail). 
 5. **Reuse check:** if the caller already has an active link for this product, return it (no new link, no new API call).
-6. Otherwise mint `short_id`, then `AliExpressAdapter.generate(url, short_id)` (`short_id` = SubID): sign → `link.generate`; in parallel best-effort `productdetail.get` (~600ms cap) to enrich the product.
+6. Otherwise mint `recommendation_id`, then `AliExpressAdapter.generate(url, recommendation_id)` (`recommendation_id` = SubID): sign → `link.generate`; in parallel best-effort `productdetail.get` (~600ms cap) to enrich the product.
 7. Persist `link`.
-8. Return `{shortId, shareUrl, affiliateUrl, product, review?, shareTemplate, stats}` — `review` is the caller's existing review for the product if any (read, not created here).
+8. Return `{recommendationId, shareUrl, affiliateUrl, product, review?, shareTemplate, stats}` — `review` is the caller's existing review for the product if any (read, not created here).
 
 ### 8.3 Data model (PostgreSQL)
 
@@ -366,10 +366,10 @@ product                    -- shared across all referrers who link to it
 
 link                       -- one referrer's tracked link to a product
   id              uuid pk
-  short_id        text unique not null
+  recommendation_id        text unique not null
   customer_id     uuid not null references customer(id)
   product_id      uuid not null references product(id)
-  affiliate_url   text not null            -- carries SubID = short_id
+  affiliate_url   text not null            -- carries SubID = recommendation_id
   status          text not null default 'active'
   created_at      timestamptz not null default now()
   -- one active link per (customer, product) → reuse, no duplicates (F2-R10):
@@ -395,7 +395,7 @@ retailer_demand            -- UC-04 demand signal
 
 | Method | Path | Description | Auth | Body | Success | Errors |
 | :-- | :-- | :-- | :-- | :-- | :-- | :-- |
-| POST | `/links` | Get the caller's tracked link for a product — **reuses** their existing active link or creates one (no duplicates) | jwt | `{url}` | `201`/`200 {shortId,shareUrl,affiliateUrl,product,review?,shareTemplate,stats}` | `400` invalid; `400 {reason:'unsupported_retailer'}`; `401`; `502` upstream |
+| POST | `/links` | Get the caller's tracked link for a product — **reuses** their existing active link or creates one (no duplicates) | jwt | `{url}` | `201`/`200 {recommendationId,shareUrl,affiliateUrl,product,review?,shareTemplate,stats}` | `400` invalid; `400 {reason:'unsupported_retailer'}`; `401`; `502` upstream |
 | GET | `/links` | List the referrer's own links with cached stats (My Links) | jwt | — (sort/filter) | `200 {items:[…]}` | `401` |
 | PUT | `/products/{id}/review` | Create or update the caller's review for a product (separate from link gen) | jwt | `{rating?, body}` | `200 {review}` | `400`; `401`; `404` product |
 | GET | `/products/{id}/reviews` | Product reviews (approved) — for the interstitial / product view | none | — | `200 {items:[…]}` | `404` |
@@ -411,9 +411,9 @@ Link bound to `customer_id` from JWT (no cross-customer access). **SSRF-safe:** 
 
 ### 9.1 Design
 
-**Redirect service.** A dedicated, public, latency-critical service behind CloudFront (D1). It resolves `short_id → link` and then **branches on auth state**: a **logged-in** consumer is auto-redirected; an **anonymous** request gets the landing page (which carries the Open Graph tags, so link-preview crawlers render their thumbnail from the very same page — see F3-R9). On redirect-through it logs the click and 301s to the retailer's affiliate URL with the SubID intact. Read-mostly and independently scalable so a viral burst can't degrade the app API (F3-R8).
+**Redirect service.** A dedicated, public, latency-critical service behind CloudFront (D1). It resolves `recommendation_id → link` and then **branches on auth state**: a **logged-in** consumer is auto-redirected; an **anonymous** request gets the landing page (which carries the Open Graph tags, so link-preview crawlers render their thumbnail from the very same page — see F3-R9). On redirect-through it logs the click and 301s to the retailer's affiliate URL with the SubID intact. Read-mostly and independently scalable so a viral burst can't degrade the app API (F3-R8).
 
-**Event logging off the hot path (D7).** Two event types are emitted to Kinesis Firehose (→ S3), never written synchronously to Postgres, so the path stays < 500ms (F3-R2) under bursts: an **impression** when the landing page renders (top-of-funnel; may include preview-crawler fetches), and a **click / engagement** on redirect-through (the meaningful action). Aggregated `impression_count` and `click_count` on `link` are updated asynchronously from the stream — their ratio is the click-through rate the PRD tracks (PRD §3.2). On a click we set a signed, short-lived **attribution token** (cookie + URL param) carrying `{short_id, click_id}` so a later registration or conversion can be tied back to it.
+**Event logging off the hot path (D7).** Two event types are emitted to Kinesis Firehose (→ S3), never written synchronously to Postgres, so the path stays < 500ms (F3-R2) under bursts: an **impression** when the landing page renders (top-of-funnel; may include preview-crawler fetches), and a **click / engagement** on redirect-through (the meaningful action). Aggregated `impression_count` and `click_count` on `link` are updated asynchronously from the stream — their ratio is the click-through rate the PRD tracks (PRD §3.2). On a click we set a signed, short-lived **attribution token** (cookie + URL param) carrying `{recommendation_id, click_id}` so a later registration or conversion can be tied back to it.
 
 **Auto-redirect for members; landing page for everyone else (F3-R3/R4/R5/R10).** The post-click experience branches on auth state:
 - **Logged-in consumer → automatic redirect.** They're already a member and their attribution is known, so we add no friction: log the click, show the FTC / PRD §9.1 disclosure as a brief branded splash, and 301 straight to the retailer. Their purchase is automatically eligible for the two-sided consumer reward (§10).
@@ -423,21 +423,21 @@ Link bound to `customer_id` from JWT (no cross-customer access). **SSRF-safe:** 
 
   *Design note:* this deliberately replaces the PRD's timed auto-overlay for anonymous visitors. Leading with sign-up prioritizes growing the customer base (the goal this phase); guest-continue stays one tap away so we don't hard-gate the purchase (UC-02). Logged-in members skip the page entirely (auto-redirect).
 
-**Guest→register linking (F3-R6).** Wanthat sets a **first-party attribution cookie — 30 days, configurable** — carrying `{short_id, click_id}`. If a guest registers while that cookie is valid, we link the prior `click_id`(s) to the new `customer_id` (best-effort): for identity continuity, re-engagement, and to attribute a still-open conversion to them. **Two windows, kept separate:**
+**Guest→register linking (F3-R6).** Wanthat sets a **first-party attribution cookie — 30 days, configurable** — carrying `{recommendation_id, click_id}`. If a guest registers while that cookie is valid, we link the prior `click_id`(s) to the new `customer_id` (best-effort): for identity continuity, re-engagement, and to attribute a still-open conversion to them. **Two windows, kept separate:**
   - *Our 30-day cookie* — how long we remember a click and can link a returning guest.
   - *The network commission window* — declared **per platform** by the retailer adapter (`attributionWindowDays`; AliExpress = 3 days) — governs whether a *purchase* earns commission at all. Wanthat cannot extend it: a buy outside the network window earns nothing to split, regardless of our cookie.
 
   So a guest who registers on day 10 is still linked (within the 30-day cookie) and earns the consumer reward on **future** purchases, but cannot retroactively earn on a purchase whose network window already closed.
   - *Do we regenerate the affiliate link past the network window?* **No** — the link never expires; the network window is per **click**, not per link. Every click-through re-arms a fresh window (a new click event through the stored `affiliate_url`, same SubID). Re-engagement is about getting the consumer to *click through again*, not minting new links.
 
-**Open-redirect safety (F3-R7).** The service only ever redirects to an `affiliate_url` it generated and stored for that `short_id`. No user-supplied destination is honored.
+**Open-redirect safety (F3-R7).** The service only ever redirects to an `affiliate_url` it generated and stored for that `recommendation_id`. No user-supplied destination is honored.
 
-**Rich link preview — Open Graph (F3-R9).** The anonymous `/p/{short_id}` **landing page itself carries the Open Graph tags** — `og:title` = product title, `og:image` = product thumbnail, `og:description` = the referrer's review if present, else the disclosure. When the link is pasted into WhatsApp/Telegram/social, the crawler fetches `/p/{short_id}` and, because crawlers are unauthenticated, receives the *same* anonymous landing page as any logged-out human and renders the preview from its meta tags. **No user-agent sniffing:** we deliberately do **not** branch on "is this a bot" — bot detection is never 100%, and we don't want the same GET path serving different content to bots vs. humans. The only branch is **auth state** (logged-in → auto-redirect; anonymous → this page), which is reliable. This keeps the two metrics clean: rendering the page — by a human *or* a preview crawler — is logged as an **impression** (top-of-funnel), while a **click / engagement** is logged only on **redirect-through** (Continue / logged-in auto-redirect). So bot previews can lift impressions but never clicks; the funnel stays impressions → clicks → conversions. Notes: (a) the F2-R4 product metadata is load-bearing for the preview — if a thumbnail/title isn't enriched yet, fall back to a generic Wanthat title/image until async enrichment completes; (b) `og:image` must be an absolute HTTPS URL — serve the cached image via our CDN (proxying the retailer thumbnail) for reliability and to avoid hotlink breakage.
+**Rich link preview — Open Graph (F3-R9).** The anonymous `/p/{recommendation_id}` **landing page itself carries the Open Graph tags** — `og:title` = product title, `og:image` = product thumbnail, `og:description` = the referrer's review if present, else the disclosure. When the link is pasted into WhatsApp/Telegram/social, the crawler fetches `/p/{recommendation_id}` and, because crawlers are unauthenticated, receives the *same* anonymous landing page as any logged-out human and renders the preview from its meta tags. **No user-agent sniffing:** we deliberately do **not** branch on "is this a bot" — bot detection is never 100%, and we don't want the same GET path serving different content to bots vs. humans. The only branch is **auth state** (logged-in → auto-redirect; anonymous → this page), which is reliable. This keeps the two metrics clean: rendering the page — by a human *or* a preview crawler — is logged as an **impression** (top-of-funnel), while a **click / engagement** is logged only on **redirect-through** (Continue / logged-in auto-redirect). So bot previews can lift impressions but never clicks; the funnel stays impressions → clicks → conversions. Notes: (a) the F2-R4 product metadata is load-bearing for the preview — if a thumbnail/title isn't enriched yet, fall back to a generic Wanthat title/image until async enrichment completes; (b) `og:image` must be an absolute HTTPS URL — serve the cached image via our CDN (proxying the retailer thumbnail) for reliability and to avoid hotlink breakage.
 
 ### 9.2 Flow (UC-01 step 6 / UC-02)
 
-1. Request hits `GET /p/{short_id}`.
-2. Resolve `short_id`; unknown/disabled → friendly 404 page.
+1. Request hits `GET /p/{recommendation_id}`.
+2. Resolve `recommendation_id`; unknown/disabled → friendly 404 page.
 3. **Branch on auth state (session cookie), not user-agent:**
    - **Logged-in →** emit click event to Firehose (attributed to the customer) + set attribution token; brief disclosure splash; `301` to `affiliate_url` (+ SubID). Done.
    - **Anonymous (including link-preview crawlers) →** return the landing page HTML: Open Graph meta (F3-R9) + disclosure + referrer + social proof + CTAs. Render logs an **impression**, not a click.
@@ -445,14 +445,14 @@ Link bound to `customer_id` from JWT (no cross-customer access). **SSRF-safe:** 
    - **Sign up / Log in** (primary) → Feature 1 with `ref` + attribution token → on success emit click (attributed) → `301` to `affiliate_url`. Now eligible for the two-sided reward.
    - **Continue as guest** (secondary) → emit click (guest) → `301` to `affiliate_url`.
 5. Consumer buys on AliExpress within the 3-day window.
-6. (Async) the order report carries the `short_id` (→ referrer) and the per-click id (→ our click log → consumer, if that click had a registered consumer). The conversion-webhook resolves both, splits the gross commission (referrer cashback always; consumer reward from margin when attributed — see §10.1), credits the ledger (§10), and writes the audit log (§14).
+6. (Async) the **scheduled conversion poller** (ADR-0009) pulls the order via `order.listbyindex`; the order echoes back our injected `custom_parameters` — `ref` (→ recommendation → referrer + product) and the consumer key `c`/`g` (member `customer_id` / opaque `guestId`, resolved via the DynamoDB `guest_attribution` lookup — **no click log**, ADR-0008). The poller-writer splits the reported commission by the **recommendation's snapshotted rates** (referrer cashback always; consumer reward when attributed — see §10.1), appends to the ledger (§10), and writes the audit log (§14).
 
 ### 9.3 Data model
 
 ```
 -- High-volume, written via stream (D7), not on the hot path:
 funnel_event (S3/stream; queryable via Athena, aggregated to link counters)
-  event_id (uuid), type ('impression' | 'click'), short_id, ts,
+  event_id (uuid), type ('impression' | 'click'), recommendation_id, ts,
   ip_hash, ua, referrer_header,
   attribution_token, consumer_id?  -- token/consumer set on 'click' only (null for guest/impression)
 
@@ -465,28 +465,29 @@ conversion                  -- one row per confirmed/pending network conversion
   attribution     text not null            -- 'member' | 'guest' | 'untracked'
   order_ref       text not null            -- network order id
   gross_commission_minor   bigint not null  -- integer minor units of...
-  commission_currency      text not null    -- ...this currency (often USD from AliExpress) — ISO-4217
-  reward_rate_bps          int  not null    -- applied consumer-reward rate (bps; default 2000 = 20%); snapshotted, forward-only
-  fx_rate_to_ils           numeric not null  -- commission_currency → ILS, locked at record time (F4-R8); ledger entries are ILS
-  status          text not null            -- 'pending' | 'confirmed' | 'rejected'
-  source_subid    text not null            -- = short_id
+  settlement_currency      text not null    -- ...the retailer's settlement currency (USD for AliExpress) — ISO-4217; the wallet is held in it (F4-R8)
+  -- split rates are NOT stored here: they come from the Recommendation's snapshot (taken from
+  -- CONFIG cashback.referrerBps/consumerBps at link creation, ADR-0008), applied to the reported commission.
+  -- No fx_rate at credit: amounts stay in settlement currency; FX → ILS is withdrawal-time metadata, not credit-time (F4-R8).
+  status          text not null            -- 'pending' | 'confirmed' | 'clawback'
+  source_subid    text not null            -- = recommendation_id (the `ref` custom_parameter)
   created_at, confirmed_at
-  unique (order_ref)                        -- idempotent webhook
+  unique (order_ref)                        -- idempotent poller
 ```
 
 ### 9.4 API / endpoints
 
 | Method | Path | Auth | Description |
 | :-- | :-- | :-- | :-- |
-| GET | `/p/{short_id}` | none | Public entry: logged-in → log click + 301; anonymous → OG-tagged landing page (Sign-up primary / guest), then log click + 301 on go |
+| GET | `/p/{recommendation_id}` | none | Public entry: logged-in → log click + 301; anonymous → OG-tagged landing page (Sign-up primary / guest), then log click + 301 on go |
 | POST | `/redirect/claim` | none→jwt | Link a click's attribution token to a newly-registered consumer (F3-R6) |
-| POST | `/webhooks/aliexpress/conversion` | signed | Receive the network's conversion postback; idempotent on `order_ref` |
+| — | _(no public conversion endpoint)_ | — | Conversions are ingested by the **scheduled poller** (ADR-0009), not a webhook — `EventBridge → Retailer Proxy.listOrders → in-VPC writer`; idempotent via the event-log key `(order_id, kind, status)` |
 
 ### 9.5 Security & resilience
-Open-redirect safe (F3-R7). WAF + per-IP rate limiting on `/p/*` (click-fraud / bot mitigation). Click ingestion is async + buffered (Firehose) with a DLQ. Webhook authenticated (signature/allow-list) and **idempotent** on `order_ref`. Self-referral / self-click fraud: flag conversions where `consumer_customer_id == referrer_customer_id` or where click/convert patterns are anomalous (held for review, never auto-confirmed).
+Open-redirect safe (F3-R7). WAF + per-IP rate limiting on `/p/*` (click-fraud / bot mitigation). Click ingestion is async + buffered (Firehose) with a DLQ. There is **no public conversion endpoint** — ingestion is the scheduled poller (smaller attack surface); crediting is **idempotent** via the event-log key `(order_id, kind, status)`. Self-referral / self-click fraud: flag conversions where `consumer_customer_id == referrer_customer_id` or where click/convert patterns are anomalous (held for review, never auto-confirmed).
 
 ### 9.6 Edge cases
-Unknown/disabled `short_id` → friendly 404 (no raw error). Consumer never registers → guest; referrer still earns. Purchase outside the 3-day window → no conversion (expected); the next click through the same link re-arms a fresh window. Multiple clicks before purchase → last-click attribution per network rules. Guest registers after window → no retro-credit for the old click, but a new click-through restarts attribution (links are reusable, not regenerated).
+Unknown/disabled `recommendation_id` → friendly 404 (no raw error). Consumer never registers → guest; referrer still earns. Purchase outside the 3-day window → no conversion (expected); the next click through the same link re-arms a fresh window. Multiple clicks before purchase → last-click attribution per network rules. Guest registers after window → no retro-credit for the old click, but a new click-through restarts attribution (links are reusable, not regenerated).
 
 ---
 
@@ -496,59 +497,62 @@ Unknown/disabled `short_id` → friendly 404 (no raw error). Consumer never regi
 
 ### 10.1 Design
 
-**Money is a ledger, not a balance.** The wallet is an **append-only** `wallet_entry` table of typed, signed, **integer minor-unit** entries (the smallest unit of each row's `currency` — agorot for ILS). A balance is always *derived* (`SUM` by type/status, per currency) — never stored or mutated. This is the one area we intentionally over-invest in (per the lean posture, §3): financial correctness is the most expensive thing to retrofit, and it underpins the auditing requirements (§14).
+**Money is an append-only event log, not a balance.** The wallet is an **append-only** `wallet_entry` log of typed, signed, **integer minor-unit** entries (the smallest unit of each row's `currency`). Each conversion reward is keyed `(order_id, kind, status)`, so a reward advances `pending → confirmed → clawback` as **separate immutable rows** while a poller re-read of an unchanged order no-ops (the row already exists). A balance is always *derived* — take each reward's **furthest-advanced status**: `confirmed = Σ confirmed rewards + adjustments − withdrawals`, `pending = Σ pending rewards`, a `clawback` terminal state contributes 0; never stored or mutated. This is the one area we intentionally over-invest in (per the lean posture, §3): financial correctness is the most expensive thing to retrofit, and it underpins the auditing requirements (§14).
 
-**Future-proofing the money model.** Integers (not floats) keep it precision-safe; storing minor units **alongside an ISO-4217 `currency`** — rather than hardcoding agorot — keeps the ledger ready for the PRD's multi-market expansion. The minor-unit scale is derived per currency (ILS/USD = 2 places, JPY = 0, KWD = 3), so no `amount` semantics change when a new currency is added. **MVP wallet is ILS**, but AliExpress commissions arrive in **USD**, so a **USD→ILS conversion at credit time is required even in MVP** (F4-R8) — see crediting below. What's *deferred* (§18 #12) is broader multi-currency: multiple settlement currencies / user-selectable currency for other markets and sophisticated rate sourcing — the currency-tagged schema makes that additive, not a migration.
+**Currency — held in settlement currency, converted at withdrawal (not at credit).** Integers (not floats) keep it precision-safe; storing minor units **alongside an ISO-4217 `currency`** — rather than hardcoding agorot — keeps the ledger ready for the PRD's multi-market expansion. The minor-unit scale is derived per currency (ILS/USD = 2 places, JPY = 0, KWD = 3), so no `amount` semantics change when a new currency is added. **The wallet is held in the retailer's settlement currency** (USD for AliExpress): our liability matches our receivable, so there is **no FX float risk and no conversion at credit time** (a reversal of the earlier ILS-at-credit model — F4-R8). The ledger stores amounts in that settlement currency; the wallet returns one balance **per currency held**. It is **displayed** to the member in ILS, converted **net of a conversion commission** (CONFIG `fx.conversionCommissionBps`), and the **real conversion happens only at withdrawal**, gated on the current converted (ILS) value. *FX infrastructure (decided, build pending, §18 #12):* a DynamoDB `fx_rate` cache keyed `(base, quote)` with an `asOf` timestamp, refreshed by a scheduled rates-updater (an FX-provider adapter), and a pure conversion function in `packages/domain` doing exact bigint math (`amountMinor × rate × (1 − commission)`). What's still *deferred*: multiple user-selectable display currencies for other markets and rate hedging — the currency-tagged schema makes that additive, not a migration.
 
-**Entry types (MVP):** `commission_pending`, `commission_confirmed` (referrer); `reward_pending`, `reward_confirmed` (consumer two-sided); `clawback`, `adjustment`. (`payout` is **deferred** — no withdrawals in MVP.)
+**Entry kinds × status (MVP):** an entry's `kind` is one of `referrer_cashback`, `consumer_reward` (the two-sided consumer share), `adjustment`, or `withdrawal`; a reward row carries a `status` of `pending` / `confirmed` / `clawback`, advancing as separate rows keyed `(order_id, kind, status)`. A `withdrawal` is a **negative standalone event** with `order_id` null (the payout flow itself is **deferred** — no withdrawals in MVP; the kind exists so the ledger and derived balance already account for it).
 
 **Identifying the parties (who gets credited).** The network's order report tells us the **gross commission** Wanthat earned and echoes back our tracking identifiers, but **not** the buyer's identity. We resolve the parties from our *own* data (see §8.1 two-level attribution):
-- **Referrer** — from the static `short_id` SubID on the link. Always resolvable. The SubID identifies the *referrer's link*, **not** a referrer+consumer pair (many consumers click the same link, all with the same SubID).
-- **Consumer** — from the **per-click id** echoed in the order report → look up that `click_id` in our click log. This produces a three-way **`attribution`** status stored on the conversion, so guest and untracked orders are *distinguishable* (not both collapsed to "no consumer"):
-  - **`member`** — click matched and the consumer was registered → `consumer_customer_id` set; consumer reward paid.
-  - **`guest`** — click matched but the consumer continued as a guest → no `consumer_customer_id`, no reward, but a *tracked guest* conversion.
-  - **`untracked`** — no click matched (per-click echo missing/unmatched) → referrer credited via `short_id` only; the buyer is unknown.
+- **Referrer** — from the static `recommendation_id` SubID on the link. Always resolvable. The SubID identifies the *referrer's link*, **not** a referrer+consumer pair (many consumers click the same link, all with the same SubID).
+- **Consumer** — from the **consumer key** echoed back in `custom_parameters` (no click log): `c` = the member's `customer_id`; `g` = an opaque `guestId` resolved via the DynamoDB `guest_attribution[g]` mapping. This produces a three-way **`attribution`** status stored on the conversion, so guest and untracked orders are *distinguishable* (not both collapsed to "no consumer"):
+  - **`member`** — a `c` key, or a `g` that maps to a registered consumer → `consumer_customer_id` set; consumer reward paid.
+  - **`guest`** — a `g` key with no `guest_attribution` mapping (the consumer is still a guest) → no `consumer_customer_id`, no reward, but a *tracked guest* conversion.
+  - **`untracked`** — no consumer key echoed (missing/unmatched) → referrer credited via `recommendation_id` only; the buyer is unknown.
 
-  We model this as an explicit status rather than a sentinel id (`0`/`-1`) in the FK column — sentinels in a foreign key break referential integrity and joins, while the status gives the same guest-vs-untracked distinction cleanly (and `untracked` rate = the per-click echo-miss metric, §13).
+  We model this as an explicit status rather than a sentinel id (`0`/`-1`) in the FK column — sentinels in a foreign key break referential integrity and joins, while the status gives the same guest-vs-untracked distinction cleanly (and `untracked` rate = the echo-miss metric, §13).
 
-**Crediting on conversion (F4-R5, D9).** The gross commission `C` arrives in the network's currency (USD for AliExpress). The webhook first **converts `C` to the wallet currency (ILS, F4-R8)** at a reference rate **locked on the conversion** (same snapshot principle as the reward rate; original USD amount + rate retained for audit), then splits the **ILS** amount server-side:
-- **referrer cashback** = `referrer_pct × C_ils` → `commission_pending/confirmed`. *(Always.)*
-- **consumer reward** = **20% of the referrer's commission** (a configurable default, PRD §8.2), **funded from Wanthat's margin**, not added on top (§3) → `reward_pending/confirmed`. The applied rate is **snapshotted on the conversion at record time**, so a config change applies to *future* transactions only and never recomputes existing ones. *(Only for `member` attribution — not guest or untracked.)*
+**Crediting on conversion (F4-R5, D9).** The gross commission `C` arrives in the retailer's settlement currency (USD for AliExpress). There is **no conversion at credit** — amounts are credited in that settlement currency (the wallet is held in it; FX → ILS happens only at withdrawal, F4-R8). The poller-writer splits `C` server-side using the **split rates snapshotted on the Recommendation at link creation** (taken from CONFIG `cashback.referrerBps`/`cashback.consumerBps`, ADR-0008) — so a CONFIG policy change applies to *future* links only and never recomputes existing ones:
+- **referrer cashback** = `referrerBps × C` → a `referrer_cashback` row (`pending` then `confirmed`). *(Always.)*
+- **consumer reward** = `consumerBps × C` (a configurable default, PRD §8.2), **funded from Wanthat's margin**, not added on top (§3) → a `consumer_reward` row (`pending` then `confirmed`). *(Only for `member` attribution — not guest or untracked.)*
 - **Wanthat margin** = the remainder (must stay ≥ 0 — the consumer share is carved out of margin, so a conversion is never loss-making).
 
-The split percentages are set in §18 #3 (consumer reward = 20%, configurable, forward-only). Referrer credit is robust (depends only on `short_id`); consumer credit is best-effort (needs the per-click echo *and* a known consumer).
+The split percentages are CONFIG policy snapshotted on the Recommendation at creation (§18 #3 — forward-only per link). Referrer credit is robust (depends only on `recommendation_id`); consumer credit is best-effort (needs the consumer-key (`c`/`g`) echo *and* a known consumer).
 
-**MVP scope — measure, don't mitigate.** We do **not** build a fallback for missing/unreliable per-click echoes in MVP: if the per-click id doesn't come back, that order simply credits the referrer and no consumer reward is paid. Instead we **instrument the echo reliability** via the conversion **attribution mix** (member / guest / `untracked`), where `untracked`% is precisely the per-click echo-miss rate (§13) — so we can quantify the real-world hit rate before deciding whether a fallback is worth building. This keeps MVP simple and turns an unknown into a measured number.
+**MVP scope — measure, don't mitigate.** We do **not** build a fallback for missing/unreliable consumer-key echoes in MVP: if the `c`/`g` key doesn't come back, that order simply credits the referrer and no consumer reward is paid. Instead we **instrument the echo reliability** via the conversion **attribution mix** (member / guest / `untracked`), where `untracked`% is precisely the consumer-key echo-miss rate (§13) — so we can quantify the real-world hit rate before deciding whether a fallback is worth building. This keeps MVP simple and turns an unknown into a measured number.
 
-Entries are written `*_pending` on a pending conversion and transitioned by appending `*_confirmed` (and a reversing `clawback` if the network later rejects) — never by editing prior rows. Every such mutation writes an audit record (§14).
+Entries are written with `status='pending'` on a pending conversion and advanced by **appending** a `confirmed` row (and a terminal `clawback` row if the network later rejects), keyed `(order_id, kind, status)` — never by editing prior rows. Every such append writes an audit record (§14).
 
 **Balance views.** `pending` (not yet network-validated), `confirmed` (available-to-accrue; payout deferred), and totals. Referrer balance breaks down per link (F4-R3, UC-06); consumer balance shows cashback per purchase (F4-R4).
 
 ### 10.2 Data model (PostgreSQL)
 
 ```
-wallet_entry            -- append-only ledger
+wallet_entry            -- append-only event log
   id              uuid pk
   customer_id     uuid not null references customer(id)
-  type            text not null   -- see entry types above
+  kind            text not null   -- 'referrer_cashback' | 'consumer_reward' | 'adjustment' | 'withdrawal'
+  status          text not null   -- 'pending' | 'confirmed' | 'clawback'  (reward lifecycle; advances as new rows)
   amount_minor    bigint not null -- signed integer, smallest unit of `currency` (ISO-4217 exponent)
-  currency        text not null default 'ILS'   -- ISO-4217
+  currency        text not null   -- ISO-4217; the retailer's SETTLEMENT currency (USD for AliExpress) — no ILS default; FX → ILS is applied at withdrawal/display, not stored here
+  order_id        text null       -- the network order the reward derives from; null for 'adjustment' / 'withdrawal'
   link_id         uuid null references link(id)
   conversion_id   uuid null references conversion(id)
   created_at      timestamptz not null default now()
--- No UPDATE/DELETE permitted (enforced by grants + trigger). Corrections are new rows.
+  unique (order_id, kind, status)  -- event-log idempotency: a re-read of an unchanged order no-ops
+-- No UPDATE/DELETE permitted (enforced by grants + trigger). Corrections/transitions are new rows.
 ```
 
 ### 10.3 API contract
 
 | Method | Path | Description | Auth | Returns |
 | :-- | :-- | :-- | :-- | :-- |
-| GET | `/wallet` | Derived wallet balance for the caller (pending vs confirmed) | jwt | `{pending, confirmed, currency}` (derived) |
+| GET | `/wallet` | Derived wallet balance for the caller (pending vs confirmed) — one balance **per settlement currency held**, plus the ILS display value (converted net of `fx.conversionCommissionBps`) | jwt | `{balances:[{currency, pending, confirmed}], display:{currency:'ILS', pending, confirmed}}` (derived) |
 | GET | `/wallet/entries` | The caller's own ledger history | jwt | paginated ledger entries (own customer only) |
 | GET | `/links/{id}/earnings` | Earnings breakdown for one of the referrer's links | jwt | per-link pending/confirmed (referrer) |
 
 ### 10.4 Security & integrity
-Wallet endpoints are scoped to the caller's `customer_id`. The ledger table grants exclude UPDATE/DELETE. Crediting happens only inside the conversion-webhook (idempotent on `order_ref`) — never from a user-facing endpoint. Manual `adjustment`/`clawback` entries require the `admin` role and a reason, and are audited (§14). Payouts are out of scope, so no money leaves the system in MVP.
+Wallet endpoints are scoped to the caller's `customer_id`. The ledger table grants exclude UPDATE/DELETE. Crediting happens only inside the conversion poller-writer (idempotent via the event-log key `(order_id, kind, status)`) — never from a user-facing endpoint. Manual `adjustment`/`clawback` entries require the `admin` role and a reason, and are audited (§14). Payouts are out of scope, so no money leaves the system in MVP.
 
 ---
 
@@ -559,7 +563,7 @@ Wallet endpoints are scoped to the caller's `customer_id`. The ledger table gran
 ### 11.1 Design
 A small, internal, **read-only** dashboard (MVP) for an `admin`-group operator. It is a thin SPA route plus a few aggregate endpoints; the same auth (Cognito JWT) gated on `cognito:groups` containing `admin`. Stats are computed from Postgres (transactional truth) and the click/conversion stream via scheduled rollups (so the dashboard reads cheap pre-aggregates, not heavy live scans).
 
-**Stats (F5-R2/R3/R4):** total & new customers (referrers/consumers), links generated, impressions, clicks, **click-through rate** (clicks/impressions, PRD §3.2), conversions, conversion rate, GMV, gross commission, **wallet liabilities** (Σ pending + Σ confirmed owed), simple time trends, top links / top referrers. **Health (F5-R5):** redirect p95, AliExpress error rate, webhook processing lag (surfaced from §13 metrics). This is the deliberately-simple seed of the Phase-2 brand analytics product — internal only.
+**Stats (F5-R2/R3/R4):** total & new customers (referrers/consumers), links generated, impressions, clicks, **click-through rate** (clicks/impressions, PRD §3.2), conversions, conversion rate, GMV, gross commission, **wallet liabilities** (Σ pending + Σ confirmed owed), simple time trends, top links / top referrers. **Health (F5-R5):** redirect p95, AliExpress error rate, conversion-poller lag / reconciliation gap (surfaced from §13 metrics). This is the deliberately-simple seed of the Phase-2 brand analytics product — internal only.
 
 ### 11.2 API contract
 
@@ -568,7 +572,7 @@ A small, internal, **read-only** dashboard (MVP) for an `admin`-group operator. 
 | GET | `/admin/stats/overview` | Headline KPIs and wallet liabilities at a glance | jwt + admin | headline counts + liabilities |
 | GET | `/admin/stats/trends?metric=&period=` | Time series for a chosen metric/period | jwt + admin | time series |
 | GET | `/admin/stats/top?by=links\|referrers` | Leaderboards of top links or referrers | jwt + admin | leaderboards |
-| GET | `/admin/health` | Operational health snapshot (redirect/AliExpress/webhook) | jwt + admin | redirect/AliExpress/webhook health |
+| GET | `/admin/health` | Operational health snapshot (redirect/AliExpress/conversion-poller) | jwt + admin | redirect/AliExpress/poller health |
 
 ### 11.3 Security
 Admin role enforced at the authorizer (group claim) *and* re-checked in the module (defense in depth). Read-only in MVP; any future write (manual adjustment) is admin-gated, reason-required, and audited (§14). All admin reads are themselves logged (who viewed what) per §13/§14. Least-privilege: the admin module can read aggregates and write only audited adjustments.
@@ -577,9 +581,9 @@ Admin role enforced at the authorizer (group claim) *and* re-checked in the modu
 
 ## 12. Cross-cutting Concerns
 
-**Configuration & secrets.** All secrets in Secrets Manager; all config via environment with typed validation at boot (fail fast). No secret in the repo.
+**Configuration & secrets.** All secrets in Secrets Manager; **boot-time** config via environment with typed validation at boot (fail fast, the `Env` env-var contract). No secret in the repo. **Admin-tunable *runtime* settings live in a separate generic key-value DynamoDB `config` table** — each value validated per-key by a contracts registry, written by `admin-api` (audited) and read where needed (e.g. the redirect path reads `landing.countdownSeconds`). Keys so far: `landing.countdownSeconds`, `cashback.referrerBps`, `cashback.consumerBps`, `fx.conversionCommissionBps`.
 
-**Testing strategy.** *Unit:* validation, AliExpress signing (vs independent HMAC), retailer detection, dedupe, ledger-sum, commission split. *Integration:* auth against a Cognito test pool; link gen against an AliExpress sandbox/contract mock; redirect + idempotent webhook; DB constraints (unique phone/email/referral/link/order_ref); ledger append-only enforcement. *Contract:* recorded AliExpress fixtures. *E2E (walking skeleton):* register → generate link → consumer clicks → guest/registered redirect → simulated conversion → ledger credit → admin stats reflect it.
+**Testing strategy.** *Unit:* validation, AliExpress signing (vs independent HMAC), retailer detection, dedupe, ledger-sum, commission split. *Integration:* auth against a Cognito test pool; link gen against an AliExpress sandbox/contract mock; redirect + idempotent conversion poller; DB constraints (unique phone/email/referral/link; ledger `(order_id, kind, status)`); ledger append-only enforcement. *Contract:* recorded AliExpress fixtures. *E2E (walking skeleton):* register → generate link → consumer clicks → guest/registered redirect → simulated conversion → ledger credit → admin stats reflect it.
 
 **Environments & IaC.** `dev`/`staging`/`prod`, all via IaC (CDK or Terraform); Cognito, DB, stream, secrets, API per environment; no manual console changes.
 
@@ -595,8 +599,8 @@ Every flow emits structured JSON logs with a propagated **correlation/trace id**
 | :-- | :-- | :-- | :-- |
 | Auth (register/login/verify) | attempt, outcome, OTP channel; **no codes/PII** | verify success rate, OTP send count/cost, lockouts | alert on OTP send spike (toll-fraud), verify success drop |
 | Link generation | retailer, latency, upstream status | p95 latency, AliExpress error rate, gen volume | **p95 < 1.5s**; alert on error rate > X% |
-| Consumer redirect | short_id, guest/registered, impression vs click, 301 target | **p95 < 500ms**, impressions, clicks, CTR, 4xx rate, event-ingest lag | **p95 < 500ms**; alert on 5xx or Firehose backlog |
-| Conversion webhook | order_ref, match result, amount, attribution (member/guest/untracked) | processing lag, referrer-match rate, **attribution mix: member / guest / `untracked`% (= per-click echo-miss rate)**, duplicate rate | alert on lag > N min, unmatched-conversion rate; **track `untracked`% as a product metric** (informs whether an echo fallback is ever needed) |
+| Consumer redirect | recommendation_id, guest/registered, impression vs click, 301 target | **p95 < 500ms**, impressions, clicks, CTR, 4xx rate, event-ingest lag | **p95 < 500ms**; alert on 5xx or Firehose backlog |
+| Conversion poller | order_id, match result, amount, attribution (member/guest/untracked) | poll lag / reconciliation gap, referrer-match rate, **attribution mix: member / guest / `untracked`%**, duplicate rate | alert on poll lag > N min, unmatched-conversion rate; **track `untracked`% as a product metric** |
 | Wallet crediting | conversion_id, entries written, split | credited amount pending/confirmed, failures | alert on crediting failure (paged — money path) |
 | Admin | actor, query, **who-viewed-what** | usage, latency | alert on auth-bypass attempts |
 
@@ -609,11 +613,11 @@ Global: CloudWatch (or Grafana) dashboards per flow; synthetic canaries on `/p/*
 Every event that creates or changes financial state is recorded in an **append-only, write-once audit log**, independent of the ledger. The ledger (§10) is the financial source of truth; the audit log records the *who / what / when / why* of each mutation for tamper-evident traceability. Applies now to crediting, splits, clawbacks, and manual adjustments; **payouts are deferred but will be audited the same way when added.**
 
 **Requirements**
-- **Coverage:** conversion crediting, two-sided split, clawback/reversal, manual `adjustment`, and any admin action touching money. Each audit entry references the resulting `wallet_entry`/`conversion`, the actor (system webhook vs named admin), the source event (network `order_ref`), and before/after balances.
+- **Coverage:** conversion crediting, two-sided split, clawback/reversal, manual `adjustment`, and any admin action touching money. Each audit entry references the resulting `wallet_entry`/`conversion`, the actor (system poller vs named admin), the source event (network `order_id`), and before/after balances.
 - **Immutability & tamper-evidence (D8):** write-once **Postgres** store — no UPDATE/DELETE grants; entries **hash-chained** (each row carries the prior row's hash) so any alteration is detectable. *(Decided: hash-chained table, not QLDB — §18 #7; revisit QLDB only if cryptographic verifiability becomes a hard requirement.)*
 - **Separation of duties:** manual adjustments require the `admin` role + a mandatory reason; the actor is recorded. Second-person approval for large adjustments is deferred (maybe later — §18 #8).
 - **Reconciliation:** scheduled reconciliation of network-reported commissions vs ledger; discrepancies flagged to the admin dashboard and alerted (§13).
-- **Idempotency:** crediting keyed on `order_ref` so replays never double-credit; replays are themselves audited as no-ops.
+- **Idempotency:** crediting keyed on the event-log `(order_id, kind, status)` so poller re-reads of an unchanged order never double-credit; re-reads are themselves audited as no-ops.
 - **Retention & access:** financial audit retained per Israeli tax/accounting obligations (multi-year); access to audit data is least-privilege and itself logged.
 
 ```
@@ -641,7 +645,7 @@ audit_log               -- append-only, hash-chained
 | Link-gen latency | < 1.5s | ≤1 required upstream call; metadata async (§8.1) |
 | Redirect latency | < 500ms | dedicated redirect service; click logged off-path via stream (§9.1) |
 | Auth friction | first action in-session | passwordless OTP; immediate post-verify routing |
-| Attribution accuracy | within 2% | SubID + first-party click; idempotent webhook (§8.1, §9) |
+| Attribution accuracy | within 2% | SubID (`custom_parameters`) attribution; idempotent reconciliation poller (§8.1, §9) |
 | Availability | 99.5% MVP | serverless + managed services; redirect isolated from app API |
 | Security | OAuth2, no raw passwords | Cognito OTP + JWT; SSRF-safe link gen; open-redirect-safe (§9) |
 | Data residency | GDPR/IL | IL/EU region for Cognito + DB + stream |
@@ -655,7 +659,7 @@ audit_log               -- append-only, hash-chained
 2. Cognito pool (+ `admin` group) + Post-Confirmation provisioning → Feature 1.
 3. AliExpress signed client + `AliExpressAdapter` (SubID) → Feature 2.
 4. Redirect service + Firehose click stream + interstitial → Feature 3 (guest path first, then register path).
-5. Conversion-webhook → ledger crediting + two-sided split + audit log → Feature 4 + §14.
+5. Conversion poller (EventBridge → listOrders → in-VPC writer) → ledger crediting + two-sided split + audit log → Feature 4 + §14.
 6. Wallet read APIs + admin stats rollups → Feature 4 / Feature 5.
 7. Observability wired across all flows (§13).
 8. Walking-skeleton E2E (register → link → click → convert → credit → admin) on real infra.
@@ -667,7 +671,7 @@ audit_log               -- append-only, hash-chained
 | Risk | Impact | Mitigation |
 | :-- | :-- | :-- |
 | SMS OTP toll-fraud | Cost spike | WhatsApp-first OTP, rate limits + WAF (§5.1) |
-| Click / conversion fraud (self-click, bots, self-referral) | Wrong payouts later, network TOS risk | Idempotent webhook; flag `consumer==referrer`; anomaly hold; never auto-confirm suspicious |
+| Click / conversion fraud (self-click, bots, self-referral) | Wrong payouts later, network TOS risk | Idempotent poller (event-log key); flag `consumer==referrer`; anomaly hold; never auto-confirm suspicious |
 | Open redirect on `/p/*` | Abuse / phishing | Only redirect to stored affiliate URLs (F3-R7) |
 | Guest→register attribution leakage | Lost/incorrect rewards | Signed attribution token + window-bound linking (F3-R6) |
 | Two-sided reward gaming | Margin erosion | Split capped to margin (D9); fraud holds; admin review |
@@ -682,7 +686,7 @@ audit_log               -- append-only, hash-chained
 
 1. **Identity provider (D3) — decided: Cognito.** Chosen for speed and native support (phone OTP, JWT, passkeys, role groups), accepting deeper AWS lock-in. The identity/profile separation (§7.1) keeps app data portable, so Auth0/Clerk stay drop-in alternatives if we ever revisit.
 2. **OTP channel — decided: WhatsApp-first, SMS fallback.** WhatsApp Business API is the primary OTP channel (cheaper than SMS and avoids SMS-pumping toll fraud — both the top cost and top abuse surface); SMS is the fallback when WhatsApp delivery isn't available.
-3. **Two-sided split (D9) — decided:** consumer reward = **20% of the referrer's commission**, **configurable**. A rate change applies to **future transactions only** — existing and pending conversions keep the rate snapshotted when they occurred (no retroactive recompute). Funded from margin, which stays ≥ 0 by construction.
+3. **Two-sided split (D9) — decided:** cashback = the retailer's reported commission × **our split** (`referrerBps` / `consumerBps`). Our split is **admin policy living in CONFIG** (`cashback.referrerBps` / `cashback.consumerBps`), **snapshotted onto the Recommendation at creation** so a link's economics are **locked** — a later CONFIG change affects **new links only**, never existing/pending conversions (no retroactive recompute). The consumer share is funded from margin, which stays ≥ 0 by construction.
 4. **Guest→register window — decided:** Wanthat's **first-party attribution cookie = 30 days, configurable** (remembers the click for linking + re-engagement). Separately, the **network commission window is per-platform** (the adapter's `attributionWindowDays` — AliExpress = 3 days) and governs whether a purchase actually earns commission. (Cookie-consent handling still required.)
 5. **Enumeration (§7.5) — decided:** uniform login response + no-OTP-send for unknown numbers; register-path `409` accepted for MVP (option a) with rate limiting. Revisit (option b: owner-notification) only if enumeration abuse appears.
 6. **Datastore (D4) & event store (D7) — decided:** managed **PostgreSQL** for transactional data; **Kinesis Firehose → S3** for the high-volume impression/click/conversion stream (with async rollups to the `link` counters).
@@ -691,7 +695,7 @@ audit_log               -- append-only, hash-chained
 9. **Payouts — confirmed out of MVP.** No withdrawals in MVP; balances accrue (pending/confirmed) until a later payout phase. The ledger + audit log are already shaped to add payouts without rework.
 10. **Biometric sign-in — decided: include as an opt-in step-up.** Passkeys/WebAuthn (Face ID/Touch ID) offered *after* the first OTP sign-in (Cognito-native, Essentials tier) — cuts repeat-login SMS cost and is phishing-resistant. Phone-OTP stays primary enrollment + recovery; biometrics are never the day-1 first-touch method (first-touch friction; WhatsApp in-app browser WebAuthn gaps).
 11. **Profile name — decided:** collect **both** first and last name at registration; **display only the first name** to consumers (interstitial / share), keep last name internal.
-12. **Currency & FX — partly in MVP (required for the wallet).** The wallet is **ILS** but AliExpress commissions arrive in **USD**, so a **USD→ILS conversion at credit time is in MVP scope** (F4-R8, §10.1) — without it the customer wallet can't show real balances. *Still open:* the reference-rate **source** (e.g. central-bank/ECB daily) and exact timing. *Deferred:* multiple settlement currencies / user-selectable currency for other markets and any rate hedging — additive on the currency-tagged schema, not a migration.
+12. **Currency & FX — decided: hold in settlement currency, convert at withdrawal (a reversal of the old convert-at-credit model).** The wallet is **held in the retailer's settlement currency** (USD for AliExpress) so our liability matches our receivable (zero FX float); the ledger stores settlement-currency amounts, the balance is **displayed** in ILS net of a conversion commission (CONFIG `fx.conversionCommissionBps`), and the **real conversion happens only at withdrawal**, gated on the converted (ILS) value (F4-R8, §10.1). *FX infrastructure — decided, build pending:* a DynamoDB `fx_rate` cache keyed `(base, quote)` with an `asOf` timestamp, a scheduled rates-update function (FX-provider adapter) refreshing it, and a pure conversion function in `packages/domain` doing exact bigint math (`amountMinor × rate × (1 − commission)`). *Still open:* the **FX provider** choice and the **spread/rounding** policy; the **₪50 withdrawal threshold** is evaluated on the converted (ILS) value. *Deferred:* multiple user-selectable display currencies for other markets and rate hedging — additive on the currency-tagged schema, not a migration.
 
 ---
 
@@ -700,7 +704,7 @@ audit_log               -- append-only, hash-chained
 `aliexpress.affiliate.link.generate` on the System Interface gateway `https://api-sg.aliexpress.com/sync`.
 
 - **System params:** `app_key`, `method`, `v=2.0`, `format=json`, `sign_method=sha256`, `timestamp` (epoch ms as string).
-- **Business params:** `promotion_link_type` (0 = normal), `source_values` (product URL(s), comma-separated, ≤50), `tracking_id`; our `short_id` carried as the SubID/custom tracking string.
+- **Business params:** `promotion_link_type` (0 = normal), `source_values` (product URL(s), comma-separated, ≤50), `tracking_id`; our `recommendation_id` carried as the SubID/custom tracking string.
 - **Signature (sha256 / current gateway):** sort all params except `sign` by key ASCII-ascending; concatenate `key+value` with no separators; `sign = HMAC_SHA256(appSecret, baseString)` → hex, **uppercase**.
 - **Legacy MD5 gateway (`gw.api.taobao.com/router/rest`) — not used by Wanthat.** Documented only for awareness; it's deprecated and uses a weak hash. The MVP uses the HMAC-SHA256 gateway above exclusively. (The POC includes an MD5 path for completeness; production does not need it.)
 - **Response:** nested under `…link_generate_response.resp_result.result.promotion_links.promotion_link[]`; each item has `source_value` + `promotion_link`. Platform errors arrive as `error_response{code,msg}`.

@@ -40,7 +40,7 @@ outside it. Retailer egress happens only from non-VPC functions. No NAT Gateway.
 
 | Function | In VPC? | Reaches | Internet egress |
 |---|---|---|---|
-| Redirect | No | DynamoDB (`short_id→url`) | none |
+| Redirect | No | DynamoDB (`recommendation_id→url`) | none |
 | Lambdalith / admin | Yes | Aurora, DynamoDB (gateway endpoint) | none |
 | **Retailer Proxy** | No | retailer API, Secrets Mgr, DynamoDB | yes (direct) |
 | Poller **writer** | Yes | Aurora only | none |
@@ -56,12 +56,12 @@ cannot reach the Invoke API without a paid interface endpoint:
 - **Poll flow** — `EventBridge Scheduler → Retailer Proxy.listOrders` (calls retailer, resolves
   `guest_attribution` in DynamoDB) `→ invokes in-VPC writer` (Aurora ledger + audit). The
   non-VPC side initiates → **no interface endpoint, $0**.
-- **Link generation** — the in-VPC Lambdalith (`links` module) invokes `Retailer Proxy.generateLink`
-  **synchronously** (the user waits for the affiliate URL), which needs **one Lambda interface
-  endpoint (~$7/mo/AZ)**. The Proxy writes the DynamoDB `short_id→url` projection and returns the
-  URL; the authoritative Aurora link record is written by an in-VPC writer. *$0 alternative if the
-  endpoint cost matters: front `POST /links` with the Retailer Proxy directly (it then async-invokes
-  the in-VPC writer), at the cost of moving link-gen request handling out of the Lambdalith.*
+- **Link generation** — touches **no Aurora** (products + recommendations are DynamoDB, ADR-0003).
+  The in-VPC Lambdalith (`links` module) invokes `Retailer Proxy.generateLink` **synchronously**
+  (the user waits for the affiliate URL) — needing **one Lambda interface endpoint (~$7/mo/AZ)** —
+  which mints/reuses the product-level affiliate URL and upserts the **Product** in DynamoDB; the
+  Lambdalith then writes the member's **Recommendation** in DynamoDB. *$0 alternative: front
+  `POST /links` with the Retailer Proxy directly (no in-VPC hop), since the whole path is Aurora-free.*
 
 ### In-VPC connectivity
 

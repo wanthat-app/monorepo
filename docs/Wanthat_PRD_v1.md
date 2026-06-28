@@ -108,10 +108,10 @@ The MVP targets the Israeli market, where AliExpress holds over 66% of all e-com
 - **Goal:** Generate a tracked Wanthat link and share it — earning cashback if a friend buys
 - **Success:** Friend receives link, clicks it, purchases product. Recommender's wallet increases. Notification sent.
 
-Steps: (1) User pastes product URL into link generator. (2) System detects retailer, fetches product name/thumbnail via affiliate API, generates tracked redirect wanthat.app/p/[ID]. (3) User sees preview card (image, name, retailer, estimated commission), clicks Copy Link or Share to WhatsApp. (4) System pre-fills FTC-disclosure message template. (5) User sends link. (6) Recipient clicks, sees 2-second branded overlay, lands on product page. (7) Recipient purchases within 3-day cookie window. (8) Affiliate network reports conversion; commission credited to Wanthat; wallet updated within 24–48h. (9) Push/email sent to Recommender. (10) User sees updated balance.
+Steps: (1) User pastes product URL into link generator. (2) System detects retailer, fetches product name/thumbnail via affiliate API, generates tracked redirect wanthat.app/p/[ID]. (3) User sees preview card (image, name, retailer, estimated commission), clicks Copy Link or Share to WhatsApp. (4) System pre-fills FTC-disclosure message template. (5) User sends link. (6) Recipient clicks, sees the branded landing with a short countdown (default 3s, admin-tunable via CONFIG `landing.countdownSeconds`) before auto-redirect, lands on product page. (7) Recipient purchases within the 3-day attribution window (the app is cookieless). (8) Affiliate network reports conversion; commission credited to Wanthat; wallet updated within 24–48h. (9) Push/email sent to Recommender. (10) User sees updated balance.
 
 ### UC-02: New user onboarding (Recipient becomes Recommender)
-Recipient clicks link → 2-second overlay → lands on product page → buys → post-purchase interstitial "you can earn too" → signs up (phone OTP + email, no password) → welcome 3-step animation → generates first link within session (key activation metric).
+Recipient clicks link → branded landing with a short countdown (default 3s, admin-tunable) → lands on product page → buys → post-purchase interstitial "you can earn too" → signs up (phone OTP + email, no password) → welcome 3-step animation → generates first link within session (key activation metric).
 
 ### UC-03: User checks earnings and requests payout
 Dashboard → Wallet shows Total earned / Pending / Available + per-link history → tap link for detail (clicks, conversions, earned) → Withdraw when balance ≥ ₪50 → choose bit/Paybox/PayPal → confirm, 5–7 business days.
@@ -125,10 +125,51 @@ On supported product page → click extension icon → popup shows thumbnail/nam
 ### UC-06: My Links — browsing and re-sharing previously generated links
 Dashboard → My Links → scrollable list (thumbnail, name, retailer, date, clicks, conversions, earned) → filter/sort/search → tap entry for detail with same tracked link → Copy / Share to WhatsApp → re-share accumulates to same link's stats. The My Links library is the product's long-term engagement surface.
 
+### 6.7 Designed user flows (refined MVP)
+
+*Refines UC-01–06 with the experience decisions made during design — behaviour only. A **member**
+(registered) is both recommender and buyer; a **visitor** is anonymous. Admin tools are deferred.*
+
+**Onboard & sign in — one phone-first flow.**
+- The user enters their **phone number only** and gets a one-time SMS code (with a **resend** option
+  after a short wait).
+- If the phone is already registered, they're **signed straight in**. If it's new, they continue to a
+  short **profile step** — first and last name, **email optional**, **language pre-selected from
+  their country**.
+- New members are then **offered Face ID / passkey** sign-in for next time (optional — can skip).
+- If they had already clicked recommendations as a guest, those pending earnings are **carried over
+  to the new account**.
+
+**Returning sign-in.** A returning member signs in with **Face ID / passkey** (no phone needed) — or
+the phone-code flow above. Sessions persist; the user can **sign out**.
+
+**Create a recommendation — two steps.**
+- The member **pastes a product link from a store**; Wanthat fetches the product and shows a page
+  with the **product details and the cashback** they (and a buyer) would earn.
+- They optionally **write a review** (a rating and a few words).
+- They tap **Generate** and get a **shareable Wanthat link** to post (e.g. in WhatsApp). Their
+  recommendations are saved to a **"My Recommendations" list** with per-item stats.
+
+**Someone clicks the recommendation.**
+- The recipient opens the link and sees a **branded landing page with the product and the
+  recommender's review**.
+- If they're **already signed in**, they're **sent straight to the store** and their purchase is
+  credited to the recommender. If **not**, they're offered **sign up / log in / continue as guest**,
+  then sent on.
+
+**Track earnings.** A member's **wallet** shows **confirmed** and **pending** earnings — both as a
+**recommender** (when others buy) and as a **buyer** (their own cashback) — with a history of each.
+
+**Earnings lifecycle.** After a purchase, the cashback first appears as **pending**, then
+**confirms** once the store finalises the order — or is **reversed** if the order is cancelled or
+returned — typically over the store's return window.
+
+**Manage profile.** A member can view and update their **name and language**.
+
 ## 7. System Flows
 
 ### 7.1 Link Generation & Tracking Flow
-User pastes URL → retailer detection → affiliate network lookup → deep link generated with Wanthat affiliate tag → stored as wanthat.app/p/[trackingID] linked to user → (on click) branded overlay → 301 redirect with affiliate tag → (on purchase) network conversion postback → Wanthat webhook → commission allocated (pending → confirmed) → push notification.
+User pastes URL → retailer detection → affiliate network lookup → deep link generated with Wanthat affiliate tag → stored as wanthat.app/p/[trackingID] linked to user → (on click) branded landing with a short countdown (default 3s, admin-tunable) → 301 redirect with affiliate tag → (on purchase) the scheduled conversion poller reconciles the order via the affiliate API → commission allocated (pending → confirmed) → push notification.
 
 ### 7.2 Affiliate Network Integration Architecture
 Wanthat acts as a single publisher across multiple affiliate networks, abstracting retailer complexity from the user.
@@ -160,7 +201,7 @@ Wanthat acts as a single publisher across multiple affiliate networks, abstracti
 - Web app: React or Next.js front-end, Node.js or Python backend, PostgreSQL database
 - Link shortener/tracker: custom redirect service at wanthat.app/p/[ID] with click logging
 - Affiliate API integrations: AliExpress Affiliate API, Awin Publisher API
-- Webhook listener: receives conversion postbacks in real time
+- Conversion poller: scheduled reconciliation that pulls conversions from the affiliate API (no inbound webhook)
 - Wallet engine: tracks pending vs confirmed commissions per user, handles Wanthat's revenue cut
 - Notification service: Email + WhatsApp Business API
 

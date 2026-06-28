@@ -31,7 +31,7 @@ flowchart TB
     redirect["redirect Lambda<br>(non-VPC, OG landing + resolve)"]
     proxy["Retailer Proxy<br>(non-VPC, secret-scoped)"]
     sched["EventBridge Scheduler"]
-    ddb[("DynamoDB<br>short_id→url · guest_attribution")]
+    ddb[("DynamoDB<br>recommendation_id→url · guest_attribution · config (kv) · fx_rate cache*")]
     secrets["Secrets Manager"]
     firehose["Kinesis Firehose"]
     s3events[("S3 events + Athena")]
@@ -40,7 +40,7 @@ flowchart TB
       lambdalith["app-api Lambdalith<br>identity · links · wallet"]
       admin["admin Lambda"]
       writer["poller writer"]
-      aurora[("Aurora Serverless v2<br>PII · ledger · audit · links")]
+      aurora[("Aurora Serverless v2<br>PII · ledger · audit")]
     end
   end
 
@@ -57,7 +57,7 @@ flowchart TB
   writer -- "append-only" --> aurora
   lambdalith -- "gateway endpoint" --> ddb
   lambdalith -. "invoke (interface endpoint)" .-> proxy
-  redirect -- "resolve short_id" --> ddb
+  redirect -- "resolve recommendation_id" --> ddb
   redirect -- "impression + click (log line)" --> firehose
   writer -- "conversion event (log line)" --> firehose
   firehose --> s3events
@@ -105,7 +105,7 @@ the poller-writer into the append-only PostgreSQL ledger + hash-chained audit lo
   `/products/*`), `wallet` (`/wallet*`). Shared Postgres schema + cross-table transactions.
 - **admin** *(in-VPC)* — separate role/exposure; the only app surface that may write money
   (audited adjustments).
-- **redirect** *(non-VPC, CloudFront → Lambda Function URL)* — `GET /p/{id}` resolves `short_id`
+- **redirect** *(non-VPC, CloudFront → Lambda Function URL)* — `GET /p/{id}` resolves `recommendation_id`
   in **DynamoDB** and returns an OG-tagged landing page; client-side JS then resolves identity
   (member → Bearer token validated **offline against JWKS** → inject `customer_id`; guest →
   `guestId` from **localStorage** → inject `g`) and redirects, or renders
@@ -113,18 +113,25 @@ the poller-writer into the append-only PostgreSQL ledger + hash-chained audit lo
   Firehose. **Cookieless; not behind the JWT authorizer.** (ADR-0007.)
 - **conversion poller** — `EventBridge → Retailer Proxy.listOrders` (resolves attribution) invokes
   an in-VPC **writer** (ledger + audit) that also emits conversion events → Firehose. (ADR-0009.)
+  Alongside it, a pending scheduled **rates-updater** (an FX-provider adapter) will refresh the
+  `fx_rate` cache table on a schedule (decided, build pending).
 - **Retailer Proxy** *(non-VPC)* — the single secret-scoped function holding the retailer
   credential + HMAC client; sole egress to retailer APIs (`generateLink`, `listOrders`); the only
   code with internet egress (ADR-0004).
 
 ### 3.4 Data (polyglot — ADR-0003)
-- **Aurora Serverless v2 (PostgreSQL, scale-to-zero)** — system of record: `customer` (PII),
-  `wallet_entry` (append-only ledger), `audit_log` (append-only, hash-chained), referral graph,
-  authoritative `link` records. **IAM database auth, no RDS Proxy**; per-function Postgres roles
-  enforce the money guarantee (poller-writer append-only; others read-only on money tables).
-- **DynamoDB (on-demand)** — the two non-PII hot-path lookups: `short_id → affiliate_url`
-  (redirect projection, immutable per link) and `guest_attribution` (guestId → customer_id,
-  best-effort).
+- **Aurora Serverless v2 (PostgreSQL, scale-to-zero)** — **PII + money only**: `customer` (PII),
+  `wallet_entry` (append-only ledger), `audit_log` (append-only, hash-chained). **IAM database auth,
+  no RDS Proxy**; per-function Postgres roles enforce the money guarantee (poller-writer
+  append-only; others read-only on money tables).
+- **DynamoDB (on-demand)** — everything else (catalog/operational, non-PII): **Product** (keyed by
+  `(store_id, store_product_id)`, with the product-level `affiliate_url`), **Recommendation** (keyed
+  by `recommendation_id`, resolves the redirect in one lookup), `guest_attribution`
+  (guestId → customer_id, best-effort), **`config`** (a generic key-value table of admin-tunable
+  runtime settings — e.g. `landing.countdownSeconds`, `cashback.referrerBps`, `cashback.consumerBps`,
+  `fx.conversionCommissionBps` — written by `admin-api` and read where needed; distinct from the
+  boot-time `Env` env-var contract), and a pending **`fx_rate`** cache table keyed by `(base, quote)`
+  with an `asOf` timestamp (decided, build pending).
 - **Kinesis Firehose → S3 (+ Athena)** — impression/click/conversion event stream, off the OLTP
   path.
 - **Secrets Manager** — retailer credentials (held only by the non-VPC Retailer Proxy); rotation.
@@ -151,8 +158,9 @@ provisions `customer` + empty `wallet` in PostgreSQL (single Aurora transaction)
 
 **Link generation:** Authenticated browser → `POST /links` (JWT) → the Lambdalith invokes the
 **Retailer Proxy** (Lambda interface endpoint), which signs `aliexpress.affiliate.link.generate`
-(SubID = `short_id`) and writes `short_id → affiliate_url` to DynamoDB (returned to the user); the
-authoritative `link` is persisted to Aurora by the in-VPC writer.
+(**product-level** — no per-referrer SubID) and **upserts the Product** (with its `affiliate_url`)
+in DynamoDB; the Lambdalith then writes the member's **Recommendation** in DynamoDB and returns the
+share URL. **No Aurora is touched.**
 
 **Redirect → conversion:** Consumer hits `/p/{id}` → redirect returns the OG landing page
 (impression) → client-side JS resolves identity and calls the resolve endpoint, which injects

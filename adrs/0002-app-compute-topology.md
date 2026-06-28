@@ -18,15 +18,15 @@ money-writing and admin surfaces.
 ### Four compute units, each at a real seam
 
 1. **`identity + links + wallet` Lambdalith** — one Lambda, internal HTTP framework, behind an
-   API Gateway HTTP API. These share one Postgres schema and cross-table transactions
-   (registration provisions customer+wallet+referral atomically) and carry similar modest load,
-   so keeping them together avoids distributed transactions and keeps the function warm.
+   API Gateway HTTP API. `identity` + `wallet` share Aurora and an atomic transaction at
+   registration (customer + empty wallet); `links` writes products/recommendations to DynamoDB.
+   Similar modest load → keeping them together keeps the function warm and the surface small.
 2. **`admin`** — its own Lambda. Different audience (internal operators), highest privilege (the
    only app surface that may write money, via audited adjustments), and different exposure
    (separate hostname / tighter WAF). Isolating it shrinks the public API blast radius and gives
    the high-privilege surface its own tight role.
 3. **`redirect`** — separate (public, viral-spiky, latency-critical). **Non-VPC**: it resolves
-   `short_id → affiliate_url` in DynamoDB (ADR-0003), so it never touches Aurora and needs no
+   `recommendation_id → affiliate_url` in DynamoDB (ADR-0003), so it never touches Aurora and needs no
    VPC attachment, internet egress, or DB credentials.
 4. **`conversion poller`** — separate (scheduled, sole money writer). The poll flow is
    `EventBridge → Retailer Proxy (calls the IPv4-only retailer API, resolves attribution in
@@ -45,9 +45,9 @@ Plus one shared egress function:
 
 ### VPC placement
 
-The only thing that pins a function to the VPC is **Aurora access**. Aurora-touching code
-(Lambdalith, admin, poller-writer, link writer) runs **in-VPC and connects directly to Aurora
-via IAM database authentication — no RDS Proxy**. **Reserved-concurrency caps** on these
+The only thing that pins a function to the VPC is **Aurora access** (PII + money — ADR-0003).
+Aurora-touching code (Lambdalith, admin, poller-writer) runs **in-VPC and connects directly to
+Aurora via IAM database authentication — no RDS Proxy**. **Reserved-concurrency caps** on these
 low-concurrency functions keep total connections under Aurora `max_connections`. Everything else
 runs outside the VPC.
 

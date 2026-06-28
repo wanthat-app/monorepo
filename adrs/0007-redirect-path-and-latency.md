@@ -6,13 +6,13 @@
 
 ## Context
 
-The public `/p/{short_id}` redirect is the consumer entry point and the one viral-spiky surface:
+The public `/p/{recommendation_id}` redirect is the consumer entry point and the one viral-spiky surface:
 the scenario the architecture exists to serve is a link going viral after a quiet period. The
-product target is **p95 < 500ms**. It must resolve `short_id → affiliate_url`, decide attribution,
+product target is **p95 < 500ms**. It must resolve `recommendation_id → affiliate_url`, decide attribution,
 and emit funnel events — fast.
 
 The app is **cookieless** (ADR-0008): the SPA holds the Cognito JWT in JS and sends it as a Bearer
-header on `/api/*`. But a click on `/p/{short_id}` is a **top-level navigation**, which carries
+header on `/api/*`. But a click on `/p/{recommendation_id}` is a **top-level navigation**, which carries
 neither a Bearer header (those only ride XHR/fetch) nor a cookie — so the server **cannot** know
 the consumer's identity from that request. The identity decision therefore happens **client-side**.
 That also fits OG unfurling: social crawlers run no JS, so the landing HTML must be server-rendered
@@ -23,11 +23,12 @@ with product-specific OG tags regardless.
 **Redirect is a non-VPC Lambda fronted by a CloudFront → Lambda Function URL (`/p/*`), not API
 Gateway.** Two steps:
 
-1. **`GET /p/{short_id}`** → resolve `short_id` in DynamoDB (ADR-0003) and return a minimal
+1. **`GET /p/{recommendation_id}`** → resolve `recommendation_id` in DynamoDB (ADR-0003) and return a minimal
    **OG-tagged landing page + bootstrap JS**. Emit an **impression** event.
 2. **Client-side identity + resolve** — the bootstrap JS, on our origin, inspects the SPA's token
-   store and calls a **resolve** endpoint that assembles `custom_parameters` and returns the
-   affiliate URL:
+   store and calls a **resolve** endpoint that assembles `custom_parameters` — `ref` (the
+   `recommendation_id`, always) plus a consumer key — onto the **product-level** affiliate URL and
+   returns it:
    - **member** → sends the Bearer token; the endpoint validates it **offline against cached
      Cognito JWKS** (no Cognito call) and injects `customer_id` (`c`) → JS redirects. Automatic,
      no interaction — the logged-in "auto-redirect", done in the browser.

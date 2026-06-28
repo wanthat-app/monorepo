@@ -22,22 +22,26 @@ we need on the order itself.
 
 Resolve attribution entirely from values injected into `custom_parameters` — **no click store.**
 
-- **At link generation:** the referrer's `short_id` is baked into the affiliate link as the
-  SubID (always present → referrer always resolvable).
-- **At click/redirect (client-driven resolve, ADR-0007):** append a consumer key — member → the
-  client sends its Bearer token and the resolve endpoint injects `customer_id`
-  (`{ ref: short_id, c: customer_id }`); guest → the client sends an opaque, random **`guestId`**
-  from **localStorage** and the endpoint injects it (`{ ref: short_id, g: guestId }`). The opaque
-  id leaks nothing internal to the retailer.
+- **At link generation:** nothing referrer-specific is baked — the affiliate URL is **product-level**
+  (one `link.generate` per product, shared across everyone who recommends it). The recommendation
+  that points at it carries the referrer (its owner) **and a snapshot of the cashback split rates**
+  (referrer/consumer bps) taken from the CONFIG policy at creation — so the link's economics are
+  locked and later policy changes affect only new links.
+- **At click/redirect (client-driven resolve, ADR-0007):** append the whole `custom_parameters` —
+  `ref` (the `recommendation_id`, always) **plus** the consumer key: member → the client sends its
+  Bearer token and the resolve endpoint injects `customer_id` (`{ ref, c: customer_id }`); guest →
+  the client sends an opaque, random **`guestId`** from **localStorage** and the endpoint injects it
+  (`{ ref, g: guestId }`). Opaque ids only — nothing internal leaks to the retailer.
 - **At registration:** map `guestId → customer_id` in a small **DynamoDB** `guest_attribution`
   item — many-to-one (a person may accrue several `guestId`s across devices). It is
   **opaque→opaque (non-PII)** and **best-effort**, so it lives in DynamoDB, *outside* the atomic
   Aurora registration transaction. The redirect path neither reads nor writes it — the client
   already holds `guestId` in localStorage; the mapping is written at registration and read at
   conversion.
-- **At conversion (poller):** `ref` → referrer (always); `c` → member, credited directly; else
-  `g` → `guest_attribution[g]` (a DynamoDB point lookup from the non-VPC Retailer Proxy) →
-  member if mapped, else guest; neither → untracked.
+- **At conversion (poller):** `ref` (the `recommendation_id`) → look up the recommendation → its
+  **referrer** (owner) + **product** (always resolvable); `c` → member consumer, credited directly;
+  else `g` → `guest_attribution[g]` (a DynamoDB point lookup from the non-VPC Retailer Proxy) →
+  member if mapped, else guest; neither consumer key → untracked.
 
 ## Alternatives considered
 
@@ -59,7 +63,7 @@ Resolve attribution entirely from values injected into `custom_parameters` — *
   happens while the order is still in the poll window. Closed/aged-out orders aren't retro-credited.
 - The best-effort `guest_attribution` write can fail without affecting registration (the
   guest-no-reward fallback).
-- **To confirm at integration:** the retailer allows appending a click-time value to
-  `custom_parameters` on the outgoing URL (the SubID is fixed at `link.generate`; the consumer
-  key is added at the resolve step). `guestId` lives in first-party `localStorage` (functional
-  storage), not a cookie — consent is gated accordingly before it is set.
+- **To confirm at integration:** the retailer reliably **round-trips redirect-appended
+  `custom_parameters`** — both `ref` and the consumer key are added at the resolve step onto a
+  **product-level** affiliate URL (nothing per-referrer is baked at `link.generate`). `guestId`
+  lives in first-party `localStorage` (functional storage), not a cookie — consent-gated before set.
