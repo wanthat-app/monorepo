@@ -44,7 +44,7 @@ withdrawal.**
     to `ecb`).
   - **For now we ship both and default to `ecb`;** flip to `boi` once consent lands — no wallet
     change, just the config. The licensing decision is tracked in
-    [issue #1](https://github.com/whantthat-org/wanthat-mono/issues/1) (labels: **Product**, **Legal**).
+    [issue #1](https://github.com/wanthat-app/monorepo/issues/1) (labels: **Product**, **Legal**).
 
 We do **not** need real-time/intraday FX: a daily reference rate plus the commission buffer is
 sufficient for a cashback wallet.
@@ -71,6 +71,6 @@ sufficient for a cashback wallet.
   a higher-frequency provider if needed.
 - **Both providers shipped; default `ecb` (commercial-safe).** BoI endpoint confirmed (series DB,
   SDMX, no key — above); **BoI commercial-licensing is the open risk** — flip `fx.provider` to `boi`
-  only once written consent is obtained (tracked in [#1](https://github.com/whantthat-org/wanthat-mono/issues/1), labels Product/Legal).
+  only once written consent is obtained (tracked in [#1](https://github.com/wanthat-app/monorepo/issues/1), labels Product/Legal).
 - **To confirm at integration:** a **staleness threshold** beyond which withdrawal should block
   rather than convert on a stale rate; and the spread/rounding policy of the conversion commission.
