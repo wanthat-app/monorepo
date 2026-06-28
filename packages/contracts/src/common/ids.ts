@@ -14,3 +14,10 @@ export type RecommendationId = z.infer<typeof RecommendationId>;
 /** Phone number in E.164 form (identity, ADR-0006). */
 export const PhoneE164 = z.string().regex(/^\+[1-9]\d{1,14}$/, "E.164 phone");
 export type PhoneE164 = z.infer<typeof PhoneE164>;
+
+/**
+ * Opaque, random guest identifier the SPA mints and keeps in `localStorage` (ADR-0008).
+ * Non-PII; carried as the `g` consumer key at click and mapped to a member on registration.
+ */
+export const GuestId = z.string().min(1).max(128);
+export type GuestId = z.infer<typeof GuestId>;

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { RecommendationId, Uuid } from "./ids";
+import { GuestId, RecommendationId, Uuid } from "./ids";
 
 /**
  * Attribution values echoed back via the retailer's `custom_parameters` (ADR-0008).
@@ -11,7 +11,7 @@ export const CustomParameters = z
   .object({
     ref: RecommendationId,
     c: Uuid.optional(),
-    g: z.string().min(1).optional(),
+    g: GuestId.optional(),
   })
   .refine((v) => !(v.c && v.g), "c and g are mutually exclusive");
 export type CustomParameters = z.infer<typeof CustomParameters>;
