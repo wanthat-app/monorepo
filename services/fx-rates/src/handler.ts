@@ -10,11 +10,12 @@
  * cache for the ILS display figure and the withdrawal-time conversion. Failures leave the prior
  * cached rate in place (last-known-good).
  *
- * Provider (MVP, ADR-0017): Bank of Israel representative rate via the series DB (SDMX, no key) —
- * GET https://edge.boi.gov.il/FusionEdgeServer/sdmx/v2/data/dataflow/BOI.STATISTICS/EXR/1.0/RER_USD_ILS
- * Behind an adapter, so swappable to ECB/Frankfurter if BoI commercial-use consent isn't secured.
- * Open: BoI commercial-licensing consent, spread/rounding policy, and a staleness threshold beyond
- * which withdrawal should block rather than convert on a stale rate.
+ * Provider (ADR-0017): selected at run time by CONFIG `fx.provider` (`boi` | `ecb`), both behind the
+ * adapter. `boi` = Bank of Israel representative rate via the series DB (SDMX, no key) —
+ * GET https://edge.boi.gov.il/FusionEdgeServer/sdmx/v2/data/dataflow/BOI.STATISTICS/EXR/1.0/RER_USD_ILS;
+ * `ecb` = ECB reference rate via Frankfurter (EUR base, USD/ILS as a cross) — the commercial-safe
+ * default. Open: BoI commercial-licensing consent (Product/Legal issue), spread/rounding policy, and
+ * a staleness threshold beyond which withdrawal should block rather than convert on a stale rate.
  *
  * Stub.
  */

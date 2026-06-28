@@ -31,18 +31,20 @@ withdrawal.**
   pure `convertMinor` (`@wanthat/domain`) reads it for exact bigint math. Refresh cadence is
   admin-tunable (CONFIG `fx.updateIntervalMinutes`, default twice-daily); a failed refresh leaves the
   **last-known-good** rate in place.
-- **Provider for MVP: the Bank of Israel representative rate (שער יציג)** — the official daily
-  USD/ILS reference rate: free, ILS-native, defensible to members ("we use the Bank of Israel
-  rate"), and daily cadence matches our needs. Served from BoI's series database over SDMX (no API
-  key): `https://edge.boi.gov.il/FusionEdgeServer/sdmx/v2/data/dataflow/BOI.STATISTICS/EXR/1.0/RER_USD_ILS`
-  (CSV/SDMX-JSON). The provider sits behind an adapter, so it is **swappable** without touching the
-  wallet.
-  - **Licensing caveat (must resolve before launch):** BoI's site Terms of Use prohibit commercial
-    reuse/redistribution of its data without **prior written consent** — there is no open license.
-    So either obtain written consent from BoI (Public Enquiries) for our use, or fall back to a
-    commercially-reusable source. **Fallback: ECB reference rates** (e.g. via Frankfurter) — freely
-    reusable with attribution, EUR-based so USD/ILS is a cross. Same daily cadence; swap via the
-    adapter if consent isn't secured.
+- **Implement BOTH providers behind the `fx-rates` adapter; the active one is admin-selectable** via
+  CONFIG `fx.provider` (`boi` | `ecb`):
+  - **`boi` — Bank of Israel representative rate (שער יציג):** the official daily USD/ILS reference
+    rate (free, ILS-native, defensible: "we use the Bank of Israel rate"). Served from BoI's series
+    database over SDMX (no API key):
+    `https://edge.boi.gov.il/FusionEdgeServer/sdmx/v2/data/dataflow/BOI.STATISTICS/EXR/1.0/RER_USD_ILS`.
+    **Licensing caveat:** BoI's Terms of Use prohibit commercial reuse without **prior written
+    consent** — so `boi` may not be used commercially until consent is obtained.
+  - **`ecb` — ECB reference rate (via Frankfurter):** freely reusable with attribution, EUR-based so
+    USD/ILS is a cross. Same daily cadence. The **commercial-safe default** (`fx.provider` defaults
+    to `ecb`).
+  - **For now we ship both and default to `ecb`;** flip to `boi` once consent lands — no wallet
+    change, just the config. The licensing decision is tracked in a GitHub issue (labels:
+    **Product**, **Legal**).
 
 We do **not** need real-time/intraday FX: a daily reference rate plus the commission buffer is
 sufficient for a cashback wallet.
@@ -67,7 +69,8 @@ sufficient for a cashback wallet.
   balances and the ₪50 threshold are computed on the live converted value.
 - BoI is **daily-only**; acceptable given the commission buffer, and the adapter lets us escalate to
   a higher-frequency provider if needed.
-- **Endpoint confirmed** (BoI series DB, SDMX, no key — see above); **commercial-licensing is the
-  open risk** — obtain BoI written consent or switch the adapter to ECB/Frankfurter before launch.
+- **Both providers shipped; default `ecb` (commercial-safe).** BoI endpoint confirmed (series DB,
+  SDMX, no key — above); **BoI commercial-licensing is the open risk** — flip `fx.provider` to `boi`
+  only once written consent is obtained (tracked in a GitHub issue, labels Product/Legal).
 - **To confirm at integration:** a **staleness threshold** beyond which withdrawal should block
   rather than convert on a stale rate; and the spread/rounding policy of the conversion commission.

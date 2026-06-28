@@ -38,6 +38,14 @@ export const CashbackConsumerBps = Bps;
 export const FxConversionCommissionBps = Bps;
 /** How often the FX rates-updater refreshes the fx_rate cache, in minutes (UC8). */
 export const FxUpdateIntervalMinutes = z.number().int().min(1).max(1440);
+/**
+ * Which FX rate source is live (ADR-0017). Both are implemented behind the `fx-rates` adapter; the
+ * active one is admin-selected here. `boi` = Bank of Israel representative rate (official, but its
+ * commercial-use licensing needs written consent — see the Product/Legal tracking issue); `ecb` =
+ * ECB reference rate (freely reusable, the commercial-safe default).
+ */
+export const FxProvider = z.enum(["boi", "ecb"]);
+export type FxProvider = z.infer<typeof FxProvider>;
 
 /** How often the conversion poller runs, in minutes — admin-api applies it to the EventBridge schedule. */
 export const PollerIntervalMinutes = z.number().int().min(1).max(1440);
@@ -51,6 +59,7 @@ export const CONFIG_KEYS = [
   "cashback.consumerBps",
   "fx.conversionCommissionBps",
   "fx.updateIntervalMinutes",
+  "fx.provider",
   "poller.intervalMinutes",
   "poller.lookbackHours",
 ] as const;
@@ -65,6 +74,7 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "cashback.consumerBps": CashbackConsumerBps,
   "fx.conversionCommissionBps": FxConversionCommissionBps,
   "fx.updateIntervalMinutes": FxUpdateIntervalMinutes,
+  "fx.provider": FxProvider,
   "poller.intervalMinutes": PollerIntervalMinutes,
   "poller.lookbackHours": PollerLookbackHours,
 };
@@ -80,6 +90,7 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "cashback.consumerBps": 0,
   "fx.conversionCommissionBps": 200,
   "fx.updateIntervalMinutes": 720, // twice daily; the conversion commission absorbs intraday drift
+  "fx.provider": "ecb", // commercial-safe default until BoI consent is obtained (ADR-0017)
   "poller.intervalMinutes": 60,
   // Lookback must cover an order's full maturation; 72h is a placeholder — tune at integration
   // to AliExpress's confirm/return latency (see ADR-0009).
