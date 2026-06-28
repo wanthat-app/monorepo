@@ -20,8 +20,9 @@ wanthat/
 ├─ services/
 │  ├─ app-api/                    # identity+links+wallet Lambdalith
 │  ├─ admin-api/                  # admin Lambda
-│  ├─ redirect/                   # redirect service
-│  └─ conversion-poller/          # scheduled poller (fetcher + writer)
+│  ├─ redirect/                   # redirect service (non-VPC → DynamoDB)
+│  ├─ conversion-poller/          # scheduled poll writer (in-VPC)
+│  └─ retailer-proxy/             # sole non-VPC egress to retailer APIs
 ├─ packages/
 │  ├─ contracts/                  # Zod schemas: domain model, API I/O, custom_parameters
 │  ├─ domain/                     # ledger math, commission split, attribution logic

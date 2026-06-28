@@ -18,6 +18,7 @@ scale to zero between bursts, and have no servers to patch. (ADR-0007.)
 flowchart TB
   referrer(["Referrer (web)"])
   consumer(["Consumer (web)"])
+  retailer[("Retailer APIs — AliExpress …<br>IPv4-only")]
 
   subgraph edge["Edge"]
     cf["CloudFront — TLS · WAF · CDN"]
@@ -25,60 +26,56 @@ flowchart TB
   end
 
   subgraph region["AWS · il-central-1"]
-    apigw["API Gateway HTTP API<br/>JWT authorizer"]
-    cognito["Cognito<br/>SMS OTP + passkeys"]
-    redirect["redirect Lambda<br/>(non-VPC)"]
-    fetchR["retailer fetcher(s)<br/>(non-VPC, secret-scoped)"]
-    fetchP["poller fetcher<br/>(non-VPC)"]
+    apigw["API Gateway HTTP API<br>JWT authorizer"]
+    cognito["Cognito<br>SMS OTP + passkeys"]
+    redirect["redirect Lambda<br>(non-VPC, OG landing + resolve)"]
+    proxy["Retailer Proxy<br>(non-VPC, secret-scoped)"]
     sched["EventBridge Scheduler"]
-    ddb[("DynamoDB<br/>short_id→url · guest_attribution")]
+    ddb[("DynamoDB<br>short_id→url · guest_attribution")]
     secrets["Secrets Manager"]
     firehose["Kinesis Firehose"]
     s3events[("S3 events + Athena")]
 
     subgraph vpc["VPC — private subnets (no NAT, no RDS Proxy)"]
-      lambdalith["app-api Lambdalith<br/>identity · links · wallet"]
+      lambdalith["app-api Lambdalith<br>identity · links · wallet"]
       admin["admin Lambda"]
       writer["poller writer"]
-      aurora[("Aurora Serverless v2<br/>PII · ledger · audit · links")]
+      aurora[("Aurora Serverless v2<br>PII · ledger · audit · links")]
     end
   end
 
-  retailer[("Retailer APIs — AliExpress …<br/>IPv4-only")]
-
-  %% request + data edges
-  referrer -->|"HTTPS /api/*"| cf
-  consumer -->|"click /p/*"| cf
-  cf -->|"static"| s3site
-  cf -->|"/api/*"| apigw
-  cf -->|"/p/*"| redirect
+  referrer -- "HTTPS /api/*" --> cf
+  consumer -- "click /p/*" --> cf
+  cf -- "static" --> s3site
+  cf -- "/api/*" --> apigw
+  cf -- "/p/*" --> redirect
   apigw -. "validate jwt" .-> cognito
   apigw --> lambdalith
   apigw --> admin
-  lambdalith -->|"IAM DB auth"| aurora
-  admin -->|"IAM DB auth"| aurora
-  writer -->|"append-only"| aurora
-  lambdalith -->|"gateway endpoint"| ddb
-  lambdalith -. "invoke" .-> fetchR
-  redirect -->|"resolve short_id"| ddb
-  redirect -->|"click (log line)"| firehose
+  lambdalith -- "IAM DB auth" --> aurora
+  admin -- "IAM DB auth" --> aurora
+  writer -- "append-only" --> aurora
+  lambdalith -- "gateway endpoint" --> ddb
+  lambdalith -. "invoke (interface endpoint)" .-> proxy
+  redirect -- "resolve short_id" --> ddb
+  redirect -- "impression + click (log line)" --> firehose
+  writer -- "conversion event (log line)" --> firehose
   firehose --> s3events
-  sched --> fetchP
-  fetchP -->|"resolve guest_attribution"| ddb
-  fetchP -. "invoke" .-> writer
-  fetchR --> secrets
-  fetchP --> secrets
-  fetchR -->|"HMAC link.generate"| retailer
-  fetchP -->|"order.listbyindex"| retailer
+  sched --> proxy
+  proxy -- "resolve guest_attribution" --> ddb
+  proxy -. "invoke" .-> writer
+  proxy --> secrets
+  proxy -- "link.generate / order.listbyindex" --> retailer
 
-  classDef invpc fill:#e6f0ff,stroke:#3b6fb3,color:#0b2545;
-  classDef novpc fill:#eafaf1,stroke:#2e8b57,color:#0b3d2e;
-  classDef data fill:#fff4e6,stroke:#cc8400,color:#5c3b00;
-  classDef ext fill:#f3f0f7,stroke:#7a5fa3,color:#33235c;
-  class lambdalith,admin,writer invpc;
-  class redirect,fetchR,fetchP novpc;
-  class aurora,ddb,s3events,s3site data;
-  class retailer ext;
+  classDef invpc fill:#e6f0ff,stroke:#3b6fb3,color:#0b2545
+  classDef novpc fill:#eafaf1,stroke:#2e8b57,color:#0b3d2e
+  classDef data fill:#fff4e6,stroke:#cc8400,color:#5c3b00
+  classDef ext fill:#f3f0f7,stroke:#7a5fa3,color:#33235c
+  class lambdalith,admin,writer invpc
+  class redirect,proxy novpc
+  class aurora,ddb,s3events,s3site data
+  class retailer ext
+  style vpc fill:#f3f0f7
 ```
 
 *Legend: blue = in-VPC Lambdas · green = non-VPC Lambdas · orange = data stores · purple =
@@ -86,8 +83,9 @@ external. Solid arrows are data/HTTP; dotted arrows are Lambda-to-Lambda invokes
 
 Four compute units sliced by real seams (ADR-0002): the **app-api Lambdalith**
 (identity · links · wallet), a separate **admin** API, the public **redirect** service, and the
-scheduled **conversion poller** (a non-VPC fetcher + in-VPC writer). All money mutations flow
-through the poller-writer into the append-only PostgreSQL ledger + hash-chained audit log.
+scheduled **conversion poller** (EventBridge → Retailer Proxy → in-VPC writer), plus the shared
+**Retailer Proxy** — the sole non-VPC egress to retailer APIs. All money mutations flow through
+the poller-writer into the append-only PostgreSQL ledger + hash-chained audit log.
 
 ## 3. Components
 
@@ -107,13 +105,17 @@ through the poller-writer into the append-only PostgreSQL ledger + hash-chained 
   `/products/*`), `wallet` (`/wallet*`). Shared Postgres schema + cross-table transactions.
 - **admin** *(in-VPC)* — separate role/exposure; the only app surface that may write money
   (audited adjustments).
-- **redirect** *(non-VPC)* — resolves `short_id → affiliate_url` in **DynamoDB**; member →
-  auto-301 (+`customer_id` in `custom_parameters`), anon → OG landing (+`guestId` cookie); emits
-  the click off the 301 path via a structured log line → Firehose. (ADR-0007.)
-- **conversion poller** — non-VPC **fetcher** (calls the IPv4-only retailer API, resolves
-  attribution) invokes an in-VPC **writer** (ledger + audit). Scheduled via EventBridge. (ADR-0009.)
-- **retailer fetcher(s)** *(non-VPC)* — hold the secret-scoped retailer credential + HMAC client;
-  the only code with internet egress (ADR-0004).
+- **redirect** *(non-VPC, CloudFront → Lambda Function URL)* — `GET /p/{id}` resolves `short_id`
+  in **DynamoDB** and returns an OG-tagged landing page; client-side JS then resolves identity
+  (member → Bearer token validated **offline against JWKS** → inject `customer_id`; guest →
+  `guestId` from **localStorage** → inject `g`) and redirects, or renders
+  login/signup/continue-as-guest. Emits impression + click off the path via structured log lines →
+  Firehose. **Cookieless; not behind the JWT authorizer.** (ADR-0007.)
+- **conversion poller** — `EventBridge → Retailer Proxy.listOrders` (resolves attribution) invokes
+  an in-VPC **writer** (ledger + audit) that also emits conversion events → Firehose. (ADR-0009.)
+- **Retailer Proxy** *(non-VPC)* — the single secret-scoped function holding the retailer
+  credential + HMAC client; sole egress to retailer APIs (`generateLink`, `listOrders`); the only
+  code with internet egress (ADR-0004).
 
 ### 3.4 Data (polyglot — ADR-0003)
 - **Aurora Serverless v2 (PostgreSQL, scale-to-zero)** — system of record: `customer` (PII),
@@ -125,12 +127,12 @@ through the poller-writer into the append-only PostgreSQL ledger + hash-chained 
   best-effort).
 - **Kinesis Firehose → S3 (+ Athena)** — impression/click/conversion event stream, off the OLTP
   path.
-- **Secrets Manager** — retailer credentials (held only by the non-VPC fetchers); rotation.
+- **Secrets Manager** — retailer credentials (held only by the non-VPC Retailer Proxy); rotation.
 
 ### 3.5 Network (NAT-free — ADR-0004)
 Only Aurora and the functions that touch it are in the VPC; they reach DynamoDB via a free gateway
-endpoint and log out-of-band. Redirect and the retailer fetchers run outside the VPC. **No NAT
-Gateway, no RDS Proxy.** Retailer APIs are IPv4-only, reached only from the non-VPC fetchers
+endpoint and log out-of-band. Redirect and the Retailer Proxy run outside the VPC. **No NAT
+Gateway, no RDS Proxy.** Retailer APIs are IPv4-only, reached only from the non-VPC Retailer Proxy
 (IPv6/egress-only gateway was ruled out — the retailer hosts publish no AAAA records).
 
 ### 3.6 Observability & security
@@ -138,7 +140,7 @@ Gateway, no RDS Proxy.** Retailer APIs are IPv4-only, reached only from the non-
   funnel (impressions → clicks → conversions).
 - **WAF + rate limiting** on `/p/*` and `/auth/*` (click-fraud, SMS toll-fraud, enumeration).
 - **Least-privilege:** coarse per-function Lambda IAM; the money guarantee is enforced by
-  per-function Postgres GRANTs, not IAM (ADR-0002). Retailer secret scoped to the fetchers.
+  per-function Postgres GRANTs, not IAM (ADR-0002). Retailer secret scoped to the Retailer Proxy.
 - **Region** `il-central-1`; `eu-central-1` is a DR/restore target (ADR-0005).
 
 ## 4. Request flows
@@ -147,16 +149,18 @@ Gateway, no RDS Proxy.** Retailer APIs are IPv4-only, reached only from the non-
 (kill switch) → Cognito sign-up → **SMS OTP** → `POST /auth/verify` → Post-Confirmation trigger
 provisions `customer` + empty `wallet` in PostgreSQL (single Aurora transaction).
 
-**Link generation:** Authenticated browser → `POST /links` (JWT) → a non-VPC fetcher reads the
-retailer creds and signs `aliexpress.affiliate.link.generate` (SubID = `short_id`) → writes
-`short_id → affiliate_url` to DynamoDB (returned to the user) and the authoritative `link` to
-Aurora via the in-VPC writer.
+**Link generation:** Authenticated browser → `POST /links` (JWT) → the Lambdalith invokes the
+**Retailer Proxy** (Lambda interface endpoint), which signs `aliexpress.affiliate.link.generate`
+(SubID = `short_id`) and writes `short_id → affiliate_url` to DynamoDB (returned to the user); the
+authoritative `link` is persisted to Aurora by the in-VPC writer.
 
-**Redirect → conversion:** Consumer hits `/p/{id}` → redirect resolves `short_id` in DynamoDB →
-emits the click and 301s to the retailer with `custom_parameters` → purchase within the network
-window → the poller fetcher pulls `aliexpress.affiliate.order.listbyindex`, resolves attribution
-(`ref`/`c`/`g`) → the in-VPC writer credits the ledger (pending → confirmed → clawback; referrer
-always, consumer reward from margin when attributed) and writes the audit log.
+**Redirect → conversion:** Consumer hits `/p/{id}` → redirect returns the OG landing page
+(impression) → client-side JS resolves identity and calls the resolve endpoint, which injects
+`custom_parameters` (`ref`/`c`/`g`), emits the click, and redirects to the retailer → purchase
+within the network window → `EventBridge → Retailer Proxy.listOrders` pulls the orders and
+resolves attribution → the in-VPC writer credits the ledger (pending → confirmed → clawback;
+referrer always, consumer reward from margin when attributed), writes the audit log, and emits a
+conversion event to Firehose.
 
 ## 5. Cost posture (MVP scale)
 

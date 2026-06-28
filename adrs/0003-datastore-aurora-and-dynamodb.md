@@ -39,7 +39,7 @@ Holds the two non-PII, hot-path items:
   burst off the relational layer.
 - **`guest_attribution` (guestId → customer_id)** — opaque→opaque, best-effort (ADR-0008);
   written at registration outside the atomic Aurora transaction (allowed to fail), read at
-  conversion by the non-VPC poller-fetcher.
+  conversion by the non-VPC Retailer Proxy.
 
 On-demand DynamoDB is true scale-to-zero ($0 idle), single-digit-ms, absorbs bursts natively,
 has PITR, and needs no VPC (free gateway endpoint for any in-VPC caller).

@@ -41,27 +41,27 @@ outside it. Retailer egress happens only from non-VPC functions. No NAT Gateway.
 | Function | In VPC? | Reaches | Internet egress |
 |---|---|---|---|
 | Redirect | No | DynamoDB (`short_id→url`) | none |
-| `link.generate` / identity | mixed (below) | DynamoDB, Cognito, retailer (via fetcher) | via fetcher only |
-| Wallet reads / admin | Yes | Aurora only | none |
-| Retailer **fetcher**(s) | No | retailer API, Secrets Mgr, DynamoDB | yes (direct) |
+| Lambdalith / admin | Yes | Aurora, DynamoDB (gateway endpoint) | none |
+| **Retailer Proxy** | No | retailer API, Secrets Mgr, DynamoDB | yes (direct) |
 | Poller **writer** | Yes | Aurora only | none |
 
 ### Non-VPC chaining
 
-Retailer calls are made only by thin, non-VPC **fetcher** functions that hold the secret-scoped
-retailer credential and run the HMAC-signing client. In-VPC functions never have internet egress
-and never hold the retailer secret. The chain direction exploits an asymmetry — a non-VPC Lambda
-can invoke any Lambda freely (control-plane Invoke), but an in-VPC Lambda without NAT cannot
-reach the Invoke API without a paid interface endpoint:
+Retailer calls are made only by the single non-VPC **Retailer Proxy** (ADR-0002) — it holds the
+secret-scoped credential and runs the HMAC-signing client. In-VPC functions never have internet
+egress and never hold the retailer secret. Invoke direction exploits an asymmetry — a non-VPC
+Lambda can invoke any Lambda freely (control-plane Invoke), but an in-VPC Lambda without NAT
+cannot reach the Invoke API without a paid interface endpoint:
 
-- **Poller** — `EventBridge Scheduler → non-VPC fetcher` (calls retailer, resolves
+- **Poll flow** — `EventBridge Scheduler → Retailer Proxy.listOrders` (calls retailer, resolves
   `guest_attribution` in DynamoDB) `→ invokes in-VPC writer` (Aurora ledger + audit). The
-  non-VPC side initiates → no interface endpoint, $0.
-- **`link.generate`** — returns to the user as soon as the DynamoDB `short_id→url` projection is
-  written by a non-VPC fetcher; the authoritative Aurora link record is written a beat later by
-  an in-VPC writer (async). *Alternative if that record must be strongly consistent at response
-  time: a single Lambda interface endpoint (~$7/mo/AZ) so the in-VPC Lambdalith invokes the
-  fetcher synchronously.* Default to async.
+  non-VPC side initiates → **no interface endpoint, $0**.
+- **Link generation** — the in-VPC Lambdalith (`links` module) invokes `Retailer Proxy.generateLink`
+  **synchronously** (the user waits for the affiliate URL), which needs **one Lambda interface
+  endpoint (~$7/mo/AZ)**. The Proxy writes the DynamoDB `short_id→url` projection and returns the
+  URL; the authoritative Aurora link record is written by an in-VPC writer. *$0 alternative if the
+  endpoint cost matters: front `POST /links` with the Retailer Proxy directly (it then async-invokes
+  the in-VPC writer), at the cost of moving link-gen request handling out of the Lambdalith.*
 
 ### In-VPC connectivity
 
@@ -82,14 +82,16 @@ function with zero internet still logs normally. Net: no NAT and no interface en
 
 ## Consequences
 
-- **~$0 standing network cost** (no NAT, no RDS Proxy, free DynamoDB gateway endpoint).
+- **Standing network cost ≈ one Lambda interface endpoint (~$7/mo)** for synchronous link
+  generation, otherwise ~$0 (no NAT, no RDS Proxy, free DynamoDB gateway endpoint). The poll
+  path adds nothing.
 - **Attack surface == sensitivity boundary:** the public, viral, anonymous redirect path touches
   only one non-PII DynamoDB table — no Aurora reach, no VPC foothold, no PII, no money.
 - **Egress containment retained** on the in-VPC money/PII functions; the only internet-facing
-  code is the thin, single-purpose, secret-scoped fetchers.
-- **Caveat:** a non-VPC Lambda cannot have SG/egress firewalling, so a compromised fetcher has
-  unrestricted outbound. Mitigate with IAM least-privilege + supply-chain hygiene (lockfiles,
-  pinned deps, SCA scanning) and keep the fetchers minimal. This is the deliberate trade for
+  code is the single, thin, secret-scoped Retailer Proxy.
+- **Caveat:** a non-VPC Lambda cannot have SG/egress firewalling, so a compromised Retailer Proxy
+  has unrestricted outbound. Mitigate with IAM least-privilege + supply-chain hygiene (lockfiles,
+  pinned deps, SCA scanning) and keep the Proxy minimal. This is the deliberate trade for
   deleting the NAT.
 - **Verify:** retailer hosts remain IPv4-only and confirm the real integration hostname per
   program (Shein/Temu/iHerb/Banggood may onboard via an affiliate network, not the storefront).

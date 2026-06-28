@@ -28,9 +28,20 @@ money-writing and admin surfaces.
 3. **`redirect`** — separate (public, viral-spiky, latency-critical). **Non-VPC**: it resolves
    `short_id → affiliate_url` in DynamoDB (ADR-0003), so it never touches Aurora and needs no
    VPC attachment, internet egress, or DB credentials.
-4. **`conversion poller`** — separate (scheduled, sole money writer). Realised as a **non-VPC
-   fetcher** (calls the IPv4-only retailer API, resolves attribution in DynamoDB) that invokes
-   an **in-VPC writer** (drives the Aurora ledger + audit). See ADR-0004.
+4. **`conversion poller`** — separate (scheduled, sole money writer). The poll flow is
+   `EventBridge → Retailer Proxy (calls the IPv4-only retailer API, resolves attribution in
+   DynamoDB) → invokes an in-VPC writer (Aurora ledger + audit)`. See ADR-0004.
+
+Plus one shared egress function:
+
+5. **`Retailer Proxy`** — the **single** non-VPC function that holds the retailer credential and
+   is the **sole egress** to retailer APIs. It runs the HMAC-signing client and exposes two
+   operations — `generateLink` (`link.generate`, called by the Lambdalith's `links` module) and
+   `listOrders` (`order.listbyindex`, called by the poll flow). It is one component, not two
+   per-flow fetchers, because both are the same signed call to the same gateway under the same
+   secret; the *orchestration* seams (sync user-facing link-gen vs scheduled batch poll) stay
+   with their owners (the Lambdalith and the poll flow). This gives exactly one secret-holder,
+   one audited egress chokepoint, and one place to add per-retailer adapters.
 
 ### VPC placement
 
@@ -48,8 +59,8 @@ runs outside the VPC.
   Lambdalith + admin-read → **read-only** on `wallet_entry` / `audit_log`; admin adjustments (if
   enabled) → a narrow, audited append path; conversion poller-writer → **append-only** (INSERT,
   no UPDATE/DELETE). This isolates money-write capability by DB grant regardless of Lambda IAM.
-- The **retailer secret** lives only in the non-VPC fetcher, under a secret-scoped role
-  (ADR-0004); in-VPC money/PII functions never hold it and have no internet egress.
+- The **retailer secret** lives only in the non-VPC **Retailer Proxy**, under a secret-scoped
+  role (ADR-0004); in-VPC money/PII functions never hold it and have no internet egress.
 
 ## Alternatives considered
 
@@ -65,7 +76,8 @@ runs outside the VPC.
 
 ## Consequences
 
-- Four deploy units; admin isolation cleanly resolves the highest-privilege surface.
+- Five deploy units (four orchestration seams + the shared Retailer Proxy); admin isolation
+  cleanly resolves the highest-privilege surface.
 - The integrity property — the app API cannot mutate money tables — holds via DB grants + the
   isolated poller-writer, over direct IAM-auth connections, with no standing proxy cost.
 - Lambda-vs-container is settled as Lambda.

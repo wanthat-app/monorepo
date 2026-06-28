@@ -31,9 +31,16 @@ order_id → drive pending→confirmed→clawback → ledger + audit.`
   **watermark/cursor**.
 - Status → ledger: `Payment Completed` → `commission_pending`; `Buyer Confirmed Receipt` /
   finished → `commission_confirmed`; invalid/rejected → `clawback`.
-- Realised as a **non-VPC fetcher** (makes the IPv4-only retailer call, resolves attribution from
-  `custom_parameters` incl. the DynamoDB `guest_attribution` lookup) that **invokes an in-VPC
-  writer** (drives the Aurora ledger + audit). See ADR-0002 / ADR-0004.
+- Realised as `EventBridge → Retailer Proxy.listOrders` (makes the IPv4-only retailer call,
+  resolves attribution from `custom_parameters` incl. the DynamoDB `guest_attribution` lookup)
+  `→ invokes an in-VPC writer` (drives the Aurora ledger + audit). See ADR-0002 / ADR-0004.
+- **Conversion events → analytics.** The in-VPC writer emits a **conversion event** (resolved
+  attribution, amount, `pending`/`confirmed`/`clawback` status) as a structured `console.log` line
+  that a **CloudWatch Logs subscription → Firehose → S3** ships — the same off-band mechanism as
+  the redirect impression/click events (ADR-0007), so the writer needs no Firehose endpoint. This
+  completes the funnel (impressions → clicks → **conversions**) in S3/Athena while the
+  **authoritative** ledger stays in Aurora — the event stream is analytics-only, never the source
+  of truth for money.
 
 ## Alternatives considered
 

@@ -8,32 +8,50 @@
 
 The public `/p/{short_id}` redirect is the consumer entry point and the one viral-spiky surface:
 the scenario the architecture exists to serve is a link going viral after a quiet period. The
-product target is **p95 < 500ms**. The hot path must resolve `short_id → affiliate_url`, decide
-attribution, and emit a click — without letting any of that slow the `301`.
+product target is **p95 < 500ms**. It must resolve `short_id → affiliate_url`, decide attribution,
+and emit funnel events — fast.
+
+The app is **cookieless** (ADR-0008): the SPA holds the Cognito JWT in JS and sends it as a Bearer
+header on `/api/*`. But a click on `/p/{short_id}` is a **top-level navigation**, which carries
+neither a Bearer header (those only ride XHR/fetch) nor a cookie — so the server **cannot** know
+the consumer's identity from that request. The identity decision therefore happens **client-side**.
+That also fits OG unfurling: social crawlers run no JS, so the landing HTML must be server-rendered
+with product-specific OG tags regardless.
 
 ## Decision
 
-**Redirect is a non-VPC Lambda that resolves `short_id → affiliate_url` in DynamoDB** (ADR-0003),
-then:
+**Redirect is a non-VPC Lambda fronted by a CloudFront → Lambda Function URL (`/p/*`), not API
+Gateway.** Two steps:
 
-1. **Branches on auth state** (ADR-0008): authenticated → auto-`301` with `customer_id` in
-   `custom_parameters`; anonymous → an OG-tagged landing page, setting a `guestId` cookie.
-2. **Emits the click off the `301` path** as a structured `console.log` line; a **CloudWatch
-   Logs subscription filter → Firehose → S3** ships it.
+1. **`GET /p/{short_id}`** → resolve `short_id` in DynamoDB (ADR-0003) and return a minimal
+   **OG-tagged landing page + bootstrap JS**. Emit an **impression** event.
+2. **Client-side identity + resolve** — the bootstrap JS, on our origin, inspects the SPA's token
+   store and calls a **resolve** endpoint that assembles `custom_parameters` and returns the
+   affiliate URL:
+   - **member** → sends the Bearer token; the endpoint validates it **offline against cached
+     Cognito JWKS** (no Cognito call) and injects `customer_id` (`c`) → JS redirects. Automatic,
+     no interaction — the logged-in "auto-redirect", done in the browser.
+   - **guest** → sends the `guestId` from **localStorage** (ADR-0008); the endpoint injects `g` →
+     JS redirects.
+   - **neither** → render login / signup / continue-as-guest.
+   The resolve emits the **click** event.
 
-DynamoDB on the hot path (rather than the relational store) means single-digit-ms reads, $0 idle,
-no scale-to-zero database resume, and no VPC cold-start — and it absorbs the viral burst
-natively. The projection is written through at `link.generate` and is immutable per link, so
-there is no sync/invalidation problem.
+It is **not** behind API Gateway's JWT authorizer: that authorizer rejects missing/invalid tokens,
+which would break the anonymous landing — and the viral hot path wants the leanest front, not an
+extra hop. Token validation is offline JWKS signature verification, so redirect/resolve never call
+Cognito at request time.
 
-Click emission must stay **off** the `301` path reliably: an un-awaited `PutRecord` is unsafe
-because Lambda freezes after the response and can silently drop the write, losing consumer
-attribution — hence the structured-log-line + Logs-subscription approach.
+DynamoDB on the hot path means single-digit-ms reads, $0 idle, no scale-to-zero resume, no VPC
+cold-start, and it absorbs the burst natively. The projection is written through at link generation
+and is immutable per link → no sync/invalidation.
 
-With the database resume and VPC cold-start removed, **the 500ms p95 target is within reach**;
-the only remaining variables are the Node Lambda cold start and edge→origin RTT. For MVP we keep
-a modestly relaxed target to avoid paying for provisioned concurrency — not because the datastore
-forces it.
+Both funnel events (**impression**, **click**) are emitted as structured `console.log` lines that a
+**CloudWatch Logs subscription filter → Firehose → S3** ships — never an un-awaited `PutRecord`
+(Lambda freezes after the response and can silently drop it, losing attribution).
+
+With the DB resume and VPC cold-start gone, latency is dominated by the Node cold start, the OG
+landing render, and one client→resolve round-trip. The relaxed target absorbs that round-trip; the
+original 500ms is approachable and reachable with provisioned concurrency if real traffic warrants.
 
 ## Alternatives considered
 
@@ -45,10 +63,18 @@ forces it.
 - **CloudFront KeyValueStore at the edge** — cheaper still and resolves inside a CloudFront
   Function (the origin Lambda may not run at all); kept as the next escalation if the cold-start
   tail ever hurts conversion.
+- **API Gateway with a permissive Lambda authorizer** (to allow anonymous) — an extra hop + cost
+  on the viral path for no gain; rejected in favour of the Function URL + offline JWKS validation.
+- **Cookie-based session, server-side redirect decision** — a server `301` keyed off a session
+  cookie is simpler, but rejected: the app is cookieless (ADR-0008) and cookie-based flows are
+  fragile under Safari ITP / third-party-cookie deprecation, and still couldn't carry identity on
+  a cross-person shared link without the client step.
 
 ## Consequences
 
-- Hot path: resolve in DynamoDB → emit click → `301`. Standing redirect + CDN + stream cost
-  stays under ~$8/mo.
+- Hot path: `GET /p/{id}` → OG landing (+impression) → client resolve (+click) → redirect. Standing
+  redirect + CDN + stream cost stays under ~$8/mo.
+- The logged-in case is a client-driven redirect (one resolve call), not a server `301` — the price
+  of cookieless + correct OG unfurling, absorbed by the relaxed target.
 - The viral burst lands on DynamoDB, which is also why no RDS Proxy is needed (ADR-0002/0003).
 - Redirect-p95 monitoring is the trigger to escalate to provisioned concurrency or an edge KVS.

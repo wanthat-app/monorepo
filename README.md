@@ -10,8 +10,9 @@ apps/web/                  Next.js/React SPA
 services/
   app-api/                 identity + links + wallet Lambdalith
   admin-api/               admin Lambda (separate role/exposure)
-  redirect/                public redirect service
-  conversion-poller/       scheduled AliExpress order poller
+  redirect/                public redirect service (non-VPC → DynamoDB)
+  conversion-poller/       scheduled poll writer (in-VPC)
+  retailer-proxy/          sole non-VPC egress to retailer APIs (link.generate, order.listbyindex)
 packages/
   contracts/               Zod schemas — single source of truth (types + validation)
   domain/                  ledger math, commission split, attribution logic
