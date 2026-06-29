@@ -93,3 +93,10 @@ and ADR-0006 stay **Accepted** rather than fully superseded.
 - The kill switch is now one `RuntimeConfigRepo` read on the hot `/auth/start` path (cheap, cached
   per-container) and is flippable from the admin config panel with no redeploy.
 - `customer.cognito_sub` is the canonical identity join key for `/me` and all member-scoped reads.
+- **Passkeys split by flow.** Enrolment is API-driven (`/auth/passkey/register/*`, authorised by the
+  access token via Cognito `Start/CompleteWebAuthnRegistration`). Discoverable (userless) *login*
+  cannot be done through the raw Cognito API — the `WEB_AUTHN` challenge in `USER_AUTH` requires a
+  username — so it is served by **Managed Login** (hosted UI); the SPA opens it and completes the
+  OAuth code + PKCE exchange in the browser, then carries the Bearer token like any other session.
+  This keeps the in-VPC Lambdalith off the hosted-UI token endpoint (which the NAT-free network can't
+  reach) and is the resolution of the PR4 reconciliation spike.

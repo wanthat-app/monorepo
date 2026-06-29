@@ -141,6 +141,10 @@ export class IdentityStack extends Stack {
       installLatestAwsSdk: false,
     });
 
+    // The SPA needs these to build the Managed Login authorize URL for discoverable passkey login.
+    new CfnOutput(this, "ManagedLoginBaseUrl", { value: this.userPoolDomain.baseUrl() });
+    new CfnOutput(this, "UserPoolClientIdOut", { value: this.userPoolClient.userPoolClientId });
+
     // --- Employee/admin pool (ADR-0020 §two-pool) — staff identities, isolated from customers ---
     this.employeePool = new cognito.UserPool(this, "EmployeePool", {
       userPoolName: `wanthat-${wanthatEnv.name}-employees`,
