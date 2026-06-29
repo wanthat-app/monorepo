@@ -19,6 +19,7 @@ export interface DataStackProps extends StackProps {
  */
 export class DataStack extends Stack {
   readonly recommendationTable: dynamodb.Table;
+  readonly guestAttributionTable: dynamodb.Table;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -39,6 +40,12 @@ export class DataStack extends Stack {
       indexName: "byOwner",
       partitionKey: { name: "ownerId", type: dynamodb.AttributeType.STRING },
       sortKey: { name: "createdAt", type: dynamodb.AttributeType.STRING },
+    });
+
+    // Maps an anonymous guestId → customer once they register (ADR-0008, consumer attribution).
+    this.guestAttributionTable = new dynamodb.Table(this, "GuestAttribution", {
+      partitionKey: { name: "guestId", type: dynamodb.AttributeType.STRING },
+      ...common,
     });
   }
 }
