@@ -4,7 +4,8 @@ Each ADR is a self-contained decision: context, the decision, alternatives consi
 consequences. **0001–0009** cover the architecture (foundation-first: structure → compute → data
 → network → DR, then the consumer journey: identity → landing → attribution → conversion);
 **0010–0016** cover the implementation stack; **0017** extends the architecture set with the
-currency / FX model; **0018** supersedes ADR-0007's landing front-door (Function URL → HTTP API).
+currency / FX model; **0018** supersedes ADR-0007's landing front-door (Function URL → HTTP API);
+**0019** fixes the EdgeStack composition (one CloudFront distribution: SPA + landing).
 
 | # | Decision |
 |---|---|
@@ -26,6 +27,7 @@ currency / FX model; **0018** supersedes ADR-0007's landing front-door (Function
 | [0016](0016-frontend-stack.md) | Frontend stack: Vite + React SPA |
 | [0017](0017-currency-model-and-fx-rate-sourcing.md) | Currency model & FX rate sourcing (hold settlement currency, convert at withdrawal, Bank of Israel rate) |
 | [0018](0018-landing-front-door-http-api.md) | Landing front door: API Gateway HTTP API (supersedes ADR-0007's Function URL — unavailable in il-central-1) |
+| [0019](0019-edge-front-door-cloudfront.md) | Edge front door: one CloudFront distribution (SPA default + landing `/p/*`), us-east-1 cert + WAF |
 
 ## Status & change policy
 

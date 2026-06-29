@@ -5,6 +5,7 @@ import { ApiStack } from "../lib/api-stack";
 import { resolveEnv, stackName } from "../lib/config";
 import { DataStack } from "../lib/data-stack";
 import { EdgeServicesStack } from "../lib/edge-services-stack";
+import { EdgeStack } from "../lib/edge-stack";
 import { IdentityStack } from "../lib/identity-stack";
 
 /**
@@ -16,12 +17,13 @@ import { IdentityStack } from "../lib/identity-stack";
  * fixed per env. Stacks are sliced per ADR-0002/0003/0004/0005.
  *
  * **Incremental rollout:** stacks (and resources within them) are wired in one at a time, each
- * proven through the CI/CD pipeline before the next is added. Currently wired: `DataStack`. The
- * stack classes for Identity / Api / Admin / EdgeServices already exist and are added here as their
- * increments land. Deferred entirely: NetworkStack/VPC (until Aurora); the us-east-1 EdgeStack;
- * ObservabilityStack.
+ * proven through the CI/CD pipeline before the next is added. Deferred entirely: NetworkStack/VPC
+ * (until Aurora); ObservabilityStack.
  *
- * Wired: DataStack, IdentityStack, ApiStack, AdminStack, EdgeServicesStack.
+ * The us-east-1 **EdgeStack** (CloudFront + ACM + WAF) fronts the landing HTTP API (in il-central-1)
+ * on `/p/*`, so EdgeServices (producer) and Edge (consumer) both set `crossRegionReferences: true`.
+ *
+ * Wired: DataStack, IdentityStack, ApiStack, AdminStack, EdgeServicesStack, EdgeStack.
  */
 const app = new cdk.App();
 const wanthatEnv = resolveEnv(process.env.WANTHAT_ENV ?? app.node.tryGetContext("env"));
@@ -51,13 +53,22 @@ new AdminStack(app, stackName(wanthatEnv, "admin"), {
   recommendationTable: data.recommendationTable,
 });
 
-new EdgeServicesStack(app, stackName(wanthatEnv, "edge-services"), {
+const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-services"), {
   ...common,
+  crossRegionReferences: true, // landing apiId is consumed by the us-east-1 EdgeStack
   recommendationTable: data.recommendationTable,
   guestAttributionTable: data.guestAttributionTable,
   runtimeConfigTable: data.runtimeConfigTable,
   fxRateTable: data.fxRateTable,
   retailerSecret: data.retailerSecret,
+});
+
+// EdgeStack lives in us-east-1 (CloudFront cert + WAF are control-plane there), not the app region.
+new EdgeStack(app, stackName(wanthatEnv, "edge"), {
+  env: { account, region: "us-east-1" },
+  wanthatEnv,
+  crossRegionReferences: true,
+  landingApiId: edgeServices.landingApi.apiId,
 });
 
 app.synth();
