@@ -68,6 +68,9 @@ new AdminStack(app, stackName(wanthatEnv, "admin"), {
   userPoolClient: identity.userPoolClient,
   runtimeConfigTable: data.runtimeConfigTable,
   recommendationTable: data.recommendationTable,
+  vpc: network.vpc,
+  lambdaSg: network.lambdaSg,
+  cluster: data.cluster,
 });
 
 const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-services"), {

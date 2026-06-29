@@ -4,7 +4,10 @@ import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type * as cognito from "aws-cdk-lib/aws-cognito";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import type * as ec2 from "aws-cdk-lib/aws-ec2";
+import { SubnetType } from "aws-cdk-lib/aws-ec2";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import type * as rds from "aws-cdk-lib/aws-rds";
 import type { Construct } from "constructs";
 import { applyThrottle, LAMBDA_RUNTIME, serviceEntry, THROTTLING, type WanthatEnv } from "./config";
 
@@ -14,15 +17,16 @@ export interface AdminStackProps extends StackProps {
   readonly userPoolClient: cognito.IUserPoolClient;
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
+  readonly vpc: ec2.IVpc;
+  readonly lambdaSg: ec2.ISecurityGroup;
+  readonly cluster: rds.IDatabaseCluster;
 }
 
 /**
- * AdminStack — the admin API as a separate Lambda with its own role and exposure (ADR-0002).
- * Behind its own HTTP API + JWT authorizer (every route gated — there is no public probe). The
- * sanctioned writes (audited ledger adjustments, the runtime-config panel) land later; for now it
- * returns 501, so an unauthenticated request returns 401 and an authed one returns 501.
- *
- * Non-VPC for now — it moves in-VPC with Aurora (ADR-0004), like app-api.
+ * AdminStack — the admin API as a separate in-VPC Lambda with its own role and exposure (ADR-0002,
+ * ADR-0020). Behind its own HTTP API + JWT authorizer; the admin-group check is re-enforced
+ * in-handler. Reaches Aurora read-only as `app_ro` (live users count) and writes the runtime
+ * `config` table (the admin panel). `/healthz` is the only unauthenticated route (deploy probe).
  */
 export class AdminStack extends Stack {
   readonly httpApi: HttpApi;
@@ -37,15 +41,24 @@ export class AdminStack extends Stack {
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
       memorySize: 256,
-      timeout: Duration.seconds(10),
+      timeout: Duration.seconds(15),
+      vpc: props.vpc,
+      vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [props.lambdaSg],
+      reservedConcurrentExecutions: 5,
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
+        DB_HOST: props.cluster.clusterEndpoint.hostname,
+        DB_NAME: "wanthat",
+        DB_USER: "app_ro",
       },
       bundling: { minify: true, sourceMap: true },
     });
 
+    // Read-only Aurora as app_ro (ADR-0002) + the config table it writes.
+    props.cluster.grantConnect(fn, "app_ro");
     props.runtimeConfigTable.grantReadWriteData(fn);
     props.recommendationTable.grantReadData(fn);
 
@@ -59,6 +72,9 @@ export class AdminStack extends Stack {
     this.httpApi = new HttpApi(this, "HttpApi", { apiName: `wanthat-${wanthatEnv.name}-admin` });
     // Per-surface request throttling — tuned centrally in config.ts (THROTTLING).
     applyThrottle(this.httpApi, THROTTLING.admin);
+
+    // Unauthenticated liveness probe; everything else behind the JWT authorizer (+ in-handler group).
+    this.httpApi.addRoutes({ path: "/healthz", methods: [HttpMethod.GET], integration });
     this.httpApi.addRoutes({
       path: "/{proxy+}",
       methods: [HttpMethod.ANY],

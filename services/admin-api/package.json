@@ -7,10 +7,13 @@
   "scripts": {
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "echo \"no tests yet\""
+    "test": "vitest run"
   },
   "dependencies": {
+    "@wanthat/config": "workspace:*",
     "@wanthat/contracts": "workspace:*",
-    "@wanthat/config": "workspace:*"
+    "@wanthat/db": "workspace:*",
+    "@wanthat/dynamo": "workspace:*",
+    "hono": "^4.6.0"
   }
 }
