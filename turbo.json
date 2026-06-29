@@ -1,12 +1,13 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalPassThroughEnv": ["AWS_*", "CDK_DEFAULT_ACCOUNT", "CDK_DEFAULT_REGION"],
   "tasks": {
     "build": { "dependsOn": ["^build"], "outputs": ["dist/**"] },
     "typecheck": { "dependsOn": ["^build"] },
     "test": { "dependsOn": ["^build"] },
     "lint": {},
-    "synth": { "dependsOn": ["^build"], "outputs": ["cdk.out/**"] },
-    "diff": { "dependsOn": ["^build"], "cache": false },
-    "deploy": { "dependsOn": ["^build"], "cache": false }
+    "synth": { "dependsOn": ["^build"], "outputs": ["cdk.out/**"], "env": ["WANTHAT_ENV"] },
+    "diff": { "dependsOn": ["^build"], "cache": false, "env": ["WANTHAT_ENV"] },
+    "deploy": { "dependsOn": ["^build"], "cache": false, "env": ["WANTHAT_ENV"] }
   }
 }
