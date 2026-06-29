@@ -1,14 +1,17 @@
 name: Deploy
 
 # OIDC-assumed per-environment role (no static keys); cdk diff gate; prod behind a
-# GitHub Environment approval (ADR-0015). Both a push to main AND every PR (targeting main)
-# auto-deploy to dev — the PR run is a deploy *attempt* that surfaces deploy-time failures
-# (e.g. an unsupported resource) before merge. workflow_dispatch promotes to prod.
+# GitHub Environment approval (ADR-0015). A push to main auto-deploys dev; a PR (targeting main)
+# deploys to dev only once it is **out of draft** (ready for review) — the PR run is a deploy
+# *attempt* that surfaces deploy-time failures (e.g. an unsupported resource) before merge.
+# workflow_dispatch promotes to prod.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
+    # `ready_for_review` so taking a PR out of draft triggers the deploy attempt.
+    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       environment:
@@ -30,6 +33,8 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    # On PRs, deploy only once the PR is out of draft (ready for review); push/dispatch always run.
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     environment: ${{ github.event.inputs.environment || 'dev' }}
     env:
       # Selects which wanthat-{env}-* stacks the CDK app instantiates (infra/bin/wanthat.ts).
