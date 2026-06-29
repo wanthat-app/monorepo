@@ -26,4 +26,6 @@ jobs:
       - run: pnpm typecheck # turbo, affected-graph
       - run: pnpm test # vitest via turbo (Docker available for Testcontainers)
       - run: pnpm build
-      - run: pnpm synth # cdk synth — cheapest infra correctness check (ADR-0001)
+      - run: pnpm synth # cdk synth (dev) — cheapest infra correctness check (ADR-0001)
+      # Also synth prod so the us-east-1 EdgeStack (CloudFront/ACM/Route 53) is type/synth-checked.
+      - run: WANTHAT_ENV=prod pnpm --filter @wanthat/infra exec cdk synth --quiet

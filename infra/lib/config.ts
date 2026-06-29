@@ -18,17 +18,28 @@ export interface WanthatEnv {
   readonly name: EnvName;
   readonly region: string;
   /**
-   * Custom apex domain. Wired by the us-east-1 EdgeStack (CloudFront + ACM + Route 53), which
-   * lands in a follow-up PR. Until then services are reachable on their AWS-generated hostnames.
+   * Custom apex domain (EdgeStack). When set, the us-east-1 EdgeStack fronts the env with
+   * CloudFront + an ACM cert + Route 53 records; when unset (dev), services stay on their
+   * AWS-generated hostnames.
    */
   readonly domainName?: string;
+  /** Route 53 public hosted-zone id for `domainName` — passed explicitly so synth needs no lookup. */
+  readonly hostedZoneId?: string;
 }
 
 const REGION = "il-central-1";
 
+/** CloudFront's ACM cert + WAF must live in us-east-1 (control-plane only; traffic stays at the edge). */
+export const EDGE_REGION = "us-east-1";
+
 export const ENVIRONMENTS: Record<EnvName, WanthatEnv> = {
   dev: { name: "dev", region: REGION },
-  prod: { name: "prod", region: REGION, domainName: "wanthat.app" },
+  prod: {
+    name: "prod",
+    region: REGION,
+    domainName: "wanthat.app",
+    hostedZoneId: "Z01833842M5XCPIIPFXKG",
+  },
 };
 
 export function resolveEnv(name: string | undefined): WanthatEnv {

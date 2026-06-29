@@ -1,4 +1,4 @@
-import { CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
+import { CfnOutput, Duration, Fn, Stack, type StackProps } from "aws-cdk-lib";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
@@ -30,6 +30,9 @@ export interface EdgeServicesStackProps extends StackProps {
  * stub. Aurora-touching wiring lands with the wallet slice.
  */
 export class EdgeServicesStack extends Stack {
+  /** Host of the landing Function URL (no scheme/path) — a CloudFront origin in the EdgeStack. */
+  readonly landingUrlDomain: string;
+
   constructor(scope: Construct, id: string, props: EdgeServicesStackProps) {
     super(scope, id, props);
     const { wanthatEnv } = props;
@@ -52,6 +55,8 @@ export class EdgeServicesStack extends Stack {
     props.runtimeConfigTable.grantReadData(landing);
     props.fxRateTable.grantReadData(landing);
     const landingUrl = landing.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
+    // `https://<host>/` → `<host>` for use as a CloudFront origin.
+    this.landingUrlDomain = Fn.select(2, Fn.split("/", landingUrl.url));
 
     // --- retailer proxy (sole egress; holds the credential) ---
     const retailerProxy = makeFn("RetailerProxy", "retailer-proxy");

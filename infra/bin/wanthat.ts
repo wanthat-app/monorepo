@@ -2,9 +2,10 @@
 import * as cdk from "aws-cdk-lib";
 import { AdminStack } from "../lib/admin-stack";
 import { ApiStack } from "../lib/api-stack";
-import { resolveEnv, stackName } from "../lib/config";
+import { EDGE_REGION, resolveEnv, stackName } from "../lib/config";
 import { DataStack } from "../lib/data-stack";
 import { EdgeServicesStack } from "../lib/edge-services-stack";
+import { EdgeStack } from "../lib/edge-stack";
 import { IdentityStack } from "../lib/identity-stack";
 
 /**
@@ -15,14 +16,16 @@ import { IdentityStack } from "../lib/identity-stack";
  * credentials (`CDK_DEFAULT_ACCOUNT`); region is fixed per env. Stacks are sliced per
  * ADR-0002/0003/0004/0005.
  *
- * Deferred: NetworkStack + the in-VPC placement of app-api/admin (land with Aurora, ADR-0004); the
- * us-east-1 EdgeStack (CloudFront + ACM + Route 53 on the custom domain); ObservabilityStack.
+ * The us-east-1 `EdgeStack` (CloudFront + ACM + Route 53) is created only for environments with a
+ * custom `domainName` (prod); dev stays on AWS-generated hostnames. Deferred: NetworkStack + the
+ * in-VPC placement of app-api/admin (land with Aurora, ADR-0004); CloudFront WAF; ObservabilityStack.
  */
 const app = new cdk.App();
 const wanthatEnv = resolveEnv(process.env.WANTHAT_ENV ?? app.node.tryGetContext("env"));
 // account omitted on purpose — resolved from the active credentials at deploy time.
 const env: cdk.Environment = { region: wanthatEnv.region };
-const common = { env, wanthatEnv };
+// crossRegionReferences lets the us-east-1 EdgeStack consume il-central-1 API/landing endpoints.
+const common = { env, wanthatEnv, crossRegionReferences: true };
 
 cdk.Tags.of(app).add("app", "wanthat");
 cdk.Tags.of(app).add("env", wanthatEnv.name);
@@ -30,7 +33,7 @@ cdk.Tags.of(app).add("env", wanthatEnv.name);
 const data = new DataStack(app, stackName(wanthatEnv, "data"), common);
 const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), common);
 
-new ApiStack(app, stackName(wanthatEnv, "api"), {
+const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   ...common,
   userPool: identity.userPool,
   userPoolClient: identity.userPoolClient,
@@ -47,7 +50,7 @@ new AdminStack(app, stackName(wanthatEnv, "admin"), {
   recommendationTable: data.recommendationTable,
 });
 
-new EdgeServicesStack(app, stackName(wanthatEnv, "edge-services"), {
+const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-services"), {
   ...common,
   recommendationTable: data.recommendationTable,
   guestAttributionTable: data.guestAttributionTable,
@@ -55,5 +58,16 @@ new EdgeServicesStack(app, stackName(wanthatEnv, "edge-services"), {
   fxRateTable: data.fxRateTable,
   retailerSecret: data.retailerSecret,
 });
+
+// Custom-domain front door (prod only). CloudFront cert + WAF must live in us-east-1.
+if (wanthatEnv.domainName) {
+  new EdgeStack(app, stackName(wanthatEnv, "edge"), {
+    env: { region: EDGE_REGION },
+    wanthatEnv,
+    crossRegionReferences: true,
+    apiDomain: `${api.httpApi.apiId}.execute-api.${wanthatEnv.region}.amazonaws.com`,
+    landingDomain: edgeServices.landingUrlDomain,
+  });
+}
 
 app.synth();
