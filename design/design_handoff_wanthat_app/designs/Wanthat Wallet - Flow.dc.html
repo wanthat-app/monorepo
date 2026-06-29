@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="./support.js"></script>
+<script src="support.js"></script>
 </head>
 <body>
 <x-dc>
@@ -312,9 +312,15 @@
                   <div style="background:#15201C; border-radius:24px; padding:24px 22px 20px; color:#EAF2EE; margin-bottom:14px;">
                     <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:14px;">
                       <span style="font-size:13px; font-weight:500; color:#9DB6AB;">{{ L.availableCashback }}</span>
-                      <span style="font-size:11px; font-weight:600; color:#7FE0B0; background:rgba(127,224,176,.12); padding:4px 9px; border-radius:20px;">ILS</span>
+                      <span style="font-size:11px; font-weight:600; color:#7FE0B0; background:rgba(127,224,176,.12); padding:4px 9px; border-radius:20px;">{{ L.estimated }}</span>
                     </div>
-                    <div class="num" style="font-size:46px; font-weight:700; letter-spacing:-0.03em; line-height:1; margin-bottom:16px;" dir="ltr">₪142<span style="font-size:28px; color:#9DB6AB;">.50</span></div>
+                    <div class="num" style="font-size:46px; font-weight:700; letter-spacing:-0.03em; line-height:1; margin-bottom:11px;" dir="ltr"><span style="font-size:24px; color:#9DB6AB; font-weight:600;">≈</span>{{ balWhole }}<span style="font-size:28px; color:#9DB6AB;">{{ balFrac }}</span></div>
+                    <div style="display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-bottom:15px;" dir="ltr">
+                      <sc-for list="{{ holdings }}" as="h" hint-placeholder-count="2">
+                        <span class="num" style="font-size:12.5px; font-weight:600; color:#EAF2EE; background:rgba(255,255,255,.08); padding:4px 10px; border-radius:20px;">{{ h.label }}</span>
+                      </sc-for>
+                      <span style="font-size:11.5px; color:#7E978B;">{{ L.heldNote }}</span>
+                    </div>
                     <div style="display:flex; align-items:center; gap:8px; margin-bottom:20px;">
                       <div style="width:7px; height:7px; border-radius:50%; background:#E0B85F;"></div>
                       <span class="num" style="font-size:13px; color:#B9CCC3;">{{ L.pendingNote }}</span>
@@ -372,11 +378,11 @@
                         </sc-if>
                         <div style="flex:1; min-width:0;">
                           <div style="font-size:14px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ it.title }}</div>
-                          <div style="font-size:12px; color:#6B7B73;">{{ it.sub }}</div>
+                          <div style="font-size:12px;"><span style="color:{{ it.statusColor }}; font-weight:600;">{{ it.statusLabel }}</span><span style="color:#6B7B73;"> · {{ it.sub }}</span></div>
                         </div>
                         <div style="text-align:end;">
-                          <div class="num" style="font-size:14px; font-weight:700; color:{{ it.amountColor }};" dir="ltr">{{ it.amount }}</div>
-                          <div style="font-size:11px; font-weight:600; color:{{ it.statusColor }};">{{ it.statusLabel }}</div>
+                          <div class="num" style="font-size:14px; font-weight:700; color:{{ it.amountColor }};" dir="ltr">{{ it.amountEst }}</div>
+                          <div class="num" style="font-size:11px; font-weight:600; color:#8A968F;" dir="ltr">{{ it.amountReal }}</div>
                         </div>
                       </div>
                     </sc-for>
@@ -441,6 +447,14 @@
                   </div>
                 </div>
               </div>
+              <div style="margin-bottom:16px;">
+                <label style="display:block; font-size:13px; font-weight:600; color:#5C6B64; margin-bottom:8px;">{{ L.reviewLabel }}</label>
+                <textarea placeholder="{{ L.reviewPlaceholder }}" onInput="{{ onReview }}" rows="3" style="width:100%; background:#fff; border:1px solid #E0E6E3; border-radius:14px; padding:14px; font-size:14px; color:#15201C; outline:none; resize:none; line-height:1.5; font-family:inherit;"></textarea>
+                <div style="display:flex; align-items:flex-start; gap:7px; margin:8px 2px 0; font-size:12px; color:#8A968F; line-height:1.4;">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1F7A57" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path></svg>
+                  <span>{{ L.reviewHint }}</span>
+                </div>
+              </div>
               <div style="display:flex; align-items:flex-start; gap:9px; background:#fff; border:1px solid #E6EBE8; border-radius:14px; padding:13px 15px; margin-bottom:16px;">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1F7A57" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0; margin-top:1px;"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                 <span style="font-size:12.5px; color:#5C6B64; line-height:1.45;">{{ L.shareManyNote }}</span>
@@ -480,7 +494,8 @@
                 <div style="display:flex; align-items:flex-end; justify-content:space-between; border-top:1px solid #EEF2F0; padding-top:16px;">
                   <div>
                     <div style="font-size:12px; color:#6B7B73; font-weight:500; margin-bottom:4px;">{{ L.yourCashback }}</div>
-                    <div class="num" style="font-size:30px; font-weight:700; letter-spacing:-0.02em; color:{{ active.amountColor }};" dir="ltr">{{ active.amount }}</div>
+                    <div class="num" style="font-size:30px; font-weight:700; letter-spacing:-0.02em; color:{{ active.amountColor }};" dir="ltr">{{ active.amountEst }}</div>
+                    <div class="num" style="font-size:13px; font-weight:600; color:#8A968F; margin-top:3px;" dir="ltr">{{ active.realLabel }}</div>
                   </div>
                   <span style="font-size:12px; font-weight:700; padding:6px 13px; border-radius:20px; color:{{ active.statusColor }}; background:#F4F6F5;">{{ active.statusLabel }}</span>
                 </div>
@@ -521,11 +536,11 @@
                       <div style="width:38px; height:38px; border-radius:50%; background:#E7F1EC; border:1px solid #D2E3D9; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:14px; color:#1F7A57; flex-shrink:0;">{{ cb.initial }}</div>
                       <div style="flex:1; min-width:0;">
                         <div style="font-size:14px; font-weight:600;">{{ cb.boughtLabel }}</div>
-                        <div style="font-size:12px; color:#8A968F;" dir="ltr">{{ cb.date }}</div>
+                        <div style="font-size:12px;" dir="ltr"><span style="color:{{ cb.statusColor }}; font-weight:600;">{{ cb.statusLabel }}</span><span style="color:#8A968F;"> · {{ cb.date }}</span></div>
                       </div>
                       <div style="text-align:end;">
-                        <div class="num" style="font-size:14px; font-weight:700; color:{{ cb.amountColor }};" dir="ltr">{{ cb.amountStr }}</div>
-                        <div style="font-size:11px; font-weight:600; color:{{ cb.statusColor }};">{{ cb.statusLabel }}</div>
+                        <div class="num" style="font-size:14px; font-weight:700; color:{{ cb.amountColor }};" dir="ltr">{{ cb.amountEst }}</div>
+                        <div class="num" style="font-size:11px; font-weight:600; color:#8A968F;" dir="ltr">{{ cb.amountReal }}</div>
                       </div>
                     </div>
                   </sc-for>
@@ -563,11 +578,11 @@
                     </sc-if>
                     <div style="flex:1; min-width:0;">
                       <div style="font-size:14.5px; font-weight:600; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">{{ it.title }}</div>
-                      <div style="font-size:12px; color:#6B7B73;">{{ it.sub }}</div>
+                      <div style="font-size:12px;"><span style="color:{{ it.statusColor }}; font-weight:600;">{{ it.statusLabel }}</span><span style="color:#6B7B73;"> · {{ it.sub }}</span></div>
                     </div>
                     <div style="text-align:end;">
-                      <div class="num" style="font-size:14.5px; font-weight:700; color:{{ it.amountColor }};" dir="ltr">{{ it.amount }}</div>
-                      <div style="font-size:11px; font-weight:600; color:{{ it.statusColor }};">{{ it.statusLabel }}</div>
+                      <div class="num" style="font-size:14.5px; font-weight:700; color:{{ it.amountColor }};" dir="ltr">{{ it.amountEst }}</div>
+                      <div class="num" style="font-size:11px; font-weight:600; color:#8A968F;" dir="ltr">{{ it.amountReal }}</div>
                     </div>
                   </div>
                 </sc-for>
@@ -762,7 +777,7 @@
 </x-dc>
 <script type="text/x-dc" data-dc-script>
 class Component extends DCLogic {
-  state = { screen: 'app-landing', mode: 'register', lang: 'he', device: 'mobile', phone: '', otp: '', paste: '', linkCreated: false, filter: 'all', amount: '142.50', copied: false, refCopied: false, fetching: false, activeItem: null, detailFrom: 'home', hasPasskey: false, faceAuthing: false, regFirst: '', regLast: '', regEmail: '', agreed: false, demoIdx: 0, payoutMethod: 'bit', bankSet: false, cardSet: false };
+  state = { screen: 'app-landing', mode: 'register', lang: 'he', device: 'mobile', phone: '', otp: '', paste: '', review: '', linkCreated: false, filter: 'all', amount: '142.50', copied: false, refCopied: false, fetching: false, activeItem: null, detailFrom: 'home', hasPasskey: false, faceAuthing: false, regFirst: '', regLast: '', regEmail: '', agreed: false, demoIdx: 0, payoutMethod: 'bit', bankSet: false, cardSet: false };
 
   componentDidMount() { this._demo = setInterval(() => this.setState(s => ({ demoIdx: s.demoIdx + 1 })), 1800); }
   componentWillUnmount() { clearInterval(this._demo); }
@@ -820,7 +835,7 @@ class Component extends DCLogic {
         phoneLabel: 'Phone number', phoneCta: 'Send me a code', phoneHelper: "We'll text a one-time code to verify it's you. By continuing you agree to our Terms & Privacy.",
         otpTitle: 'Enter your code', otpSent: 'We sent a 4-digit code to', verify: 'Verify', resendPre: "Didn't get it?", resendIn: 'Resend in 0:24',
         skipCodes: 'Skip codes next time', skipCodesSub: 'Turn on Face ID / passkey after sign-in.',
-        availableCashback: 'Available cashback', pendingNote: '₪68.20 pending confirmation', withdrawToBank: 'Withdraw cash',
+        availableCashback: 'Available cashback', pendingNote: '≈₪68.20 pending confirmation', estimated: 'Estimated', heldNote: 'held in original currencies', withdrawToBank: 'Withdraw cash',
         setupFaceId: 'Set up Face ID', setupFaceIdSub: 'Skip SMS codes — log in instantly next time.', turnOn: 'Turn on',
         youShop: 'You shop', earnEveryOrder: 'Earn on every order', friendsShop: 'Friends shop', earnFromLinks: 'Earn from links',
         turnLinkTitle: 'Turn a link into cashback', turnLinkSub: 'Paste any AliExpress product and share your reward link.',
@@ -829,6 +844,7 @@ class Component extends DCLogic {
         confirmed: 'Confirmed', pending: 'Pending', rejected: 'Rejected',
         createLinkTitle: 'Create a link', aliLinkLabel: 'AliExpress product link', createHint: "Paste a link — we'll pull the product automatically.", pulling: 'Pulling product details…', createCta: 'Create cashback link',
         linkReady: 'Your link is ready', detailsPulled: 'Details pulled from AliExpress', youEarnSale: 'You earn / sale', theyEarn: 'They earn',
+        reviewLabel: 'Add your review (optional)', reviewPlaceholder: 'Tell your friends why you recommend it…', reviewHint: 'Friends see this as your personal recommendation when they open the link.',
         shareManyNote: 'Share with as many friends as you like — you earn ₪12.40 every time one of them buys.', shareWithFriends: 'Share with friends', done: 'Done',
         earningDetails: 'Earning details', yourCashback: 'Your cashback', productPrice: 'Product price', youEarnPurchase: 'You earn / purchase', friendEarnsLbl: 'Friend earns',
         orderTotal: 'Order total', aliCommission: 'AliExpress commission', orderReference: 'Order reference',
@@ -856,7 +872,7 @@ class Component extends DCLogic {
         phoneLabel: 'מספר טלפון', phoneCta: 'שלחו לי קוד', phoneHelper: 'נשלח לכם קוד חד-פעמי לאימות. בהמשך אתם מסכימים לתנאים ולמדיניות הפרטיות.',
         otpTitle: 'הזינו את הקוד', otpSent: 'שלחנו קוד בן 4 ספרות אל', verify: 'אימות', resendPre: 'לא קיבלתם?', resendIn: 'שליחה חוזרת בעוד 0:24',
         skipCodes: 'דלגו על קודים בפעם הבאה', skipCodesSub: 'הפעילו Face ID / מפתח גישה אחרי ההתחברות.',
-        availableCashback: 'קאשבק זמין', pendingNote: '₪68.20 ממתין לאישור', withdrawToBank: 'משיכת מזומן',
+        availableCashback: 'קאשבק זמין', pendingNote: '≈₪68.20 ממתין לאישור', estimated: 'משוער', heldNote: 'מוחזק במטבע המקורי', withdrawToBank: 'משיכת מזומן',
         setupFaceId: 'הגדרת Face ID', setupFaceIdSub: 'דלגו על קודי SMS — התחברו מיד בפעם הבאה.', turnOn: 'הפעלה',
         youShop: 'אתם קונים', earnEveryOrder: 'מרוויחים על כל הזמנה', friendsShop: 'חברים קונים', earnFromLinks: 'מרוויחים מקישורים',
         turnLinkTitle: 'הפכו קישור לקאשבק', turnLinkSub: 'הדביקו מוצר מ-AliExpress ושתפו קישור תגמול.',
@@ -865,6 +881,7 @@ class Component extends DCLogic {
         confirmed: 'אושר', pending: 'ממתין', rejected: 'נדחה',
         createLinkTitle: 'יצירת קישור', aliLinkLabel: 'קישור למוצר ב-AliExpress', createHint: 'הדביקו קישור — נשלוף את המוצר אוטומטית.', pulling: 'שולפים פרטי מוצר…', createCta: 'צרו קישור קאשבק',
         linkReady: 'הקישור שלכם מוכן', detailsPulled: 'הפרטים נשלפו מ-AliExpress', youEarnSale: 'אתם מרוויחים / מכירה', theyEarn: 'הם מרוויחים',
+        reviewLabel: 'הוסיפו המלצה (לא חובה)', reviewPlaceholder: 'ספרו לחברים למה אתם ממליצים…', reviewHint: 'החברים יראו את זה כהמלצה אישית שלכם כשיפתחו את הקישור.',
         shareManyNote: 'שתפו עם כמה חברים שתרצו — אתם מרוויחים ₪12.40 בכל פעם שמישהו מהם קונה.', shareWithFriends: 'שיתוף עם חברים', done: 'סיום',
         earningDetails: 'פרטי רווח', yourCashback: 'הקאשבק שלכם', productPrice: 'מחיר המוצר', youEarnPurchase: 'אתם מרוויחים / רכישה', friendEarnsLbl: 'החבר מרוויח',
         orderTotal: 'סה"כ הזמנה', aliCommission: 'עמלת AliExpress', orderReference: 'מספר הזמנה',
@@ -893,6 +910,21 @@ class Component extends DCLogic {
     const fmt = (n) => (n < 0 ? '−' : '+') + '₪' + Math.abs(n).toFixed(2);
     const amtColor = (st) => st === 'rejected' ? '#B0473A' : (st === 'pending' ? '#B07A1E' : '#1F7A57');
 
+    // ----- multi-currency: cashback is earned in the merchant's settlement currency (the REAL value),
+    // displayed big as an ESTIMATED ILS value converted at current rates. FX = ILS per 1 unit. -----
+    const FX = { USD: 3.70, EUR: 4.00, GBP: 4.65 };
+    const SYM = { USD: '$', EUR: '€', GBP: '£', ILS: '₪' };
+    const toReal = (ils, ccy) => ils / (FX[ccy] || 1);
+    const realStr = (ccy, n) => (n < 0 ? '−' : '+') + (SYM[ccy] || '') + Math.abs(n).toFixed(2);
+
+    // wallet holdings sit in their original currencies; the headline ILS figure is estimated at current rates
+    const holdingsRaw = [ { ccy: 'USD', amt: 36.20 }, { ccy: 'EUR', amt: 2.14 } ];
+    const balIls = holdingsRaw.reduce((sum, h) => sum + h.amt * (FX[h.ccy] || 0), 0);
+    const balWholeN = Math.floor(balIls);
+    const holdings = holdingsRaw.map(h => ({ label: (SYM[h.ccy] || '') + h.amt.toFixed(2) }));
+    const balWhole = '₪' + balWholeN.toLocaleString('en-US');
+    const balFrac = (balIls - balWholeN).toFixed(2).slice(1);
+
     const raw = [
       { type: 'link', title: 'Jebao Smart Aquarium Fish Feeder', price: '₪95.21', perBuyer: '₪12.40', friendEarn: '₪6.20', image: 'assets/product-feeder.jpg', buyers: [
         { who: 'Daniel', initial: 'D', amount: 12.40, status: 'confirmed', date: 'Jun 27' },
@@ -909,31 +941,38 @@ class Component extends DCLogic {
     const items = raw.map(it => {
       const m = { ...it };
       m.noImage = !it.image;
+      const ccy = it.ccy || 'USD';
+      m.ccy = ccy;
       if (it.type === 'link') {
         const total = it.buyers.reduce((sum, b) => sum + b.amount, 0);
         const pend = it.buyers.filter(b => b.status === 'pending').length;
         m.isLink = true; m.isOrder = false;
-        m.amount = fmt(total);
+        m.amountEst = fmt(total);
+        m.amountReal = realStr(ccy, toReal(total, ccy));
+        m.realLabel = realStr(ccy, toReal(total, ccy)) + ' ' + ccy;
         m.amountColor = '#1F7A57';
         m.status = pend > 0 ? 'pending' : 'confirmed';
         m.statusLabel = it.buyers.length + ' ' + (it.buyers.length === 1 ? L.cashbackOne : L.cashbackMany);
         m.statusColor = '#6B7B73';
-        m.sub = L.yourLink + ' · ' + it.buyers.length + ' ' + (it.buyers.length === 1 ? L.purchase : L.purchases);
+        m.sub = L.yourLink;
         m.cashbacks = it.buyers.map(b => ({
           ...b,
           boughtLabel: b.who + ' ' + L.bought,
-          amountStr: fmt(b.amount),
+          amountEst: fmt(b.amount),
+          amountReal: realStr(ccy, toReal(b.amount, ccy)),
           statusLabel: meta[b.status].label,
           statusColor: meta[b.status].color,
           amountColor: amtColor(b.status),
         }));
       } else {
         m.isLink = false; m.isOrder = true;
-        m.amount = fmt(it.amount);
+        m.amountEst = fmt(it.amount);
+        m.amountReal = realStr(ccy, toReal(it.amount, ccy));
+        m.realLabel = realStr(ccy, toReal(it.amount, ccy)) + ' ' + ccy;
         m.statusLabel = meta[it.status].label;
         m.statusColor = meta[it.status].color;
         m.amountColor = amtColor(it.status);
-        m.sub = (it.status === 'rejected' ? L.returned : L.yourOrder) + ' · ' + it.dateLabel;
+        m.sub = it.dateLabel;
       }
       m.open = () => this.openDetail(m);
       return m;
@@ -986,6 +1025,7 @@ class Component extends DCLogic {
     const methodName = { bank: L.methodBank, card: L.methodCard, bit: 'Bit', paybox: 'PayBox' }[s.payoutMethod];
     return {
       L,
+      holdings, balWhole, balFrac,
       isWithdrawBank: s.screen === 'withdraw-bank',
       isWithdrawCard: s.screen === 'withdraw-card',
       optBank: optStyle(s.payoutMethod === 'bank'),
@@ -1050,6 +1090,7 @@ class Component extends DCLogic {
       onPhone: (e) => this.setState({ phone: e.target.value }),
       onOtp: (e) => this.setState({ otp: e.target.value.replace(/\D/g, '').slice(0, 4) }),
       onPaste: (e) => { const v = e.target.value; this.setState({ paste: v }); if (this.looksLikeLink(v)) this.startCreate(); },
+      onReview: (e) => this.setState({ review: e.target.value }),
       onAmount: (e) => this.setState({ amount: e.target.value }),
 
       sendCode: () => this.go('auth-otp'),

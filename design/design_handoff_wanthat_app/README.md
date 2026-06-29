@@ -42,13 +42,13 @@ To view the prototypes: open any `designs/*.dc.html` in a browser. A sticky prev
 2. **Phone / OTP / Personal details / Enable Face ID** — same as the acquisition flow (Log in skips registration and Face-ID-enrollment, going straight to Home; Create account goes through the full set).
 3. **Welcome-back (Face ID auto-login)** — if a passkey/biometric already exists, a brief "Welcome back — signing you in with Face ID" state resolves to Home automatically.
 4. **Home (wallet dashboard)** — the core authenticated screen:
-   - **Balance card** (dark, `#15201C`): "Available cashback" label, large tabular amount, an "ILS"/currency chip, pending note (e.g. "₪68.20 pending confirmation"), and a **mint** primary CTA **Withdraw cash** (`#7FE0B0` on ink).
+   - **Balance card** (dark, `#15201C`): **multi-currency** — cashback is earned in each merchant's settlement currency (the *real* value), but the headline is the **estimated ILS total** shown large with a `≈` prefix and an **"Estimated"** chip (e.g. `≈₪142.50`). Below it, the **real per-currency holdings** appear as small chips (`$36.20 · €2.14`) with a "held in original currencies" note. Pending note is also estimated ("≈₪68.20 pending confirmation"). A **mint** primary CTA **Withdraw cash** (`#7FE0B0` on ink). FX is ILS-per-unit (`USD→3.70, EUR→4.00, GBP→4.65` in the prototype) — in production pull live rates; the ILS figure is always a display estimate, never a settled amount.
    - **Set up Face ID** prompt (soft green card) shown only if no passkey yet → **enroll** button.
-   - **Recent activity** list with a **See all** link; each row is a partner/order with status (confirmed / pending / rejected) and an amount.
+   - **Recent activity** list with a **See all** link; each row is a partner/order with a colored status label (confirmed / pending / rejected) and a **dual amount**: the **estimated ILS** value large on top, the **real source-currency** cashback (e.g. `+$3.35`) small beneath.
    - Desktop adds a top nav (wordmark, Home / Activity links, a green **Create link** button, avatar). Mobile uses a bottom tab bar (Home, Activity, Profile) + a create affordance.
 5. **Create link** — paste a product URL; **Create** pulls product info (loading state "pulling…") → Summary.
 6. **Summary / share** — created link with its product summary and a **share** affordance (copy link).
-7. **Earning detail** — a single order's detail with a status timeline.
+7. **Earning detail** — a single order's detail with a status timeline; header shows the **estimated ILS** value large with the **real** source-currency value (e.g. `+$3.35 USD`) beneath. Per-buyer rows on a shared link show the same estimated-ILS-over-real-currency pairing.
 8. **Activity** — full list of earnings/orders.
 9. **Withdraw (multi-method)** — title **Withdraw cash**; amount context ("₪X available"); a **payout-method picker** with four options, each a selectable row with a logo tile + label + detail line + a green check when selected:
    - **Bank account** — opens **bank details** screen (bank, branch, account number, account holder) → on save, row shows masked account `•••• 4821` and the **Bank Hapoalim** logo (generic blue bank glyph until details are saved).
