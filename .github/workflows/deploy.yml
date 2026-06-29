@@ -1,9 +1,13 @@
 name: Deploy
 
 # OIDC-assumed per-environment role (no static keys); cdk diff gate; prod behind a
-# GitHub Environment approval (ADR-0015). main auto-deploys dev; promote via dispatch.
+# GitHub Environment approval (ADR-0015). Both a push to main AND every PR (targeting main)
+# auto-deploy to dev — the PR run is a deploy *attempt* that surfaces deploy-time failures
+# (e.g. an unsupported resource) before merge. workflow_dispatch promotes to prod.
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -12,6 +16,12 @@ on:
         type: choice
         options: [dev, prod]
         default: dev
+
+# Serialize deploys per environment so concurrent PRs/pushes don't clobber the shared stacks;
+# never cancel an in-flight deploy mid-apply.
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'dev' }}
+  cancel-in-progress: false
 
 permissions:
   id-token: write # required for OIDC
@@ -25,16 +35,16 @@ jobs:
       # Selects which wanthat-{env}-* stacks the CDK app instantiates (infra/bin/wanthat.ts).
       WANTHAT_ENV: ${{ github.event.inputs.environment || 'dev' }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v5
         with:
           version: 9.7.0
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
           cache: pnpm
       - run: pnpm install --frozen-lockfile
-      - uses: aws-actions/configure-aws-credentials@v4
+      - uses: aws-actions/configure-aws-credentials@v6
         id: aws
         with:
           role-to-assume: ${{ vars.CDK_DEPLOY_ROLE_ARN }} # per-env OIDC role
