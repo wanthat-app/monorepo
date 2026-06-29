@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import * as cdk from "aws-cdk-lib";
+import { ApiStack } from "../lib/api-stack";
 import { resolveEnv, stackName } from "../lib/config";
 import { DataStack } from "../lib/data-stack";
 import { IdentityStack } from "../lib/identity-stack";
@@ -18,7 +19,7 @@ import { IdentityStack } from "../lib/identity-stack";
  * increments land. Deferred entirely: NetworkStack/VPC (until Aurora); the us-east-1 EdgeStack;
  * ObservabilityStack.
  *
- * Wired: DataStack, IdentityStack.
+ * Wired: DataStack, IdentityStack, ApiStack.
  */
 const app = new cdk.App();
 const wanthatEnv = resolveEnv(process.env.WANTHAT_ENV ?? app.node.tryGetContext("env"));
@@ -29,7 +30,15 @@ const common = { env, wanthatEnv };
 cdk.Tags.of(app).add("app", "wanthat");
 cdk.Tags.of(app).add("env", wanthatEnv.name);
 
-new DataStack(app, stackName(wanthatEnv, "data"), common);
-new IdentityStack(app, stackName(wanthatEnv, "identity"), common);
+const data = new DataStack(app, stackName(wanthatEnv, "data"), common);
+const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), common);
+new ApiStack(app, stackName(wanthatEnv, "api"), {
+  ...common,
+  userPool: identity.userPool,
+  userPoolClient: identity.userPoolClient,
+  recommendationTable: data.recommendationTable,
+  guestAttributionTable: data.guestAttributionTable,
+  runtimeConfigTable: data.runtimeConfigTable,
+});
 
 app.synth();
