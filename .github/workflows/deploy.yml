@@ -35,8 +35,17 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - uses: aws-actions/configure-aws-credentials@v4
+        id: aws
         with:
           role-to-assume: ${{ vars.CDK_DEPLOY_ROLE_ARN }} # per-env OIDC role
           aws-region: il-central-1
+      # Pass the resolved account/region to CDK explicitly. Turbo runs cdk in strict env mode
+      # (globalPassThroughEnv allows AWS_*/CDK_DEFAULT_* through); the app reads CDK_DEFAULT_ACCOUNT.
       - run: pnpm diff # cdk diff — required review gate before any change
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
+          CDK_DEFAULT_REGION: il-central-1
       - run: pnpm deploy # cdk deploy (prod gated by Environment approval)
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
+          CDK_DEFAULT_REGION: il-central-1
