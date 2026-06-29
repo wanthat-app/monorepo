@@ -160,7 +160,8 @@ export class EdgeStack extends Stack {
     });
 
     // Upload the SPA build and invalidate the edge cache on each deploy. The asset dir must exist at
-    // synth time — CI builds apps/web (Turborepo) before `cdk synth`.
+    // synth time; infra build-depends on `@wanthat/web` (its `package.json`), so Turborepo's `^build`
+    // produces `apps/web/dist` before any infra synth/diff/deploy.
     new s3deploy.BucketDeployment(this, "SpaDeployment", {
       destinationBucket: siteBucket,
       sources: [s3deploy.Source.asset(path.join(REPO_ROOT, "apps", "web", "dist"))],
