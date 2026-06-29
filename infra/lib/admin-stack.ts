@@ -4,16 +4,12 @@ import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type * as cognito from "aws-cdk-lib/aws-cognito";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import type { Construct } from "constructs";
-import { serviceEntry, type WanthatEnv } from "./config";
+import { LAMBDA_RUNTIME, serviceEntry, type WanthatEnv } from "./config";
 
 export interface AdminStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
-  readonly vpc: ec2.IVpc;
-  readonly lambdaSecurityGroup: ec2.ISecurityGroup;
   readonly userPool: cognito.IUserPool;
   readonly userPoolClient: cognito.IUserPoolClient;
   readonly runtimeConfigTable: dynamodb.ITable;
@@ -22,27 +18,26 @@ export interface AdminStackProps extends StackProps {
 
 /**
  * AdminStack — the admin API as a separate Lambda with its own role and exposure (ADR-0002).
- * In-VPC; behind its own HTTP API + JWT authorizer (every route gated — there is no public probe).
- * The sanctioned writes (audited ledger adjustments, the runtime-config panel) land later; for now
- * it returns 501, so an unauthenticated request returns 401 and an authed one returns 501.
+ * Behind its own HTTP API + JWT authorizer (every route gated — there is no public probe). The
+ * sanctioned writes (audited ledger adjustments, the runtime-config panel) land later; for now it
+ * returns 501, so an unauthenticated request returns 401 and an authed one returns 501.
+ *
+ * Non-VPC for now — it moves in-VPC with Aurora (ADR-0004), like app-api.
  */
 export class AdminStack extends Stack {
   readonly httpApi: HttpApi;
 
   constructor(scope: Construct, id: string, props: AdminStackProps) {
     super(scope, id, props);
-    const { wanthatEnv, vpc, lambdaSecurityGroup } = props;
+    const { wanthatEnv } = props;
 
     const fn = new NodejsFunction(this, "AdminApi", {
       functionName: `wanthat-${wanthatEnv.name}-admin-api`,
       entry: serviceEntry("admin-api"),
       handler: "handler",
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: LAMBDA_RUNTIME,
       memorySize: 256,
       timeout: Duration.seconds(10),
-      vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [lambdaSecurityGroup],
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,

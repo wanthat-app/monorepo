@@ -6,7 +6,7 @@ import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import type * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
-import { serviceEntry, type WanthatEnv } from "./config";
+import { LAMBDA_RUNTIME, serviceEntry, type WanthatEnv } from "./config";
 
 export interface EdgeServicesStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -39,7 +39,7 @@ export class EdgeServicesStack extends Stack {
         functionName: `wanthat-${wanthatEnv.name}-${service}`,
         entry: serviceEntry(service),
         handler: "handler",
-        runtime: lambda.Runtime.NODEJS_20_X,
+        runtime: LAMBDA_RUNTIME,
         memorySize: 256,
         timeout: Duration.seconds(15),
         environment: { WANTHAT_ENV: wanthatEnv.name },

@@ -4,16 +4,12 @@ import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type * as cognito from "aws-cdk-lib/aws-cognito";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
-import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import type { Construct } from "constructs";
-import { serviceEntry, type WanthatEnv } from "./config";
+import { LAMBDA_RUNTIME, serviceEntry, type WanthatEnv } from "./config";
 
 export interface ApiStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
-  readonly vpc: ec2.IVpc;
-  readonly lambdaSecurityGroup: ec2.ISecurityGroup;
   readonly userPool: cognito.IUserPool;
   readonly userPoolClient: cognito.IUserPoolClient;
   readonly recommendationTable: dynamodb.ITable;
@@ -24,27 +20,26 @@ export interface ApiStackProps extends StackProps {
 /**
  * ApiStack — the app-api Lambdalith behind an HTTP API (ADR-0002, ADR-0006, ADR-0011).
  *
- * In-VPC (it will reach Aurora via IAM auth once the wallet slice lands); reaches DynamoDB through
- * the gateway endpoint. A Cognito JWT authorizer guards every route except `GET /healthz`, which is
- * the unauthenticated liveness probe for the deploy smoke-test.
+ * Reaches DynamoDB directly. A Cognito JWT authorizer guards every route except `GET /healthz`, the
+ * unauthenticated liveness probe for the deploy smoke-test.
+ *
+ * Non-VPC for now: app-api only needs the VPC once it reaches Aurora via IAM auth (the wallet
+ * slice). It moves in-VPC then, alongside the NetworkStack (ADR-0004).
  */
 export class ApiStack extends Stack {
   readonly httpApi: HttpApi;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
-    const { wanthatEnv, vpc, lambdaSecurityGroup } = props;
+    const { wanthatEnv } = props;
 
     const fn = new NodejsFunction(this, "AppApi", {
       functionName: `wanthat-${wanthatEnv.name}-app-api`,
       entry: serviceEntry("app-api"),
       handler: "handler",
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: LAMBDA_RUNTIME,
       memorySize: 256,
       timeout: Duration.seconds(10),
-      vpc,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [lambdaSecurityGroup],
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
