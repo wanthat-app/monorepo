@@ -29,16 +29,17 @@ an OpenAPI spec is derived on demand only when an external/non-TS consumer appea
 
 ### Node version
 
-This repo standardizes on **Node 20.x** (ADR-0010; it's the AWS Lambda runtime and the esbuild
-bundle target). Local development must use Node 20:
+This repo standardizes on **Node 24.x** (ADR-0010; it's the AWS Lambda runtime and the esbuild
+bundle target). Local development must use Node 24:
 
 - [`.nvmrc`](.nvmrc) pins it — run `nvm use` (or `fnm use`) before working in the repo.
-- `engines.node` is `20.x` and [`.npmrc`](.npmrc) sets `engine-strict=true`, so `pnpm install`
+- `engines.node` is `24.x` and [`.npmrc`](.npmrc) sets `engine-strict=true`, so `pnpm install`
   **fails fast** on the wrong major.
 - CI reads the same `.nvmrc` (`setup-node` with `node-version-file`), so local and CI never drift.
 
-AWS Lambda only ships even-LTS majors (18 / 20 / 22 — there is no 21.x); a future bump goes
-20 → 22 here in lockstep with `LAMBDA_RUNTIME` (`infra/lib/config.ts`).
+Node 24 "Krypton" is the current LTS; AWS Lambda supports `nodejs24.x` to Apr 2028. (We moved off
+Node 20, which reached end-of-life in Apr 2026 and is deprecated on Lambda.) A future bump to the
+next even LTS changes `LAMBDA_RUNTIME` (`infra/lib/config.ts`), `.nvmrc`, and `engines` together.
 
 ## Commands
 

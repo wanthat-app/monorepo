@@ -100,7 +100,7 @@ the poller-writer into the append-only PostgreSQL ledger + hash-chained audit lo
   step-up. Our own `/auth/*` fronts Cognito so we gate before any SMS (the SMS kill switch).
   WhatsApp deferred. (ADR-0006.)
 
-### 3.3 Compute (Lambda, Node 20)
+### 3.3 Compute (Lambda, Node 24)
 - **app-api Lambdalith** *(in-VPC)* — `identity` (`/auth/*`, `/me`), `links` (`/links`,
   `/products/*`), `wallet` (`/wallet*`). Shared Postgres schema + cross-table transactions.
 - **admin** *(in-VPC)* — separate role/exposure; the only app surface that may write money

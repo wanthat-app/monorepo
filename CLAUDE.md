@@ -11,7 +11,7 @@ change a decision by adding a new superseding ADR, not by editing an accepted on
 
 ## Stack & tooling
 
-- **Monorepo:** pnpm workspaces + Turborepo. TypeScript everywhere (Node 20).
+- **Monorepo:** pnpm workspaces + Turborepo. TypeScript everywhere (Node 24).
 - **IaC:** AWS CDK v2 (`aws-cdk-lib`) in `infra/`.
 - **Cloud (serverless-first):** Lambda, API Gateway HTTP API, Cognito (SMS OTP + passkeys),
   **Aurora Serverless v2** (PostgreSQL, scale-to-zero) for PII + ledger, **DynamoDB** (on-demand)
