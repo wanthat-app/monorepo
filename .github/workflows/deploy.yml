@@ -1,9 +1,13 @@
 name: Deploy
 
 # OIDC-assumed per-environment role (no static keys); cdk diff gate; prod behind a
-# GitHub Environment approval (ADR-0015). main auto-deploys dev; promote via dispatch.
+# GitHub Environment approval (ADR-0015). Both a push to main AND every PR (targeting main)
+# auto-deploy to dev — the PR run is a deploy *attempt* that surfaces deploy-time failures
+# (e.g. an unsupported resource) before merge. workflow_dispatch promotes to prod.
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   workflow_dispatch:
     inputs:
@@ -12,6 +16,12 @@ on:
         type: choice
         options: [dev, prod]
         default: dev
+
+# Serialize deploys per environment so concurrent PRs/pushes don't clobber the shared stacks;
+# never cancel an in-flight deploy mid-apply.
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'dev' }}
+  cancel-in-progress: false
 
 permissions:
   id-token: write # required for OIDC
