@@ -22,10 +22,17 @@ import { IdentityStack } from "../lib/identity-stack";
  */
 const app = new cdk.App();
 const wanthatEnv = resolveEnv(process.env.WANTHAT_ENV ?? app.node.tryGetContext("env"));
-// account omitted on purpose — resolved from the active credentials at deploy time.
-const env: cdk.Environment = { region: wanthatEnv.region };
-// crossRegionReferences lets the us-east-1 EdgeStack consume il-central-1 API/landing endpoints.
-const common = { env, wanthatEnv, crossRegionReferences: true };
+// Account is read from the environment (CDK_DEFAULT_ACCOUNT, set by the CLI from the active
+// credentials), never hard-coded in the repo. Undefined at a credential-free synth (env-agnostic);
+// resolved at deploy. Region is fixed per env.
+// Coerce empty string → undefined so a credential-free synth stays env-agnostic.
+const account = process.env.CDK_DEFAULT_ACCOUNT || undefined;
+const env: cdk.Environment = { account, region: wanthatEnv.region };
+// crossRegionReferences lets the us-east-1 EdgeStack consume il-central-1 API/landing endpoints —
+// but it requires a concrete account even at synth, so enable it only for envs that have an
+// EdgeStack (prod). dev has no cross-region wiring and stays credential-free at synth.
+const crossRegionReferences = Boolean(wanthatEnv.domainName);
+const common = { env, wanthatEnv, crossRegionReferences };
 
 cdk.Tags.of(app).add("app", "wanthat");
 cdk.Tags.of(app).add("env", wanthatEnv.name);
@@ -62,7 +69,7 @@ const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-serv
 // Custom-domain front door (prod only). CloudFront cert + WAF must live in us-east-1.
 if (wanthatEnv.domainName) {
   new EdgeStack(app, stackName(wanthatEnv, "edge"), {
-    env: { region: EDGE_REGION },
+    env: { account, region: EDGE_REGION },
     wanthatEnv,
     crossRegionReferences: true,
     apiDomain: `${api.httpApi.apiId}.execute-api.${wanthatEnv.region}.amazonaws.com`,
