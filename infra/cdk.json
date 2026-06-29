@@ -4,5 +4,7 @@
     "include": ["**"],
     "exclude": ["README.md", "cdk*.json", "node_modules", "dist"]
   },
-  "context": {}
+  "context": {
+    "@aws-cdk/core:defaultCrossStackReferences": "strong"
+  }
 }

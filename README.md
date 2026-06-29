@@ -27,6 +27,19 @@ adrs/                      architecture decision records
 pnpm workspaces + Turborepo. TypeScript everywhere. Contracts are schema-first (Zod);
 an OpenAPI spec is derived on demand only when an external/non-TS consumer appears (ADR-0001).
 
+### Node version
+
+This repo standardizes on **Node 20.x** (ADR-0010; it's the AWS Lambda runtime and the esbuild
+bundle target). Local development must use Node 20:
+
+- [`.nvmrc`](.nvmrc) pins it — run `nvm use` (or `fnm use`) before working in the repo.
+- `engines.node` is `20.x` and [`.npmrc`](.npmrc) sets `engine-strict=true`, so `pnpm install`
+  **fails fast** on the wrong major.
+- CI reads the same `.nvmrc` (`setup-node` with `node-version-file`), so local and CI never drift.
+
+AWS Lambda only ships even-LTS majors (18 / 20 / 22 — there is no 21.x); a future bump goes
+20 → 22 here in lockstep with `LAMBDA_RUNTIME` (`infra/lib/config.ts`).
+
 ## Commands
 
 ```bash

@@ -7,17 +7,18 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "synth": "cdk synth",
-    "diff": "cdk diff",
-    "deploy": "cdk deploy",
+    "diff": "cdk diff --all",
+    "deploy": "cdk deploy --all --require-approval never",
     "test": "echo \"no tests yet\""
   },
   "dependencies": {
+    "@wanthat/config": "workspace:*",
     "aws-cdk-lib": "^2.150.0",
-    "constructs": "^10.3.0",
-    "@wanthat/config": "workspace:*"
+    "constructs": "^10.3.0"
   },
   "devDependencies": {
     "aws-cdk": "^2.150.0",
+    "esbuild": "^0.28.1",
     "tsx": "^4.19.0"
   }
 }
