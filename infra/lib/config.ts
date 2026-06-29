@@ -1,5 +1,6 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import type { CfnStage, HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 
 /**
@@ -47,6 +48,42 @@ export function resolveEnv(name: string | undefined): WanthatEnv {
  * repo's `engines` and `.nvmrc`.
  */
 export const LAMBDA_RUNTIME = lambda.Runtime.NODEJS_24_X;
+
+/** A request-throttle profile for an HTTP API stage. */
+export interface Throttle {
+  /** Steady-state requests per second. */
+  readonly rateLimit: number;
+  /** Max burst (bucket size) — short spikes above the steady rate. */
+  readonly burstLimit: number;
+}
+
+/**
+ * Per-surface API Gateway throttling — **the one place to tune request limits per use case**.
+ * Applied to each HTTP API's `$default` stage (default route settings) via {@link applyThrottle}.
+ *
+ * - `landing` — the public, viral redirect path (`/p/*`); highest headroom (also CloudFront-fronted).
+ * - `userWallet` — the authenticated app API (identity + links + **wallet**); moderate.
+ * - `admin` — the internal admin API; low (few operators).
+ *
+ * Account-level HTTP API defaults are 10000 rps / 5000 burst; these per-stage caps sit under that.
+ */
+export const THROTTLING = {
+  landing: { rateLimit: 2000, burstLimit: 4000 },
+  userWallet: { rateLimit: 500, burstLimit: 1000 },
+  admin: { rateLimit: 50, burstLimit: 100 },
+} satisfies Record<string, Throttle>;
+
+/** Apply a {@link Throttle} to an HTTP API's auto-created `$default` stage (default route settings). */
+export function applyThrottle(httpApi: HttpApi, throttle: Throttle): void {
+  const stage = httpApi.defaultStage?.node.defaultChild as CfnStage | undefined;
+  if (!stage) {
+    throw new Error("HTTP API has no default stage to throttle");
+  }
+  stage.defaultRouteSettings = {
+    throttlingRateLimit: throttle.rateLimit,
+    throttlingBurstLimit: throttle.burstLimit,
+  };
+}
 
 // Resolve paths from this file (infra is ESM — no __dirname), so they hold regardless of cwd.
 const here = path.dirname(fileURLToPath(import.meta.url)); // infra/lib

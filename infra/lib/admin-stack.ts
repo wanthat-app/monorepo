@@ -6,7 +6,7 @@ import type * as cognito from "aws-cdk-lib/aws-cognito";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import type { Construct } from "constructs";
-import { LAMBDA_RUNTIME, serviceEntry, type WanthatEnv } from "./config";
+import { applyThrottle, LAMBDA_RUNTIME, serviceEntry, THROTTLING, type WanthatEnv } from "./config";
 
 export interface AdminStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -57,6 +57,8 @@ export class AdminStack extends Stack {
     );
 
     this.httpApi = new HttpApi(this, "HttpApi", { apiName: `wanthat-${wanthatEnv.name}-admin` });
+    // Per-surface request throttling — tuned centrally in config.ts (THROTTLING).
+    applyThrottle(this.httpApi, THROTTLING.admin);
     this.httpApi.addRoutes({
       path: "/{proxy+}",
       methods: [HttpMethod.ANY],

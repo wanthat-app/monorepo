@@ -4,7 +4,7 @@ Each ADR is a self-contained decision: context, the decision, alternatives consi
 consequences. **0001–0009** cover the architecture (foundation-first: structure → compute → data
 → network → DR, then the consumer journey: identity → landing → attribution → conversion);
 **0010–0016** cover the implementation stack; **0017** extends the architecture set with the
-currency / FX model.
+currency / FX model; **0018** supersedes ADR-0007's landing front-door (Function URL → HTTP API).
 
 | # | Decision |
 |---|---|
@@ -14,7 +14,7 @@ currency / FX model.
 | [0004](0004-network-topology-nat-free-egress.md) | Network topology: NAT-free egress via non-VPC chaining |
 | [0005](0005-disaster-recovery-posture.md) | DR posture: single-region active + cross-region backups |
 | [0006](0006-identity-sms-otp-and-passkeys.md) | Identity: SMS OTP + passkeys, with an SMS-abuse kill switch |
-| [0007](0007-landing-path-and-latency.md) | Landing path & latency |
+| [0007](0007-landing-path-and-latency.md) | Landing path & latency *(front door superseded by [0018](0018-landing-front-door-http-api.md))* |
 | [0008](0008-consumer-attribution-model.md) | Consumer attribution model (no click-log lookup) |
 | [0009](0009-conversion-ingestion-poller.md) | Conversion ingestion: scheduled reconciliation poller |
 | [0010](0010-language-modules-build-toolchain.md) | Language, modules & build toolchain (ESM, Node 24, esbuild, tsx) |
@@ -25,6 +25,7 @@ currency / FX model.
 | [0015](0015-cicd-and-environment-promotion.md) | CI/CD & environment promotion: GitHub Actions + OIDC |
 | [0016](0016-frontend-stack.md) | Frontend stack: Vite + React SPA |
 | [0017](0017-currency-model-and-fx-rate-sourcing.md) | Currency model & FX rate sourcing (hold settlement currency, convert at withdrawal, Bank of Israel rate) |
+| [0018](0018-landing-front-door-http-api.md) | Landing front door: API Gateway HTTP API (supersedes ADR-0007's Function URL — unavailable in il-central-1) |
 
 ## Status & change policy
 
