@@ -1,12 +1,14 @@
 import { CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
+import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
+import type * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import type * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
-import { LAMBDA_RUNTIME, serviceEntry, type WanthatEnv } from "./config";
+import { applyThrottle, LAMBDA_RUNTIME, serviceEntry, THROTTLING, type WanthatEnv } from "./config";
 
 export interface EdgeServicesStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -20,8 +22,9 @@ export interface EdgeServicesStackProps extends StackProps {
 /**
  * EdgeServicesStack — the non-VPC functions (ADR-0004, ADR-0007, ADR-0008, ADR-0009).
  *
- * - `landing`: public, cookieless; behind a Lambda Function URL (auth NONE), reads the DynamoDB
- *   projection. (CloudFront fronts this in the EdgeStack / PR B2.)
+ * - `landing`: public, cookieless; behind a **public HTTP API** (no authorizer), reads the DynamoDB
+ *   projection. (CloudFront fronts this in the EdgeStack.) ADR-0007 specified a Lambda Function URL,
+ *   but those are unavailable in il-central-1 — superseded by ADR-0018 (HTTP API instead).
  * - `retailer-proxy`: the sole egress to retailer APIs; holds the secret-scoped credential.
  * - `conversion-poller` / `fx-rates`: scheduled. The EventBridge schedules are created **disabled**
  *   (the handlers are 501 stubs); they're enabled and made admin-tunable with their real slices.
@@ -46,12 +49,21 @@ export class EdgeServicesStack extends Stack {
         bundling: { minify: true, sourceMap: true },
       });
 
-    // --- landing (public Function URL) ---
+    // --- landing (public HTTP API; Lambda Function URLs are unavailable in il-central-1, ADR-0018) ---
     const landing = makeFn("Landing", "landing");
     props.recommendationTable.grantReadData(landing);
     props.runtimeConfigTable.grantReadData(landing);
     props.fxRateTable.grantReadData(landing);
-    const landingUrl = landing.addFunctionUrl({ authType: lambda.FunctionUrlAuthType.NONE });
+    const landingApi = new HttpApi(this, "LandingApi", {
+      apiName: `wanthat-${wanthatEnv.name}-landing`,
+    });
+    landingApi.addRoutes({
+      path: "/{proxy+}",
+      methods: [HttpMethod.ANY],
+      integration: new HttpLambdaIntegration("LandingIntegration", landing),
+    });
+    // Per-surface request throttling — tuned centrally in config.ts (THROTTLING).
+    applyThrottle(landingApi, THROTTLING.landing);
 
     // --- retailer proxy (sole egress; holds the credential) ---
     const retailerProxy = makeFn("RetailerProxy", "retailer-proxy");
@@ -70,7 +82,7 @@ export class EdgeServicesStack extends Stack {
     this.addDisabledSchedule("ConversionPollerSchedule", poller, "rate(15 minutes)");
     this.addDisabledSchedule("FxRatesSchedule", fxRates, "rate(60 minutes)");
 
-    new CfnOutput(this, "LandingUrl", { value: landingUrl.url });
+    new CfnOutput(this, "LandingApiUrl", { value: landingApi.apiEndpoint });
   }
 
   /** A disabled EventBridge schedule that invokes `fn` (ADR-0009 — enabled/tunable with its slice). */

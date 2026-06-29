@@ -1,8 +1,8 @@
 # ADR 0007 — Landing path & latency
 
-- **Status:** Accepted
+- **Status:** Accepted — the **front-door mechanism is superseded by [ADR-0018](0018-landing-front-door-http-api.md)** (Function URL → public HTTP API, because Lambda Function URLs are unavailable in il-central-1). Everything else in this ADR stands.
 - **Date:** 2026-06-28
-- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (redirect projection), [ADR-0004](0004-network-topology-nat-free-egress.md) (non-VPC), [ADR-0008](0008-consumer-attribution-model.md) (attribution at click)
+- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (redirect projection), [ADR-0004](0004-network-topology-nat-free-egress.md) (non-VPC), [ADR-0008](0008-consumer-attribution-model.md) (attribution at click), [ADR-0018](0018-landing-front-door-http-api.md) (front-door supersession)
 
 ## Context
 

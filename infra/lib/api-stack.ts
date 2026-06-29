@@ -6,7 +6,7 @@ import type * as cognito from "aws-cdk-lib/aws-cognito";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import type { Construct } from "constructs";
-import { LAMBDA_RUNTIME, serviceEntry, type WanthatEnv } from "./config";
+import { applyThrottle, LAMBDA_RUNTIME, serviceEntry, THROTTLING, type WanthatEnv } from "./config";
 
 export interface ApiStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -62,6 +62,8 @@ export class ApiStack extends Stack {
     );
 
     this.httpApi = new HttpApi(this, "HttpApi", { apiName: `wanthat-${wanthatEnv.name}-app` });
+    // Per-surface request throttling — tuned centrally in config.ts (THROTTLING).
+    applyThrottle(this.httpApi, THROTTLING.userWallet);
 
     // Unauthenticated liveness probe.
     this.httpApi.addRoutes({ path: "/healthz", methods: [HttpMethod.GET], integration });
