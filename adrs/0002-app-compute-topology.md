@@ -25,7 +25,7 @@ money-writing and admin surfaces.
    only app surface that may write money, via audited adjustments), and different exposure
    (separate hostname / tighter WAF). Isolating it shrinks the public API blast radius and gives
    the high-privilege surface its own tight role.
-3. **`redirect`** — separate (public, viral-spiky, latency-critical). **Non-VPC**: it resolves
+3. **`landing`** — separate (public, viral-spiky, latency-critical). **Non-VPC**: it resolves
    `recommendation_id → affiliate_url` in DynamoDB (ADR-0003), so it never touches Aurora and needs no
    VPC attachment, internet egress, or DB credentials.
 4. **`conversion poller`** — separate (scheduled, sole money writer). The poll flow is

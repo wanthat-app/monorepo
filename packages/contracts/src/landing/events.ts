@@ -2,7 +2,7 @@ import { z } from "zod";
 import { IsoDateTime, RecommendationId } from "../common";
 
 /**
- * Funnel events on the redirect path (ADR-0007), emitted as structured `console.log` lines that a
+ * Funnel events on the landing path (ADR-0007), emitted as structured `console.log` lines that a
  * CloudWatch Logs subscription ships to Firehose → S3 (analytics; never the hot transactional
  * path, and never an awaited PutRecord — Lambda freezes after the response and would drop it).
  */

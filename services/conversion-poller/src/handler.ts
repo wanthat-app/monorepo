@@ -10,8 +10,15 @@
  * driving the ledger pending -> confirmed -> clawback plus the audit log, and emitting a
  * conversion event to Firehose. Sole money-writer (append-only DB role).
  *
- * Stub.
+ * Walking skeleton — returns `not_implemented` (never throws, so a scheduled invoke does not trip
+ * retries/alarms). Real reconciliation lands with the conversion slice.
  */
-export const handler = async (): Promise<unknown> => {
-  throw new Error("not implemented");
+import { Logger } from "@aws-lambda-powertools/logger";
+
+const SERVICE = "conversion-poller";
+const logger = new Logger({ serviceName: SERVICE });
+
+export const handler = async (): Promise<{ status: "not_implemented"; service: string }> => {
+  logger.info("not_implemented");
+  return { status: "not_implemented", service: SERVICE };
 };

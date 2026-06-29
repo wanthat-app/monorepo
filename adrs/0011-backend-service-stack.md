@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
-- **Related:** [ADR-0002](0002-app-compute-topology.md) (Lambdalith), [ADR-0007](0007-redirect-path-and-latency.md) / [ADR-0009](0009-conversion-ingestion-poller.md) (structured-log events)
+- **Related:** [ADR-0002](0002-app-compute-topology.md) (Lambdalith), [ADR-0007](0007-landing-path-and-latency.md) / [ADR-0009](0009-conversion-ingestion-poller.md) (structured-log events)
 
 ## Context
 

@@ -3,11 +3,11 @@
 
 > **Authoritative-source note.** This SDD is the original detailed design; the **[`../adrs/`](../adrs)
 > (ADR-0001–0009) now supersede it where they differ** and are authoritative. Key supersessions:
-> - **Compute (ADR-0002):** four Lambda units (Lambdalith + admin + redirect + poller), not a single modular monolith.
+> - **Compute (ADR-0002):** four Lambda units (Lambdalith + admin + landing + poller), not a single modular monolith.
 > - **Datastore (ADR-0003):** polyglot — Aurora (PII + ledger) + DynamoDB (`recommendation_id→url`, `guest_attribution`); **no RDS Proxy**, IAM database auth.
 > - **Network (ADR-0004):** NAT-free; only Aurora-touching functions are in-VPC; retailer calls go through non-VPC fetchers.
 > - **Identity (ADR-0006):** SMS OTP + passkeys; WhatsApp deferred; layered SMS kill switch.
-> - **Redirect (ADR-0007):** resolves `recommendation_id` in DynamoDB (not Postgres) on a non-VPC Lambda.
+> - **Landing (ADR-0007):** resolves `recommendation_id` in DynamoDB (not Postgres) on a non-VPC Lambda.
 > - **Attribution (ADR-0008):** via injected `custom_parameters` (`ref`/`c`/`g`) — **no `click_id` click-log lookup**.
 > - **Conversion (ADR-0009):** scheduled `order.listbyindex` reconciliation **poller**, not a `conversion-webhook` postback.
 
@@ -147,7 +147,7 @@ Each decision is driven by a requirement from §4, not assumed. **Each is a revi
 
 | # | Decision | Choice | Driven by | Reversible? | Revisit trigger |
 | :-- | :-- | :-- | :-- | :-- | :-- |
-| D1 | Backend shape | Modular monolith API + a separate high-volume **redirect** service (§6) | Two divergent workloads — app CRUD vs public, viral-spiky redirect at <500ms (F3-R2, PRD §10.3) | Yes | Need to scale a single module independently |
+| D1 | Backend shape | Modular monolith API + a separate high-volume **landing** service (§6) | Two divergent workloads — app CRUD vs public, viral-spiky redirect at <500ms (F3-R2, PRD §10.3) | Yes | Need to scale a single module independently |
 | D2 | Language/runtime | TypeScript, Node 20, monorepo with shared types | Web (desktop + mobile) and backend share one domain model + share/disclosure contract | Costly | — |
 | D3 | Identity provider | AWS Cognito (phone OTP + email, groups for roles); alt. Auth0/Clerk | F1-R1/F1-R2 passwordless OTP; F5-R1 admin role; avoid building OTP security | Medium | Cognito OTP UX/cost/localisation limits |
 | D4 | Primary datastore | Managed PostgreSQL | Money-ledger integrity (§10), referral/link relationships, admin reporting (§11) | Costly | — |
@@ -197,7 +197,7 @@ Per the optimization-priority assumption (§3), each cost driver is modeled at t
    CloudFront (TLS, WAF, CDN) ───────────────────┤
         │ /api/*                                 │ /p/*
         ▼                                        ▼
-   API Gateway (HTTP API) ──jwt──► Cognito   Redirect service (Lambda)
+   API Gateway (HTTP API) ──jwt──► Cognito   Landing service (Lambda)
         │   (groups: user, admin)   User Pool      │  • resolve recommendation_id
         ├─ /auth/*   ─► identity module             │  • member → auto-redirect
         ├─ /links    ─► links module ─► AliExpress  │  • anon → OG landing page
@@ -214,7 +214,7 @@ Per the optimization-priority assumption (§3), each cost driver is modeled at t
                                           • write audit log
 ```
 
-The app API is a modular monolith (`identity`, `links`, `wallet`, `admin`). The **redirect service** and the **scheduled conversion poller** (ADR-0009 — not a webhook) are separated because they are public/bursty and latency- or schedule-driven (D1, D7). All money mutations flow through the ledger and the audit log (§10, §14).
+The app API is a modular monolith (`identity`, `links`, `wallet`, `admin`). The **landing service** and the **scheduled conversion poller** (ADR-0009 — not a webhook) are separated because they are public/bursty and latency- or schedule-driven (D1, D7). All money mutations flow through the ledger and the audit log (§10, §14).
 
 ---
 
@@ -411,7 +411,7 @@ Link bound to `customer_id` from JWT (no cross-customer access). **SSRF-safe:** 
 
 ### 9.1 Design
 
-**Redirect service.** A dedicated, public, latency-critical service behind CloudFront (D1). It resolves `recommendation_id → link` and then **branches on auth state**: a **logged-in** consumer is auto-redirected; an **anonymous** request gets the landing page (which carries the Open Graph tags, so link-preview crawlers render their thumbnail from the very same page — see F3-R9). On redirect-through it logs the click and 301s to the retailer's affiliate URL with the SubID intact. Read-mostly and independently scalable so a viral burst can't degrade the app API (F3-R8).
+**Landing service.** A dedicated, public, latency-critical service behind CloudFront (D1). It resolves `recommendation_id → link` and then **branches on auth state**: a **logged-in** consumer is auto-redirected; an **anonymous** request gets the landing page (which carries the Open Graph tags, so link-preview crawlers render their thumbnail from the very same page — see F3-R9). On redirect-through it logs the click and 301s to the retailer's affiliate URL with the SubID intact. Read-mostly and independently scalable so a viral burst can't degrade the app API (F3-R8).
 
 **Event logging off the hot path (D7).** Two event types are emitted to Kinesis Firehose (→ S3), never written synchronously to Postgres, so the path stays < 500ms (F3-R2) under bursts: an **impression** when the landing page renders (top-of-funnel; may include preview-crawler fetches), and a **click / engagement** on redirect-through (the meaningful action). Aggregated `impression_count` and `click_count` on `link` are updated asynchronously from the stream — their ratio is the click-through rate the PRD tracks (PRD §3.2). On a click we set a signed, short-lived **attribution token** (cookie + URL param) carrying `{recommendation_id, click_id}` so a later registration or conversion can be tied back to it.
 
@@ -643,7 +643,7 @@ audit_log               -- append-only, hash-chained
 | NFR | Target | How met |
 | :-- | :-- | :-- |
 | Link-gen latency | < 1.5s | ≤1 required upstream call; metadata async (§8.1) |
-| Redirect latency | < 500ms | dedicated redirect service; click logged off-path via stream (§9.1) |
+| Redirect latency | < 500ms | dedicated landing service; click logged off-path via stream (§9.1) |
 | Auth friction | first action in-session | passwordless OTP; immediate post-verify routing |
 | Attribution accuracy | within 2% | SubID (`custom_parameters`) attribution; idempotent reconciliation poller (§8.1, §9) |
 | Availability | 99.5% MVP | serverless + managed services; redirect isolated from app API |
@@ -658,7 +658,7 @@ audit_log               -- append-only, hash-chained
 1. Postgres schema + migrations (`customer`, `referral`, `link`, `retailer_demand`, `conversion`, `wallet_entry`, `audit_log`); ledger append-only grants.
 2. Cognito pool (+ `admin` group) + Post-Confirmation provisioning → Feature 1.
 3. AliExpress signed client + `AliExpressAdapter` (SubID) → Feature 2.
-4. Redirect service + Firehose click stream + interstitial → Feature 3 (guest path first, then register path).
+4. Landing service + Firehose click stream + interstitial → Feature 3 (guest path first, then register path).
 5. Conversion poller (EventBridge → listOrders → in-VPC writer) → ledger crediting + two-sided split + audit log → Feature 4 + §14.
 6. Wallet read APIs + admin stats rollups → Feature 4 / Feature 5.
 7. Observability wired across all flows (§13).

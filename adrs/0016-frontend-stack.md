@@ -2,13 +2,13 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
-- **Related:** [ADR-0007](0007-redirect-path-and-latency.md) (OG landing is server-side; cookieless), [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (auth via our `/auth/*`)
+- **Related:** [ADR-0007](0007-landing-path-and-latency.md) (OG landing is server-side; cookieless), [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (auth via our `/auth/*`)
 
 ## Context
 
 The web app is a **pure authenticated client** (browse, generate links, wallet) served as **static
 files from S3 + CloudFront** (EdgeStack), talking to the HTTP API. It has **no SSR/SEO need** — OG
-unfurling for shared `/p/{id}` links is rendered server-side by the redirect Lambda (ADR-0007). The
+unfurling for shared `/p/{id}` links is rendered server-side by the landing Lambda (ADR-0007). The
 app is cookieless (ADR-0007) and Israeli (Hebrew/RTL primary).
 
 ## Decision
@@ -25,7 +25,7 @@ app is cookieless (ADR-0007) and Israeli (Hebrew/RTL primary).
 - **Next.js static export** — Next's conventions and build weight with SSR disabled; no payoff for
   a pure SPA.
 - **Next.js SSR (OpenNext/Lambda)** — contradicts the static-S3 EdgeStack and adds a compute
-  surface; OG unfurling is already solved by the redirect Lambda. Rejected.
+  surface; OG unfurling is already solved by the landing Lambda. Rejected.
 - **AWS Amplify auth** — unnecessary weight; our API fronts Cognito (ADR-0006), so a thin client
   suffices.
 

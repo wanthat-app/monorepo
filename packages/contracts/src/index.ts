@@ -8,6 +8,6 @@ export * from "./config";
 export * from "./conversion";
 export * from "./fx";
 export * from "./identity";
+export * from "./landing";
 export * from "./recommendations";
-export * from "./redirect";
 export * from "./wallet";

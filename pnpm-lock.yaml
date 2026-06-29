@@ -195,7 +195,7 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
-  services/redirect:
+  services/landing:
     dependencies:
       '@wanthat/config':
         specifier: workspace:*

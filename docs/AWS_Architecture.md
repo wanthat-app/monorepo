@@ -28,7 +28,7 @@ flowchart TB
   subgraph region["AWS · il-central-1"]
     apigw["API Gateway HTTP API<br>JWT authorizer"]
     cognito["Cognito<br>SMS OTP + passkeys"]
-    redirect["redirect Lambda<br>(non-VPC, OG landing + resolve)"]
+    landing["landing Lambda<br>(non-VPC, OG landing + resolve)"]
     proxy["Retailer Proxy<br>(non-VPC, secret-scoped)"]
     sched["EventBridge Scheduler"]
     ddb[("DynamoDB<br>recommendation_id→url · guest_attribution · config (kv) · fx_rate cache*")]
@@ -48,7 +48,7 @@ flowchart TB
   consumer -- "click /p/*" --> cf
   cf -- "static" --> s3site
   cf -- "/api/*" --> apigw
-  cf -- "/p/*" --> redirect
+  cf -- "/p/*" --> landing
   apigw -. "validate jwt" .-> cognito
   apigw --> lambdalith
   apigw --> admin
@@ -57,8 +57,8 @@ flowchart TB
   writer -- "append-only" --> aurora
   lambdalith -- "gateway endpoint" --> ddb
   lambdalith -. "invoke (interface endpoint)" .-> proxy
-  redirect -- "resolve recommendation_id" --> ddb
-  redirect -- "impression + click (log line)" --> firehose
+  landing -- "resolve recommendation_id" --> ddb
+  landing -- "impression + click (log line)" --> firehose
   writer -- "conversion event (log line)" --> firehose
   firehose --> s3events
   sched --> proxy
@@ -72,7 +72,7 @@ flowchart TB
   classDef data fill:#fff4e6,stroke:#cc8400,color:#5c3b00
   classDef ext fill:#f3f0f7,stroke:#7a5fa3,color:#33235c
   class lambdalith,admin,writer invpc
-  class redirect,proxy novpc
+  class landing,proxy novpc
   class aurora,ddb,s3events,s3site data
   class retailer ext
   style vpc fill:#f3f0f7
@@ -82,7 +82,7 @@ flowchart TB
 external. Solid arrows are data/HTTP; dotted arrows are Lambda-to-Lambda invokes.*
 
 Four compute units sliced by real seams (ADR-0002): the **app-api Lambdalith**
-(identity · links · wallet), a separate **admin** API, the public **redirect** service, and the
+(identity · links · wallet), a separate **admin** API, the public **landing** service, and the
 scheduled **conversion poller** (EventBridge → Retailer Proxy → in-VPC writer), plus the shared
 **Retailer Proxy** — the sole non-VPC egress to retailer APIs. All money mutations flow through
 the poller-writer into the append-only PostgreSQL ledger + hash-chained audit log.
@@ -90,7 +90,7 @@ the poller-writer into the append-only PostgreSQL ledger + hash-chained audit lo
 ## 3. Components
 
 ### 3.1 Edge & front-end
-- **CloudFront** — CDN + TLS + WAF. Routes `/api/*` → API Gateway, `/p/*` → redirect, static → S3.
+- **CloudFront** — CDN + TLS + WAF. Routes `/api/*` → API Gateway, `/p/*` → landing, static → S3.
 - **S3** — static Next.js/React SPA (web-first MVP).
 
 ### 3.2 API & identity
@@ -105,7 +105,7 @@ the poller-writer into the append-only PostgreSQL ledger + hash-chained audit lo
   `/products/*`), `wallet` (`/wallet*`). Shared Postgres schema + cross-table transactions.
 - **admin** *(in-VPC)* — separate role/exposure; the only app surface that may write money
   (audited adjustments).
-- **redirect** *(non-VPC, CloudFront → Lambda Function URL)* — `GET /p/{id}` resolves `recommendation_id`
+- **landing** *(non-VPC, CloudFront → Lambda Function URL)* — `GET /p/{id}` resolves `recommendation_id`
   in **DynamoDB** and returns an OG-tagged landing page; client-side JS then resolves identity
   (member → Bearer token validated **offline against JWKS** → inject `customer_id`; guest →
   `guestId` from **localStorage** → inject `g`) and redirects, or renders
@@ -138,7 +138,7 @@ the poller-writer into the append-only PostgreSQL ledger + hash-chained audit lo
 
 ### 3.5 Network (NAT-free — ADR-0004)
 Only Aurora and the functions that touch it are in the VPC; they reach DynamoDB via a free gateway
-endpoint and log out-of-band. Redirect and the Retailer Proxy run outside the VPC. **No NAT
+endpoint and log out-of-band. The landing service and the Retailer Proxy run outside the VPC. **No NAT
 Gateway, no RDS Proxy.** Retailer APIs are IPv4-only, reached only from the non-VPC Retailer Proxy
 (IPv6/egress-only gateway was ruled out — the retailer hosts publish no AAAA records).
 
@@ -162,7 +162,7 @@ provisions `customer` + empty `wallet` in PostgreSQL (single Aurora transaction)
 in DynamoDB; the Lambdalith then writes the member's **Recommendation** in DynamoDB and returns the
 share URL. **No Aurora is touched.**
 
-**Redirect → conversion:** Consumer hits `/p/{id}` → redirect returns the OG landing page
+**Landing → conversion:** Consumer hits `/p/{id}` → landing returns the OG landing page
 (impression) → client-side JS resolves identity and calls the resolve endpoint, which injects
 `custom_parameters` (`ref`/`c`/`g`), emits the click, and redirects to the retailer → purchase
 within the network window → `EventBridge → Retailer Proxy.listOrders` pulls the orders and

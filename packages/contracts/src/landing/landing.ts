@@ -7,7 +7,7 @@ import { CashbackEstimate, Product, Review } from "../recommendations";
  * Public landing view for `GET /p/{recommendationId}` (ADR-0007) — the data the OG-tagged
  * landing page and its bootstrap JS render. Cookieless and identity-free: it carries the product
  * and the recommender's review, but **never** the affiliate URL (that is assembled later by the
- * resolve step). Resolved from the immutable DynamoDB redirect projection in one lookup.
+ * resolve step). Resolved from the immutable DynamoDB landing projection in one lookup.
  */
 export const LandingView = z.object({
   recommendationId: RecommendationId,

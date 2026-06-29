@@ -2,7 +2,7 @@
 
 Each ADR is a self-contained decision: context, the decision, alternatives considered, and
 consequences. **0001–0009** cover the architecture (foundation-first: structure → compute → data
-→ network → DR, then the consumer journey: identity → redirect → attribution → conversion);
+→ network → DR, then the consumer journey: identity → landing → attribution → conversion);
 **0010–0016** cover the implementation stack; **0017** extends the architecture set with the
 currency / FX model.
 
@@ -14,7 +14,7 @@ currency / FX model.
 | [0004](0004-network-topology-nat-free-egress.md) | Network topology: NAT-free egress via non-VPC chaining |
 | [0005](0005-disaster-recovery-posture.md) | DR posture: single-region active + cross-region backups |
 | [0006](0006-identity-sms-otp-and-passkeys.md) | Identity: SMS OTP + passkeys, with an SMS-abuse kill switch |
-| [0007](0007-redirect-path-and-latency.md) | Redirect path & latency |
+| [0007](0007-landing-path-and-latency.md) | Landing path & latency |
 | [0008](0008-consumer-attribution-model.md) | Consumer attribution model (no click-log lookup) |
 | [0009](0009-conversion-ingestion-poller.md) | Conversion ingestion: scheduled reconciliation poller |
 | [0010](0010-language-modules-build-toolchain.md) | Language, modules & build toolchain (ESM, Node 20, esbuild, tsx) |

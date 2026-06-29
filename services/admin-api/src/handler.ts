@@ -4,8 +4,17 @@
  * panel (GET/PATCH /admin/config — e.g. the landing countdownSeconds, RuntimeConfig in DynamoDB).
  * Own tight IAM + DB role.
  *
- * Stub.
+ * Walking skeleton — returns a structured 501 so the deployed admin endpoint is reachable for the
+ * pipeline smoke test. Real admin routes land later.
  */
-export const handler = async (): Promise<unknown> => {
-  throw new Error("not implemented");
-};
+const SERVICE = "admin-api";
+
+export const handler = async (): Promise<{
+  statusCode: number;
+  headers: Record<string, string>;
+  body: string;
+}> => ({
+  statusCode: 501,
+  headers: { "content-type": "application/json" },
+  body: JSON.stringify({ error: "not_implemented", service: SERVICE }),
+});

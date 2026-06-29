@@ -4,18 +4,23 @@
  * (ADR-0004). HTTP routing via Hono (ADR-0011); request bodies validated with the shared Zod
  * contracts at the boundary.
  *
- * Skeleton — wire the identity / links / wallet modules onto this app.
+ * Walking skeleton — `/healthz` returns 200 as a liveness signal; every other route returns a
+ * structured 501. Wire the identity / links / wallet modules onto this app as they land.
  */
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 
+const SERVICE = "app-api";
 const app = new Hono();
 
 // TODO: Powertools logger/tracer/metrics middleware (ADR-0011).
-app.get("/me", (c) => c.json({ ok: true })); // identity module — placeholder
-// TODO: /auth/* (identity), /links + /products/* (links), /wallet* (wallet)
 
-app.notFound((c) => c.json({ error: "not_found" }, 404));
+// Unauthenticated liveness probe — the one positive signal for the pipeline smoke test.
+app.get("/healthz", (c) => c.json({ ok: true, service: SERVICE }));
+
+// TODO: /auth/* (identity), /me + /links + /products/* (links), /wallet* (wallet).
+// Until those land, every other route is a clean 501 rather than a 404.
+app.all("*", (c) => c.json({ error: "not_implemented", service: SERVICE, path: c.req.path }, 501));
 
 export const handler = handle(app);
 export { app };
