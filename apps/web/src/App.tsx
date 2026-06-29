@@ -1,10 +1,18 @@
-import { useTranslation } from "react-i18next";
+import { Navigate } from "react-router-dom";
+import { useSession } from "./lib/session";
+import { Screen, Spinner } from "./ui/components";
 
+/** Index route — route to the wallet home or the auth flow once the session is resolved. */
 export function App() {
-  const { t } = useTranslation();
-  return (
-    <main className="p-6">
-      <h1 className="text-2xl font-bold">{t("app.title")}</h1>
-    </main>
-  );
+  const { loading, customer } = useSession();
+  if (loading) {
+    return (
+      <Screen>
+        <div className="flex justify-center text-muted">
+          <Spinner />
+        </div>
+      </Screen>
+    );
+  }
+  return <Navigate to={customer ? "/home" : "/auth"} replace />;
 }
