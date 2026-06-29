@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { App } from "./App";
+import { AdminPage } from "./features/admin/AdminPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { CallbackPage } from "./features/auth/CallbackPage";
 import { HomePage } from "./features/home/HomePage";
@@ -16,6 +17,7 @@ const router = createBrowserRouter([
   { path: "/auth", element: <AuthPage /> },
   { path: "/auth/callback", element: <CallbackPage /> },
   { path: "/home", element: <HomePage /> },
+  { path: "/admin", element: <AdminPage /> },
 ]);
 
 const root = document.getElementById("root");

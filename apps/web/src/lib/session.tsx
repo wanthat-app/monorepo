@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { authApi, meApi } from "./api";
+import { isAdminToken } from "./jwt";
 
 /**
  * Session state (ADR-0007, cookieless). Access/id tokens live only in memory; the refresh token is
@@ -21,6 +22,8 @@ interface SessionState {
   customer: CustomerProfile | null;
   tokens: AuthTokens | null;
   loading: boolean;
+  /** Whether the id token carries the Cognito `admin` group (UI gating only). */
+  isAdmin: boolean;
   signIn: (session: AuthSession) => void;
   signOut: () => Promise<void>;
   accessToken: () => string | null;
@@ -74,6 +77,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
       customer,
       tokens,
       loading,
+      isAdmin: isAdminToken(tokens?.idToken),
       signIn,
       signOut,
       accessToken: () => tokens?.accessToken ?? null,
