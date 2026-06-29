@@ -3,13 +3,14 @@
 Stacks sliced per ADR-0002 (compute), ADR-0003 (data), ADR-0004 (network), ADR-0005 (DR).
 Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices → Edge → Observability`.
 
-> **Status (walking skeleton).** `Data`, `Identity`, `Api`, `Admin`, and `EdgeServices` are
-> implemented and deploy as `wanthat-{env}-*` (dev/prod, selected by `WANTHAT_ENV`; account resolved
-> from the deploy credentials, not pinned in the repo). Deferred to later slices: **`NetworkStack`
-> (the VPC) + the in-VPC placement of app-api/admin** — there's nothing in the VPC until Aurora, so
-> the skeleton runs every Lambda outside a VPC; **Aurora + Firehose/Athena + cross-region backup** in
-> `DataStack` (DynamoDB + Secrets only for now); the **us-east-1 `EdgeStack`** (CloudFront + ACM +
-> Route 53 on the custom domain); and `ObservabilityStack`. Service handlers return `501` until their
+> **Status (walking skeleton).** `Data`, `Identity`, `Api`, `Admin`, `EdgeServices`, and the
+> us-east-1 `Edge` stack are implemented and deploy as `wanthat-{env}-*` (dev/prod, selected by
+> `WANTHAT_ENV`; account resolved from the deploy credentials, not pinned in the repo). Deferred to
+> later slices: **`NetworkStack` (the VPC) + the in-VPC placement of app-api/admin** — there's
+> nothing in the VPC until Aurora, so the skeleton runs every Lambda outside a VPC; **Aurora +
+> Firehose/Athena + cross-region backup** in `DataStack` (DynamoDB + Secrets only for now); and
+> `ObservabilityStack`. The custom domain (ACM + Route 53 alias) is wired only in prod (`wanthat.app`);
+> dev runs on the default `*.cloudfront.net` hostname. Service handlers return `501` until their
 > feature slices land.
 
 | Stack | Owns | ADR |
@@ -20,7 +21,7 @@ Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices 
 | `ApiStack` | HTTP API + JWT authorizer; app-api Lambdalith (**in-VPC**, IAM DB auth, reserved-concurrency cap); regional WAF + per-phone/IP rate limits; SMS kill-switch flag | 0002, 0006 |
 | `AdminStack` | admin Lambda (**in-VPC**, own role/exposure) | 0002 |
 | `EdgeServicesStack` | landing Lambda (**non-VPC** → DynamoDB); conversion poller as a **non-VPC fetcher + in-VPC writer**; retailer fetcher(s) (non-VPC, secret-scoped); EventBridge Scheduler (configurable period) | 0007, 0009, 0008, 0004 |
-| `EdgeStack` (**us-east-1**) | CloudFront + S3 static site + ACM cert + CloudFront WAF web ACL | — |
+| `EdgeStack` (**us-east-1**) | One CloudFront distribution: **default → S3 SPA** (OAC, private), **`/p/*` → landing HTTP API** (cross-region origin); CloudFront WAF web ACL; ACM cert + Route 53 apex alias (prod). app-api/admin reached directly via Bearer, not fronted | 0019, 0016, 0007 |
 | `ObservabilityStack` | dashboards, alarms (SMS spend/rate, poll lag, redirect p95), CloudTrail alarm on the retailer secret | 0006, 0002 |
 
 Notes:

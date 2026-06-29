@@ -33,6 +33,9 @@ export interface EdgeServicesStackProps extends StackProps {
  * stub. Aurora-touching wiring lands with the wallet slice.
  */
 export class EdgeServicesStack extends Stack {
+  /** The public landing HTTP API — the us-east-1 EdgeStack fronts it on `/p/*` (cross-region). */
+  readonly landingApi: HttpApi;
+
   constructor(scope: Construct, id: string, props: EdgeServicesStackProps) {
     super(scope, id, props);
     const { wanthatEnv } = props;
@@ -57,6 +60,7 @@ export class EdgeServicesStack extends Stack {
     const landingApi = new HttpApi(this, "LandingApi", {
       apiName: `wanthat-${wanthatEnv.name}-landing`,
     });
+    this.landingApi = landingApi;
     landingApi.addRoutes({
       path: "/{proxy+}",
       methods: [HttpMethod.ANY],

@@ -82,6 +82,9 @@ importers:
         specifier: ^10.3.0
         version: 10.6.0
     devDependencies:
+      '@wanthat/web':
+        specifier: workspace:*
+        version: link:../apps/web
       aws-cdk:
         specifier: ^2.150.0
         version: 2.1128.1

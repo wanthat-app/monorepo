@@ -17,6 +17,7 @@
     "constructs": "^10.3.0"
   },
   "devDependencies": {
+    "@wanthat/web": "workspace:*",
     "aws-cdk": "^2.150.0",
     "esbuild": "^0.28.1",
     "tsx": "^4.19.0"
