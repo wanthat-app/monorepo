@@ -41,11 +41,12 @@ export function resolveEnv(name: string | undefined): WanthatEnv {
 }
 
 /**
- * Lambda runtime for all functions, in one place (ADR-0010 — Node 20; the bundler also targets
- * node20). AWS Lambda offers only even LTS majors (18/20/22; there is no 21.x), so a bump goes
- * 20 → 22 here in lockstep with the repo's `engines` and the esbuild `target`.
+ * Lambda runtime for all functions, in one place (ADR-0010 — Node 24 "Krypton" LTS; NodejsFunction
+ * derives the esbuild target from this). Node 20 was retired: it reached end-of-life (Apr 2026) and
+ * is deprecated on AWS Lambda. A future bump (next even LTS) changes this line in lockstep with the
+ * repo's `engines` and `.nvmrc`.
  */
-export const LAMBDA_RUNTIME = lambda.Runtime.NODEJS_20_X;
+export const LAMBDA_RUNTIME = lambda.Runtime.NODEJS_24_X;
 
 // Resolve paths from this file (infra is ESM — no __dirname), so they hold regardless of cwd.
 const here = path.dirname(fileURLToPath(import.meta.url)); // infra/lib

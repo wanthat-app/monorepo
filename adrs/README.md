@@ -17,7 +17,7 @@ currency / FX model.
 | [0007](0007-landing-path-and-latency.md) | Landing path & latency |
 | [0008](0008-consumer-attribution-model.md) | Consumer attribution model (no click-log lookup) |
 | [0009](0009-conversion-ingestion-poller.md) | Conversion ingestion: scheduled reconciliation poller |
-| [0010](0010-language-modules-build-toolchain.md) | Language, modules & build toolchain (ESM, Node 20, esbuild, tsx) |
+| [0010](0010-language-modules-build-toolchain.md) | Language, modules & build toolchain (ESM, Node 24, esbuild, tsx) |
 | [0011](0011-backend-service-stack.md) | Backend service stack: Hono + Powertools |
 | [0012](0012-data-access-and-migrations.md) | Data access & migrations: Kysely + plain-SQL migrations |
 | [0013](0013-testing-strategy.md) | Testing: Vitest + CDK assertions + Testcontainers |

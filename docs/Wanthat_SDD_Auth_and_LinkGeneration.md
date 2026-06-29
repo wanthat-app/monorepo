@@ -148,7 +148,7 @@ Each decision is driven by a requirement from §4, not assumed. **Each is a revi
 | # | Decision | Choice | Driven by | Reversible? | Revisit trigger |
 | :-- | :-- | :-- | :-- | :-- | :-- |
 | D1 | Backend shape | Modular monolith API + a separate high-volume **landing** service (§6) | Two divergent workloads — app CRUD vs public, viral-spiky redirect at <500ms (F3-R2, PRD §10.3) | Yes | Need to scale a single module independently |
-| D2 | Language/runtime | TypeScript, Node 20, monorepo with shared types | Web (desktop + mobile) and backend share one domain model + share/disclosure contract | Costly | — |
+| D2 | Language/runtime | TypeScript, Node 24, monorepo with shared types | Web (desktop + mobile) and backend share one domain model + share/disclosure contract | Costly | — |
 | D3 | Identity provider | AWS Cognito (phone OTP + email, groups for roles); alt. Auth0/Clerk | F1-R1/F1-R2 passwordless OTP; F5-R1 admin role; avoid building OTP security | Medium | Cognito OTP UX/cost/localisation limits |
 | D4 | Primary datastore | Managed PostgreSQL | Money-ledger integrity (§10), referral/link relationships, admin reporting (§11) | Costly | — |
 | D5 | Auth model | Cognito-issued JWT validated at API Gateway; API never sees raw credentials | F1-R4/F1-R5 low-friction auth; stateless API | Low | — |
