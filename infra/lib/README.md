@@ -3,6 +3,12 @@
 Stacks sliced per ADR-0002 (compute), ADR-0003 (data), ADR-0004 (network), ADR-0005 (DR).
 Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices → Edge → Observability`.
 
+> **Status (walking skeleton).** `Network`, `Data`, `Identity`, `Api`, `Admin`, and `EdgeServices`
+> are implemented and deploy as `wanthat-{env}-*` (dev/prod, selected by `WANTHAT_ENV`). Deferred to
+> later slices: **Aurora + Firehose/Athena + cross-region backup** in `DataStack` (DynamoDB +
+> Secrets only for now); the **us-east-1 `EdgeStack`** (CloudFront + ACM + Route 53 on the custom
+> domain); and `ObservabilityStack`. Service handlers return `501` until their feature slices land.
+
 | Stack | Owns | ADR |
 |---|---|---|
 | `NetworkStack` | VPC, subnets, SGs scoped to Aurora + the in-VPC functions only; **no NAT Gateway** | 0004 |

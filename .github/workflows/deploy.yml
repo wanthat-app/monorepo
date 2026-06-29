@@ -10,7 +10,7 @@ on:
       environment:
         description: Target environment
         type: choice
-        options: [dev, staging, prod]
+        options: [dev, prod]
         default: dev
 
 permissions:
@@ -21,6 +21,9 @@ jobs:
   deploy:
     runs-on: ubuntu-latest
     environment: ${{ github.event.inputs.environment || 'dev' }}
+    env:
+      # Selects which wanthat-{env}-* stacks the CDK app instantiates (infra/bin/wanthat.ts).
+      WANTHAT_ENV: ${{ github.event.inputs.environment || 'dev' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
