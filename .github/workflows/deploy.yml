@@ -51,3 +51,30 @@ jobs:
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
+      # Drift guard: fail if a `wanthat-<env>-*` stack is deployed but no longer in code
+      # (an orphan). CDK never deletes stacks removed from the app, so we catch them here.
+      - name: Reconcile deployed stacks vs code
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
+          CDK_DEFAULT_REGION: il-central-1
+        run: |
+          set -uo pipefail
+          app=$(cd infra && pnpm exec cdk ls 2>/dev/null | sort -u)
+          echo "In code ($WANTHAT_ENV):"; echo "$app"
+          if [ -z "$app" ]; then echo "::error::could not list stacks from code"; exit 1; fi
+          deployed=""
+          for r in il-central-1 us-east-1; do
+            s=$(aws cloudformation list-stacks --region "$r" \
+                  --stack-status-filter CREATE_COMPLETE UPDATE_COMPLETE UPDATE_ROLLBACK_COMPLETE ROLLBACK_COMPLETE IMPORT_COMPLETE \
+                  --query "StackSummaries[?starts_with(StackName, 'wanthat-${WANTHAT_ENV}-')].StackName" --output text)
+            deployed="$deployed $s"
+          done
+          deployed=$(echo "$deployed" | tr ' \t' '\n' | grep . | sort -u || true)
+          echo "Deployed:"; echo "$deployed"
+          orphans=$(comm -23 <(echo "$deployed") <(echo "$app") || true)
+          if [ -n "$orphans" ]; then
+            echo "::error::Orphaned stacks are deployed but not in code:"; echo "$orphans"
+            echo "Fix: 'cdk destroy <stack>' for each, or re-add it to infra/bin/wanthat.ts."
+            exit 1
+          fi
+          echo "OK — deployed stacks match code; no orphans."

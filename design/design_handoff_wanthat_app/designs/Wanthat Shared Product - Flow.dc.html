@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="./support.js"></script>
+<script src="support.js"></script>
 </head>
 <body>
 <x-dc>
@@ -112,9 +112,15 @@
                   <div style="display:flex; align-items:center; gap:9px;"><img src="assets/wanthat-mark.png" alt="" style="height:26px; width:auto;"><span style="font-family:'Space Grotesk',sans-serif; font-size:20px; font-weight:700; letter-spacing:-0.03em;">wanthat</span></div>
                   <button onClick="{{ goSignup }}" style="background:none; border:none; font-family:inherit; font-size:14px; font-weight:700; color:#1F7A57; cursor:pointer;">{{ L.login }}</button>
                 </div>
-                <div style="display:flex; align-items:center; gap:10px; background:#E7F1EC; border:1px solid #D2E3D9; border-radius:14px; padding:10px 14px; margin-bottom:16px;">
+                <div style="display:flex; align-items:center; gap:10px; background:#E7F1EC; border:1px solid #D2E3D9; border-radius:14px; padding:10px 14px; margin-bottom:8px;">
                   <div style="width:32px; height:32px; border-radius:50%; background:#1F7A57; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; flex-shrink:0;">D</div>
                   <div style="font-size:13px; color:#2F5446; line-height:1.35;"><span style="font-weight:700; color:#15201C;">{{ L.name }}</span> {{ L.sentLink }}</div>
+                </div>
+                <div style="position:relative; background:#F7FAF8; border:1px solid #EAEFEC; border-radius:14px; padding:14px 16px 12px; margin:0 0 16px; margin-inline-start:6px;">
+                  <div style="position:absolute; top:-6px; inset-inline-start:14px; width:10px; height:10px; background:#F7FAF8; border-top:1px solid #EAEFEC; border-inline-start:1px solid #EAEFEC; transform:rotate(45deg);"></div>
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#BCD3C7" stroke="none"><path d="M10 11H6.5a.5.5 0 0 1-.5-.5V9c0-1.6 1.1-2.7 2.7-3.2l.5 1.3C8.4 7.4 8 8 8 8.8h2a.5.5 0 0 1 .5.5V11zm8 0h-3.5a.5.5 0 0 1-.5-.5V9c0-1.6 1.1-2.7 2.7-3.2l.5 1.3c-.8.3-1.2.9-1.2 1.7h2a.5.5 0 0 1 .5.5V11z"></path></svg>
+                  <div style="font-size:14px; color:#3A4742; line-height:1.55; margin:2px 0;">{{ L.refReviewText }}</div>
+                  <div style="text-align:end;"><svg width="16" height="16" viewBox="0 0 24 24" fill="#BCD3C7" stroke="none" style="transform:rotate(180deg);"><path d="M10 11H6.5a.5.5 0 0 1-.5-.5V9c0-1.6 1.1-2.7 2.7-3.2l.5 1.3C8.4 7.4 8 8 8 8.8h2a.5.5 0 0 1 .5.5V11zm8 0h-3.5a.5.5 0 0 1-.5-.5V9c0-1.6 1.1-2.7 2.7-3.2l.5 1.3c-.8.3-1.2.9-1.2 1.7h2a.5.5 0 0 1 .5.5V11z"></path></svg></div>
                 </div>
                 <div style="background:#fff; border:1px solid #E6EBE8; border-radius:22px; overflow:hidden; margin-bottom:14px;">
                   <div style="height:204px; background:#fff; border-bottom:1px solid #E6EBE8; display:flex; align-items:center; justify-content:center; padding:14px;">
@@ -248,9 +254,19 @@
             <div style="max-width:430px; margin:0 auto; display:flex; flex-direction:column; align-items:center; text-align:center; min-height:560px; justify-content:center;">
               <div style="width:72px; height:72px; border-radius:18px; background:#fff; border:1px solid #E6EBE8; overflow:hidden; display:flex; align-items:center; justify-content:center; margin-bottom:16px;"><img src="assets/product-feeder.jpg" alt="" style="max-width:100%; max-height:100%; object-fit:contain;"></div>
               <div style="font-size:16px; font-weight:700; margin-bottom:6px;">Jebao Smart Aquarium Fish Feeder</div>
-              <div style="display:flex; align-items:center; gap:6px; color:#1F7A57; font-size:13px; font-weight:700; margin-bottom:26px;">
+              <div style="display:flex; align-items:center; gap:6px; color:#1F7A57; font-size:13px; font-weight:700; margin-bottom:18px;">
                 <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#1F7A57" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"></path></svg>
                 {{ L.signedIn }}
+              </div>
+              <div style="background:#fff; border:1px solid #E6EBE8; border-radius:16px; padding:14px 16px; margin-bottom:24px; max-width:330px; text-align:start;">
+                <div style="display:flex; align-items:center; gap:9px; margin-bottom:9px;">
+                  <div style="width:30px; height:30px; border-radius:50%; background:#1F7A57; color:#fff; display:flex; align-items:center; justify-content:center; font-weight:700; font-size:12px; flex-shrink:0;">D</div>
+                  <div style="font-size:13px; line-height:1.25;"><span style="font-weight:700; color:#15201C;">{{ L.name }}</span> <span style="color:#6B7B73;">{{ L.refReviewLabel }}</span></div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="#D2E3D9" stroke="none" style="flex-shrink:0; margin-top:1px;"><path d="M10 11H6.5a.5.5 0 0 1-.5-.5V9c0-1.5 1-2.5 2.5-3l.5 1.2C8.3 7.5 8 8 8 8.8h2a.5.5 0 0 1 .5.5V11zm8 0h-3.5a.5.5 0 0 1-.5-.5V9c0-1.5 1-2.5 2.5-3l.5 1.2c-.7.3-1 .8-1 1.6h2a.5.5 0 0 1 .5.5V11z"></path></svg>
+                  <div style="font-size:13.5px; color:#3A4742; line-height:1.5;">{{ L.refReviewText }}</div>
+                </div>
               </div>
               <div style="display:flex; align-items:center; gap:10px; margin-bottom:14px; max-width:300px;">
                 <svg class="wspin" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1F7A57" stroke-width="2.6" stroke-linecap="round" style="flex-shrink:0;"><path d="M12 3a9 9 0 1 0 9 9"></path></svg>
@@ -706,7 +722,7 @@ class Component extends DCLogic {
 
     const T = {
       en: {
-        login: 'Log in', name: 'Daniel', sentLink: 'sent you a cashback link',
+        login: 'Log in', name: 'Daniel', sentLink: 'recommended you a product',
         onAli: 'on AliExpress', soldNote: '★ 4.7 · 1.8k sold',
         signupEarnLabel: "Sign up and you'll earn", backOnOrder: 'back on this order',
         twoSidedNote: "Daniel earns ₪6.20 too — that's how wanthat works.",
@@ -739,9 +755,10 @@ class Component extends DCLogic {
         regTitle: 'Almost there', regSub: 'A few details to set up your cashback wallet.', firstName: 'First name', lastName: 'Last name', email: 'Email', agreePre: 'I agree to the', terms: 'Terms of Service', andWord: 'and', privacy: 'Privacy Policy', continueLbl: 'Continue',
         faceTitle: 'Faster sign-in with Face ID', faceSub: 'Skip SMS codes next time — log in instantly and securely.', enableFace: 'Enable Face ID', maybeLater: 'Maybe later',
         signedIn: 'Signed in', redirectingStore: 'Taking you to AliExpress to complete your order…', earnOnThis: "You'll earn ₪12.40 cashback on this order.", continueToStore: 'Continue to AliExpress',
+        refReviewLabel: 'recommends this', refReviewText: 'Been using this feeder for 3 months — super reliable, my fish are fed even when I travel. Worth every shekel.',
       },
       he: {
-        login: 'התחברות', name: 'דניאל', sentLink: 'שלח לך קישור קאשבק',
+        login: 'התחברות', name: 'דניאל', sentLink: 'ממליץ/ה לך על מוצר',
         onAli: 'ב-AliExpress', soldNote: '★ 4.7 · 1.8k נמכרו',
         signupEarnLabel: 'הירשמו ותרוויחו', backOnOrder: 'חזרה על ההזמנה הזו',
         twoSidedNote: 'גם דניאל מרוויח ₪6.20 — ככה wanthat עובד.',
@@ -773,7 +790,8 @@ class Component extends DCLogic {
         navHome: 'בית', yourOrder: 'ההזמנה שלך', yourLink: 'הקישור שלך', returned: 'הוחזר', purchase: 'רכישה', purchases: 'רכישות', cashbackOne: 'קאשבק', cashbackMany: 'קאשבקים',
         regTitle: 'כמעט סיימנו', regSub: 'עוד כמה פרטים להגדרת ארנק הקאשבק שלכם.', firstName: 'שם פרטי', lastName: 'שם משפחה', email: 'אימייל', agreePre: 'אני מסכים/ה ל', terms: 'תנאי השימוש', andWord: 'ול', privacy: 'מדיניות הפרטיות', continueLbl: 'המשך',
         faceTitle: 'התחברות מהירה עם Face ID', faceSub: 'דלגו על קודי SMS בפעם הבאה — התחברו מיד ובאופן מאובטח.', enableFace: 'הפעילו Face ID', maybeLater: 'אולי מאוחר יותר',
-        signedIn: 'מחוברים', redirectingStore: 'מעבירים אתכם ל-AliExpress להשלמת ההזמנה…', earnOnThis: 'תרוויחו ₪12.40 קאשבק על ההזמנה הזו.', continueToStore: 'המשך ל-AliExpress',
+        signedIn: 'מחוברים', redirectingStore: 'מעבירים אתכם ל-AliExpress להשלמת ההזמנה…', earnOnThis: 'תרוויחו ₪12.40 קאשבק על ההזמנה הזו.',
+        refReviewLabel: 'ממליץ/ה על זה', refReviewText: 'משתמש במאכיל הזה כבר 3 חודשים — אמין בטירוף, הדגים מאוכלים גם כשאני בחו״ל. שווה כל שקל.', continueToStore: 'המשך ל-AliExpress',
       },
     };
     const L = T[s.lang];
