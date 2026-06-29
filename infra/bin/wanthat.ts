@@ -20,8 +20,11 @@ import { IdentityStack } from "../lib/identity-stack";
  */
 const app = new cdk.App();
 const wanthatEnv = resolveEnv(process.env.WANTHAT_ENV ?? app.node.tryGetContext("env"));
-// account omitted on purpose — resolved from the active credentials at deploy time.
-const env: cdk.Environment = { region: wanthatEnv.region };
+// Account is read from CDK_DEFAULT_ACCOUNT (set by the CLI from the active credentials), coerced
+// empty -> undefined so a credential-free synth stays env-agnostic. Resolved at deploy time; never
+// hard-coded in the repo. (cdk diff/deploy need a concrete account, unlike synth.)
+const account = process.env.CDK_DEFAULT_ACCOUNT || undefined;
+const env: cdk.Environment = { account, region: wanthatEnv.region };
 const common = { env, wanthatEnv };
 
 cdk.Tags.of(app).add("app", "wanthat");
