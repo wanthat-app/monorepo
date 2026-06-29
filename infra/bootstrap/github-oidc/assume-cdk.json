@@ -6,6 +6,12 @@
       "Effect": "Allow",
       "Action": "sts:AssumeRole",
       "Resource": "arn:aws:iam::818913587533:role/cdk-*"
+    },
+    {
+      "Sid": "ReadCloudFormationForDriftReconciliation",
+      "Effect": "Allow",
+      "Action": "cloudformation:ListStacks",
+      "Resource": "*"
     }
   ]
 }

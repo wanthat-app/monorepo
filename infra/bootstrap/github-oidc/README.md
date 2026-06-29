@@ -15,9 +15,11 @@ idempotently.
 | Role `wanthat-deploy-dev` | Assumable **only** by Actions runs in the repo's `dev` GitHub Environment. |
 | Role `wanthat-deploy-prod` | Assumable **only** by Actions runs in the repo's `prod` GitHub Environment. |
 
-Each role is least-privilege: its single inline policy (`assume-cdk.json`) allows only
-`sts:AssumeRole` on `cdk-*` — the CDK bootstrap roles that carry the real deploy permissions. The
-GitHub role holds no broad AWS powers itself.
+Each role is least-privilege: its inline policy (`assume-cdk.json`) allows `sts:AssumeRole` on
+`cdk-*` — the CDK bootstrap roles that carry the real deploy permissions — plus read-only
+`cloudformation:ListStacks` for the deploy workflow's drift-reconciliation step (which lists live
+`wanthat-<env>-*` stacks directly, outside the assumed cdk roles). The GitHub role holds no broad
+AWS powers itself.
 
 The trust scoping lives in `trust-dev.json` / `trust-prod.json` via the
 `token.actions.githubusercontent.com:sub = repo:wanthat-app/monorepo:environment:<env>` condition,
