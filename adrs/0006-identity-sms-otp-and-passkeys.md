@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-06-28
 - **Related:** [ADR-0005](0005-disaster-recovery-posture.md) (Cognito replication limit feeds DR)
+- **Refined by:** [ADR-0020](0020-auth-foundation.md) (kill switch moves to the DynamoDB `config` store; unified flow SMSes new numbers; `customer` provisioned at `/auth/register`)
 
 ## Context
 
