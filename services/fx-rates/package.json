@@ -12,6 +12,7 @@
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.8.0",
     "@wanthat/config": "workspace:*",
-    "@wanthat/contracts": "workspace:*"
+    "@wanthat/contracts": "workspace:*",
+    "@wanthat/dynamo": "workspace:*"
   }
 }

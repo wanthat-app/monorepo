@@ -80,17 +80,32 @@ export class EdgeServicesStack extends Stack {
     props.recommendationTable.grantReadData(poller);
     props.guestAttributionTable.grantReadData(poller);
 
+    // fx-rates is implemented (ADR-0017): reads CONFIG `fx.provider`, writes the fx_rate cache.
     const fxRates = makeFn("FxRates", "fx-rates");
     props.fxRateTable.grantReadWriteData(fxRates);
+    props.runtimeConfigTable.grantReadData(fxRates);
+    fxRates.addEnvironment("FX_RATE_TABLE", props.fxRateTable.tableName);
+    fxRates.addEnvironment("RUNTIME_CONFIG_TABLE", props.runtimeConfigTable.tableName);
 
-    this.addDisabledSchedule("ConversionPollerSchedule", poller, "rate(15 minutes)");
-    this.addDisabledSchedule("FxRatesSchedule", fxRates, "rate(60 minutes)");
+    // The poller is still a 501 stub → its schedule stays DISABLED until that slice lands (ADR-0009).
+    this.addSchedule("ConversionPollerSchedule", poller, "rate(15 minutes)", false);
+    // fx-rates is live: refresh on the CONFIG default cadence (fx.updateIntervalMinutes = 720m).
+    // admin-api retunes this schedule when the config key changes (later slice).
+    this.addSchedule("FxRatesSchedule", fxRates, "rate(720 minutes)", true);
 
     new CfnOutput(this, "LandingApiUrl", { value: landingApi.apiEndpoint });
   }
 
-  /** A disabled EventBridge schedule that invokes `fn` (ADR-0009 — enabled/tunable with its slice). */
-  private addDisabledSchedule(id: string, fn: lambda.IFunction, expression: string): void {
+  /**
+   * An EventBridge schedule that invokes `fn`. `enabled` is false while a target is still a 501 stub
+   * (ADR-0009) and flips true as its slice lands; admin-api retunes the expression at runtime.
+   */
+  private addSchedule(
+    id: string,
+    fn: lambda.IFunction,
+    expression: string,
+    enabled: boolean,
+  ): void {
     const role = new iam.Role(this, `${id}Role`, {
       assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com"),
     });
@@ -98,7 +113,7 @@ export class EdgeServicesStack extends Stack {
     new scheduler.CfnSchedule(this, id, {
       flexibleTimeWindow: { mode: "OFF" },
       scheduleExpression: expression,
-      state: "DISABLED",
+      state: enabled ? "ENABLED" : "DISABLED",
       target: { arn: fn.functionArn, roleArn: role.roleArn },
     });
   }
