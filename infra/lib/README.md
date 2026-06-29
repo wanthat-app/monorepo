@@ -3,15 +3,14 @@
 Stacks sliced per ADR-0002 (compute), ADR-0003 (data), ADR-0004 (network), ADR-0005 (DR).
 Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices → Edge → Observability`.
 
-> **Status (walking skeleton).** `Data`, `Identity`, `Api`, `Admin`, `EdgeServices`, and the
+> **Status.** All of `Network`, `Data`, `Identity`, `Api`, `Admin`, `EdgeServices`, and the
 > us-east-1 `Edge` stack are implemented and deploy as `wanthat-{env}-*` (dev/prod, selected by
-> `WANTHAT_ENV`; account resolved from the deploy credentials, not pinned in the repo). Deferred to
-> later slices: **`NetworkStack` (the VPC) + the in-VPC placement of app-api/admin** — there's
-> nothing in the VPC until Aurora, so the skeleton runs every Lambda outside a VPC; **Aurora +
-> Firehose/Athena + cross-region backup** in `DataStack` (DynamoDB + Secrets only for now); and
-> `ObservabilityStack`. The custom domain (ACM + Route 53 alias) is wired only in prod (`wanthat.app`);
-> dev runs on the default `*.cloudfront.net` hostname. Service handlers return `501` until their
-> feature slices land.
+> `WANTHAT_ENV`; account resolved from the deploy credentials, not pinned in the repo). The auth
+> slice (UC1/UC2, ADR-0020) added **`NetworkStack` (the VPC) + Aurora Serverless v2** to `DataStack`
+> and a one-shot in-VPC migration runner; `app-api`/`admin` move in-VPC with their auth backends.
+> Still deferred: **Firehose/Athena + cross-region backup** in `DataStack`, and `ObservabilityStack`.
+> The custom domain (ACM + Route 53 alias) is wired only in prod (`wanthat.app`); dev runs on the
+> default `*.cloudfront.net` hostname. Service handlers return `501` until their feature slices land.
 
 | Stack | Owns | ADR |
 |---|---|---|
