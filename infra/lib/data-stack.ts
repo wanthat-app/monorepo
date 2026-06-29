@@ -1,5 +1,6 @@
 import { RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 import type { WanthatEnv } from "./config";
 
@@ -21,6 +22,8 @@ export class DataStack extends Stack {
   readonly recommendationTable: dynamodb.Table;
   readonly guestAttributionTable: dynamodb.Table;
   readonly runtimeConfigTable: dynamodb.Table;
+  readonly fxRateTable: dynamodb.Table;
+  readonly retailerSecret: secretsmanager.Secret;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -53,6 +56,18 @@ export class DataStack extends Stack {
     this.runtimeConfigTable = new dynamodb.Table(this, "RuntimeConfig", {
       partitionKey: { name: "configKey", type: dynamodb.AttributeType.STRING },
       ...common,
+    });
+
+    // FX rate cache keyed by `${base}#${quote}` (e.g. "USD#ILS"); see @wanthat/contracts ExchangeRate.
+    this.fxRateTable = new dynamodb.Table(this, "FxRate", {
+      partitionKey: { name: "pair", type: dynamodb.AttributeType.STRING },
+      ...common,
+    });
+
+    // Secret-scoped retailer (AliExpress) credential — created empty, populated out-of-band.
+    this.retailerSecret = new secretsmanager.Secret(this, "RetailerCredential", {
+      secretName: `wanthat/${wanthatEnv.name}/retailer/aliexpress`,
+      description: "AliExpress affiliate app key/secret — populate out-of-band (never in the repo)",
     });
   }
 }
