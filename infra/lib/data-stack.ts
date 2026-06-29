@@ -39,7 +39,10 @@ export class DataStack extends Stack {
       partitionKey: { name: "recommendationId", type: dynamodb.AttributeType.STRING },
       ...common,
     });
-    // "List my recommendations" (ADR-0003) — owner-scoped, newest first.
+    // "List my recommendations" (ADR-0003): owner-scoped, sorted by `createdAt` (ISO-8601, so it
+    // sorts chronologically). DynamoDB stores a GSI ascending; the list query reads it **newest-first**
+    // with `ScanIndexForward: false` — sort direction is a query-time parameter, not a GSI/table
+    // property, so it's set by the "list my recommendations" handler (not here).
     this.recommendationTable.addGlobalSecondaryIndex({
       indexName: "byOwner",
       partitionKey: { name: "ownerId", type: dynamodb.AttributeType.STRING },
