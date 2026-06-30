@@ -5,7 +5,17 @@ import { ApiError, authApi } from "../../lib/api";
 import { beginPasskeyLogin } from "../../lib/managed-login";
 import { enrollPasskey, passkeysSupported } from "../../lib/passkey";
 import { useSession } from "../../lib/session";
-import { Button, Card, Checkbox, Logo, Screen, Segmented, TextField } from "../../ui/components";
+import {
+  BackButton,
+  Button,
+  Card,
+  Checkbox,
+  Logo,
+  OtpInput,
+  Screen,
+  Segmented,
+  TextField,
+} from "../../ui/components";
 
 type Step = "phone" | "otp" | "register" | "face";
 
@@ -107,6 +117,10 @@ export function AuthPage() {
       <Card className="flex flex-col gap-4">
         {step === "phone" && (
           <>
+            <div className="flex flex-col gap-3">
+              <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
+              <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
+            </div>
             <label htmlFor="phone" className="block">
               <span className="mb-1.5 block text-sm font-medium text-muted">
                 {t("auth.phoneLabel")}
@@ -143,14 +157,14 @@ export function AuthPage() {
 
         {step === "otp" && (
           <>
-            <TextField
+            <div>
+              <BackButton onClick={() => setStep("phone")} label={t("auth.back")} />
+            </div>
+            <OtpInput
               name="code"
               label={t("auth.codeLabel")}
-              inputMode="numeric"
-              maxLength={6}
-              placeholder="······"
               value={code}
-              onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))}
+              onChange={setCode}
               error={error}
             />
             <Button onClick={onVerify} loading={busy} disabled={code.length !== 6}>
@@ -167,9 +181,12 @@ export function AuthPage() {
 
         {step === "register" && (
           <>
+            <div>
+              <BackButton onClick={() => setStep("otp")} label={t("auth.back")} />
+            </div>
             <div className="flex flex-col gap-1">
-              <h1 className="text-xl">{t("auth.registerTitle")}</h1>
-              <p className="text-sm text-muted">{t("auth.registerSubtitle")}</p>
+              <h1 className="text-[27px] tracking-[-0.03em]">{t("auth.registerTitle")}</h1>
+              <p className="text-[15px] leading-normal text-muted">{t("auth.registerSubtitle")}</p>
             </div>
             <TextField
               name="firstName"
@@ -259,8 +276,8 @@ export function AuthPage() {
                 <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
               </svg>
             </div>
-            <h1 className="text-2xl">{t("auth.face.title")}</h1>
-            <p className="text-muted">{t("auth.face.subtitle")}</p>
+            <h1 className="text-[25px] tracking-[-0.02em]">{t("auth.face.title")}</h1>
+            <p className="text-[15px] leading-normal text-muted">{t("auth.face.subtitle")}</p>
             {error ? <p className="text-sm text-rejected">{error}</p> : null}
             <div className="flex w-full flex-col gap-2">
               <Button onClick={onEnableFace} loading={busy}>

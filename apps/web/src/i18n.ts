@@ -6,6 +6,10 @@ const en = {
   app: { title: "Wanthat" },
   auth: {
     tagline: "Cashback on what you recommend",
+    heading: "Cashback you can trust.",
+    subheading:
+      "Shop AliExpress through Wanthat and earn real money back — and again when friends use your links.",
+    back: "Back",
     phoneLabel: "Phone number",
     codeLabel: "Verification code",
     firstName: "First name",
@@ -54,6 +58,10 @@ const he: typeof en = {
   app: { title: "וונטהאט" },
   auth: {
     tagline: "קאשבק על מה שאתם ממליצים",
+    heading: "קאשבק שאפשר לסמוך עליו.",
+    subheading:
+      "קנו ב-AliExpress דרך Wanthat והרוויחו כסף אמיתי בחזרה — והרוויחו שוב כשחברים משתמשים בקישורים שלכם.",
+    back: "חזרה",
     phoneLabel: "מספר טלפון",
     codeLabel: "קוד אימות",
     firstName: "שם פרטי",

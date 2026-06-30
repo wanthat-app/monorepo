@@ -173,10 +173,83 @@ export function Card({ children, className = "" }: { children: ReactNode; classN
 }
 
 export function Screen({ children }: { children: ReactNode }) {
+  // 430px is the design's phone-frame width (Wanthat Shared Product – Flow).
   return (
-    <main className="mx-auto flex min-h-screen w-full max-w-md flex-col justify-center gap-6 p-6">
+    <main className="mx-auto flex min-h-screen w-full max-w-[430px] flex-col justify-center gap-6 p-6">
       {children}
     </main>
+  );
+}
+
+// Square back affordance (40×40, 12px radius, hairline) used on the OTP and register steps. The
+// chevron mirrors in RTL via the logical-direction rotate so "back" always points the natural way.
+export function BackButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={label}
+      className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-input border border-line bg-surface text-ink transition hover:bg-base"
+    >
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden
+        className="rtl:-scale-x-100"
+      >
+        <title>{label}</title>
+        <path d="M15 18l-6-6 6-6" />
+      </svg>
+    </button>
+  );
+}
+
+// One-time-code field: large centered Space Grotesk digits on a 16px-radius card, dashes for the
+// empty state. Always LTR (digits read left-to-right even in the RTL layout). The caller keeps the
+// length contract — Cognito SMS OTP is 6 digits.
+export function OtpInput({
+  value,
+  onChange,
+  label,
+  error,
+  name = "code",
+  maxLength = 6,
+  placeholder = "––––––",
+}: {
+  value: string;
+  onChange: (value: string) => void;
+  label?: string;
+  error?: string;
+  name?: string;
+  maxLength?: number;
+  placeholder?: string;
+}) {
+  return (
+    <label htmlFor={name} className="block">
+      {label ? <span className="mb-1.5 block text-sm font-medium text-muted">{label}</span> : null}
+      <input
+        id={name}
+        name={name}
+        type="tel"
+        inputMode="numeric"
+        autoComplete="one-time-code"
+        dir="ltr"
+        maxLength={maxLength}
+        placeholder={placeholder}
+        value={value}
+        onChange={(e) => onChange(e.target.value.replace(/\D/g, ""))}
+        className={`w-full rounded-2xl border bg-surface p-5 text-center font-display text-[34px] font-semibold tracking-[0.5em] text-ink outline-none transition focus:border-accent ${
+          error ? "border-rejected" : "border-line"
+        }`}
+      />
+      {error ? <span className="mt-1 block text-sm text-rejected">{error}</span> : null}
+    </label>
   );
 }
 
