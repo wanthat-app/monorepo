@@ -1,0 +1,88 @@
+import type {
+  AttributionClaimResponse,
+  AuthRefreshResponse,
+  AuthResendResponse,
+  AuthSession,
+  AuthStartResponse,
+  AuthVerifyResponse,
+  CustomerProfile,
+  PasskeyRegisterVerifyResponse,
+} from "@wanthat/contracts";
+
+/**
+ * Typed client for the app-api `/auth` + `/me` surface. Cookieless (ADR-0007): the access token is
+ * passed as a Bearer header per call; nothing is stored in a cookie. `VITE_API_URL` points at the
+ * app-api HTTP API (injected at build time per environment).
+ */
+const API_URL: string = import.meta.env.VITE_API_URL ?? "";
+
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+  ) {
+    super(`${status} ${code}`);
+  }
+}
+
+async function request<T>(
+  path: string,
+  opts: { method?: string; body?: unknown; token?: string } = {},
+): Promise<T> {
+  const headers: Record<string, string> = { "content-type": "application/json" };
+  if (opts.token) headers.authorization = `Bearer ${opts.token}`;
+  const res = await fetch(`${API_URL}${path}`, {
+    method: opts.method ?? "GET",
+    headers,
+    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+  });
+  const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!res.ok) throw new ApiError(res.status, (data.error as string) ?? "request_failed");
+  return data as T;
+}
+
+export const authApi = {
+  start: (phone: string) =>
+    request<AuthStartResponse>("/auth/start", { method: "POST", body: { phone } }),
+  resend: (challengeId: string) =>
+    request<AuthResendResponse>("/auth/resend", { method: "POST", body: { challengeId } }),
+  verify: (challengeId: string, code: string) =>
+    request<AuthVerifyResponse>("/auth/verify", { method: "POST", body: { challengeId, code } }),
+  register: (body: {
+    registrationTicket: string;
+    firstName: string;
+    lastName: string;
+    email?: string;
+    locale?: string;
+  }) => request<AuthSession>("/auth/register", { method: "POST", body }),
+  refresh: (refreshToken: string) =>
+    request<AuthRefreshResponse>("/auth/refresh", { method: "POST", body: { refreshToken } }),
+  signout: (refreshToken: string) =>
+    request<{ ok: true }>("/auth/signout", { method: "POST", body: { refreshToken } }),
+  passkeyRegisterOptions: (token: string) =>
+    request<{ options: unknown }>("/auth/passkey/register/options", {
+      method: "POST",
+      body: {},
+      token,
+    }),
+  passkeyRegisterVerify: (credential: unknown, token: string) =>
+    request<PasskeyRegisterVerifyResponse>("/auth/passkey/register/verify", {
+      method: "POST",
+      body: { credential },
+      token,
+    }),
+};
+
+export const meApi = {
+  get: (token: string) => request<{ profile: CustomerProfile }>("/me", { token }),
+  update: (
+    token: string,
+    patch: Partial<Pick<CustomerProfile, "firstName" | "lastName" | "locale" | "email">>,
+  ) => request<{ profile: CustomerProfile }>("/me", { method: "PATCH", body: patch, token }),
+  claimAttribution: (token: string, guestIds: string[]) =>
+    request<AttributionClaimResponse>("/me/attribution/claim", {
+      method: "POST",
+      body: { guestIds },
+      token,
+    }),
+};
