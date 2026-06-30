@@ -45,6 +45,11 @@ jobs:
           CDK_DEFAULT_REGION: il-central-1
         run: |
           set -uo pipefail
+          # Match the version dev was deployed with (latest tag) so the diff doesn't show a spurious
+          # `version` tag change on every resource.
+          git fetch --tags --force >/dev/null 2>&1 || true
+          WANTHAT_VERSION=$(git tag -l 'v*.*.*' | sort -V | tail -1); export WANTHAT_VERSION=${WANTHAT_VERSION:-v0.0.0}
+          echo "Diffing dev with version=$WANTHAT_VERSION"
           # Dry run: synth + diff vs the deployed dev stacks. No mutation.
           pnpm run diff 2>&1 | sed -r 's/\x1b\[[0-9;]*m//g' | tee diff.out
           diff_status=${PIPESTATUS[0]}

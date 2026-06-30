@@ -26,7 +26,7 @@ concurrency:
 
 permissions:
   id-token: write # required for OIDC
-  contents: read
+  contents: write # push the auto-generated version tag on a manual prod deploy
 
 jobs:
   deploy:
@@ -54,14 +54,36 @@ jobs:
         with:
           role-to-assume: ${{ vars.CDK_DEPLOY_ROLE_ARN }} # per-env OIDC role
           aws-region: il-central-1
-      # Pass the resolved account/region to CDK explicitly. Turbo runs cdk in strict env mode
-      # (globalPassThroughEnv allows AWS_*/CDK_DEFAULT_* through); the app reads CDK_DEFAULT_ACCOUNT.
+      # Resolve the version stamped on AWS resources (the `version` tag). A **manual prod** deploy
+      # advances the **least-significant segment** of the latest version tag — no assumption about
+      # depth: v0.1.3 -> v0.1.4, v0.1 -> v0.2, v1 -> v2 — and the tag is pushed after a successful
+      # apply. Every other deploy reuses the latest existing tag (so it matches what's deployed, no
+      # spurious diff).
+      - name: Resolve version
+        id: ver
+        run: |
+          set -uo pipefail
+          git fetch --tags --force >/dev/null 2>&1 || true
+          latest=$(git tag -l 'v[0-9]*' | sort -V | tail -1); latest=${latest:-v0.0.0}
+          if [ "$WANTHAT_ENV" = "prod" ] && [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            IFS='.' read -ra parts <<< "${latest#v}"
+            i=$(( ${#parts[@]} - 1 )); parts[$i]=$(( ${parts[$i]} + 1 ))
+            version="v$(IFS='.'; echo "${parts[*]}")"; bump=true
+          else
+            version="$latest"; bump=false
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "version=$version (latest tag $latest, bump=$bump)"
+      # Pass the resolved account/region/version to CDK. Turbo runs cdk in strict env mode (passthrough
+      # for AWS_*/CDK_DEFAULT_*/WANTHAT_VERSION); the app reads CDK_DEFAULT_ACCOUNT + WANTHAT_VERSION.
       # `pnpm run` (not bare `pnpm diff`/`pnpm deploy`) — `deploy` is a pnpm built-in that would
       # otherwise shadow our Turbo script.
       - run: pnpm run diff # cdk diff — recorded in the log right before the apply
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
+          WANTHAT_VERSION: ${{ steps.ver.outputs.version }}
       # --concurrency deploys independent stacks in parallel and skips unchanged ones (CDK no-ops them).
       # dev uses --hotswap-fallback (deploy:dev): Lambda code/env/asset changes patch the function
       # directly (seconds), full-CloudFormation fallback otherwise. Hotswap is dev-only — it bypasses
@@ -73,6 +95,7 @@ jobs:
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
+          WANTHAT_VERSION: ${{ steps.ver.outputs.version }}
       # Drift guard: fail if a `wanthat-<env>-*` stack is deployed but no longer in code (an orphan).
       # CDK never deletes stacks removed from the app, so we catch them here.
       - name: Reconcile deployed stacks vs code
@@ -100,3 +123,15 @@ jobs:
             exit 1
           fi
           echo "OK — deployed stacks match code; no orphans."
+      # On a successful manual prod deploy, promote: create + push the advanced version tag (the
+      # version already stamped on the deployed resources). A plain tag (not a published release) so it
+      # does not re-trigger the `release` deploy. Create a GitHub Release from it later for notes.
+      - name: Tag prod release
+        if: steps.ver.outputs.bump == 'true'
+        env:
+          V: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          git tag -a "$V" -m "prod deploy $V (${GITHUB_SHA:0:7})"
+          git push origin "$V"
+          echo "Tagged prod deploy: $V" >> "$GITHUB_STEP_SUMMARY"
