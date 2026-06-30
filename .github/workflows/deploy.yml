@@ -1,12 +1,15 @@
 name: Deploy
 
-# Deploys to the shared environments **only on merge to `main`** (dev) and via workflow_dispatch
-# (prod, behind a GitHub Environment approval — ADR-0015). OIDC-assumed per-env role, no static keys.
-# PRs never deploy: they run CI (ci.yml) + Check Deploy (check-deploy.yml, a cdk-diff dry run). This
-# keeps the single shared dev env changing only on a merge, so branches can't clobber each other.
+# Deploys: **dev automatically on merge to `main`**; **prod on publishing a GitHub Release** (a tagged,
+# documented promotion of a main commit), behind the `prod` GitHub Environment approval (ADR-0015).
+# workflow_dispatch is the break-glass for either env. OIDC-assumed per-env role, no static keys. PRs
+# never deploy: they run CI (ci.yml) + Check Deploy (check-deploy.yml, a cdk-diff dry run), so the
+# shared dev env changes only on a merge and branches can't clobber each other.
 on:
   push:
     branches: [main]
+  release:
+    types: [published] # publishing a (non-pre) release deploys prod
   workflow_dispatch:
     inputs:
       environment:
@@ -18,7 +21,7 @@ on:
 # Serialize deploys per environment so concurrent merges/dispatches don't clobber the shared stacks;
 # never cancel an in-flight deploy mid-apply.
 concurrency:
-  group: deploy-${{ github.event.inputs.environment || 'dev' }}
+  group: deploy-${{ github.event_name == 'release' && 'prod' || github.event.inputs.environment || 'dev' }}
   cancel-in-progress: false
 
 permissions:
@@ -28,10 +31,14 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    environment: ${{ github.event.inputs.environment || 'dev' }}
+    # A pre-release must not auto-deploy prod; full releases, push(main), and dispatch proceed.
+    if: github.event_name != 'release' || github.event.release.prerelease == false
+    # release -> prod; dispatch -> chosen env; push(main) -> dev. (Env also selects the GitHub
+    # Environment, so prod inherits its approval gate.)
+    environment: ${{ github.event_name == 'release' && 'prod' || github.event.inputs.environment || 'dev' }}
     env:
       # Selects which wanthat-{env}-* stacks the CDK app instantiates (infra/bin/wanthat.ts).
-      WANTHAT_ENV: ${{ github.event.inputs.environment || 'dev' }}
+      WANTHAT_ENV: ${{ github.event_name == 'release' && 'prod' || github.event.inputs.environment || 'dev' }}
     steps:
       - uses: actions/checkout@v5
       - uses: pnpm/action-setup@v5
