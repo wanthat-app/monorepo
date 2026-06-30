@@ -138,6 +138,31 @@ export const rdsCaBundling = {
   },
 };
 
+/**
+ * The db-migrator's bundling and env. esbuild bundles only JS, so the plain-`.sql` migrations would
+ * NOT be in the artifact — and the source resolves the dir from `import.meta.url`, which is `undefined`
+ * in the CJS bundle. So we (a) ship the RDS CA bundle (the migrator connects to Aurora over TLS) **and**
+ * the `.sql` files under a `migrations/` subdir, and (b) point `MIGRATIONS_DIR` at them at runtime.
+ */
+const MIGRATIONS_SRC = path.join("packages", "db", "migrations"); // relative to repo root
+
+/** Lambda env: where the bundled `.sql` migrations land in the unpacked artifact (`/var/task`). */
+export const MIGRATIONS_DIR_ENV = { MIGRATIONS_DIR: "/var/task/migrations" } as const;
+
+export const migratorBundling = {
+  minify: true,
+  sourceMap: true,
+  commandHooks: {
+    beforeBundling: () => [],
+    beforeInstall: () => [],
+    afterBundling: (inputDir: string, outputDir: string): string[] => [
+      `cp "${path.join(inputDir, RDS_CA_BUNDLE_SRC)}" "${outputDir}"`,
+      `mkdir -p "${path.join(outputDir, "migrations")}"`,
+      `cp "${path.join(inputDir, MIGRATIONS_SRC)}"/*.sql "${path.join(outputDir, "migrations")}"`,
+    ],
+  },
+};
+
 /** Stack name helper — `wanthat-{env}-{suffix}`. */
 export const stackName = (env: WanthatEnv, suffix: string): string =>
   `wanthat-${env.name}-${suffix}`;

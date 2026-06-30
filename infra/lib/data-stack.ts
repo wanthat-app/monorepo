@@ -7,7 +7,14 @@ import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Trigger } from "aws-cdk-lib/triggers";
 import type { Construct } from "constructs";
-import { LAMBDA_RUNTIME, RDS_CA_ENV, rdsCaBundling, serviceEntry, type WanthatEnv } from "./config";
+import {
+  LAMBDA_RUNTIME,
+  MIGRATIONS_DIR_ENV,
+  migratorBundling,
+  RDS_CA_ENV,
+  serviceEntry,
+  type WanthatEnv,
+} from "./config";
 
 export interface DataStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -101,15 +108,23 @@ export class DataStack extends Stack {
     });
 
     // --- Aurora Serverless v2 (PII + ledger) — scale-to-zero, IAM auth, no RDS Proxy (ADR-0003) ---
+    // 16.13 is available in il-central-1 (16.6 is not) and supports serverless v2 min-ACU 0.
+    const engine = rds.DatabaseClusterEngine.auroraPostgres({
+      version: rds.AuroraPostgresEngineVersion.VER_16_13,
+    });
+    // Fixed max_connections instead of the ACU-derived default: app-api is DynamoDB-hot (Aurora holds
+    // only PII + ledger, ADR-0003) and Lambda concurrency is small, so 50 is ample headroom over the
+    // worst-case in-VPC connection count. (Static param → applied at instance creation.)
+    const parameterGroup = new rds.ParameterGroup(this, "AuroraParams", {
+      engine,
+      parameters: { max_connections: "50" },
+    });
     this.cluster = new rds.DatabaseCluster(this, "Aurora", {
-      engine: rds.DatabaseClusterEngine.auroraPostgres({
-        // 16.13 is available in il-central-1 (16.6 is not) and supports serverless v2 min-ACU 0.
-        version: rds.AuroraPostgresEngineVersion.VER_16_13,
-      }),
+      engine,
       vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [auroraSg],
-      writer: rds.ClusterInstance.serverlessV2("Writer"),
+      writer: rds.ClusterInstance.serverlessV2("Writer", { parameterGroup }),
       serverlessV2MinCapacity: 0, // scale-to-zero (ADR-0003); confirm acceptance at deploy
       serverlessV2MaxCapacity: 2,
       iamAuthentication: true,
@@ -145,9 +160,11 @@ export class DataStack extends Stack {
         DB_NAME: "wanthat",
         // Trust the Amazon RDS CA so the migrator's TLS connection to Aurora verifies (ADR-0020).
         ...RDS_CA_ENV,
+        // Where the bundled .sql migrations live in the artifact (esbuild bundles only JS).
+        ...MIGRATIONS_DIR_ENV,
       },
-      // Ship the RDS CA bundle in the function artifact (see rdsCaBundling / NODE_EXTRA_CA_CERTS).
-      bundling: rdsCaBundling,
+      // Ship the RDS CA bundle + the .sql migration files in the function artifact (see migratorBundling).
+      bundling: migratorBundling,
     });
     this.cluster.secret?.grantRead(migratorFn);
 

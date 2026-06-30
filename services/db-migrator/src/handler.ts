@@ -49,7 +49,11 @@ export const handler = async (): Promise<{ status: "ok"; applied: string[] }> =>
   });
 
   try {
-    const { error, results } = await createMigrator(db).migrateToLatest();
+    // The .sql files are shipped in the bundle at MIGRATIONS_DIR (/var/task/migrations); see DataStack.
+    const { error, results } = await createMigrator(
+      db,
+      requireEnv("MIGRATIONS_DIR"),
+    ).migrateToLatest();
     for (const r of results ?? []) {
       logger.info("migration", {
         name: r.migrationName,
