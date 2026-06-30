@@ -60,7 +60,11 @@ export class ApiStack extends Stack {
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
-      reservedConcurrentExecutions: 10,
+      // Aurora connection ceiling (ADR-0002, no RDS Proxy): the in-VPC functions share a fixed
+      // reserved-concurrency budget of 10 = max concurrent DB connections. Split app:7 / admin:2 /
+      // migrator:1. Requires the account's Lambda "Concurrent executions" quota >= 20 (10 reserved +
+      // the 10 unreserved AWS keeps free).
+      reservedConcurrentExecutions: 7,
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
