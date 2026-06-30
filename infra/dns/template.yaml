@@ -1,7 +1,7 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   Wanthat DNS records (stack: wanthat-dns). Adds records to our EXISTING Route 53
-  public hosted zone referenced by id — it does NOT create a HostedZone. The CDK
+  public hosted zone referenced by id - it does NOT create a HostedZone. The CDK
   app (EdgeStack) owns CloudFront alias records; this standalone stack owns the
   domain-verification / mail (Zoho) records that live outside the app lifecycle.
 
@@ -22,7 +22,7 @@ Parameters:
     Default: wanthat.app
 
 Resources:
-  # Zoho domain ownership verification — Zoho lists this as an apex ("@") TXT record.
+  # Zoho domain ownership verification - Zoho lists this as an apex ("@") TXT record.
   # Route 53 requires TXT values to be enclosed in double quotes within the record.
   ZohoVerificationTxt:
     Type: AWS::Route53::RecordSet
