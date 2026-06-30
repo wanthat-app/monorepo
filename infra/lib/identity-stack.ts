@@ -1,5 +1,6 @@
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import type { WanthatEnv } from "./config";
@@ -134,9 +135,15 @@ export class IdentityStack extends Stack {
         },
         physicalResourceId: cr.PhysicalResourceId.of(`wanthat-${wanthatEnv.name}-sms-attrs`),
       },
-      policy: cr.AwsCustomResourcePolicy.fromSdkCalls({
-        resources: cr.AwsCustomResourcePolicy.ANY_RESOURCE,
-      }),
+      // Setting MonthlySpendLimit via SNS is now brokered by AWS End User Messaging, so the call also
+      // needs the sms-voice spend-limit action — which fromSdkCalls would NOT derive (it sees only the
+      // SNS action). Grant both explicitly.
+      policy: cr.AwsCustomResourcePolicy.fromStatements([
+        new iam.PolicyStatement({
+          actions: ["sns:SetSMSAttributes", "sms-voice:SetTextMessageSpendLimitOverride"],
+          resources: ["*"],
+        }),
+      ]),
       // sns:setSMSAttributes is in Lambda's built-in SDK; no need to fetch the latest at deploy.
       installLatestAwsSdk: false,
     });
