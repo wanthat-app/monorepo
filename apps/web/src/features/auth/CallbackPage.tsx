@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { completePasskeyLogin } from "../../lib/managed-login";
+import { completePasskeyLogin, verifyOauthState } from "../../lib/managed-login";
 import { useSession } from "../../lib/session";
 import { Screen, Spinner } from "../../ui/components";
 
@@ -13,9 +13,16 @@ export function CallbackPage() {
   const [error, setError] = useState(false);
 
   useEffect(() => {
-    const code = new URLSearchParams(window.location.search).get("code");
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("code");
     if (!code) {
       navigate("/auth", { replace: true });
+      return;
+    }
+    // CSRF: the returned `state` must match the value stashed before the redirect. Verify (and clear)
+    // it before touching the code — a mismatch means the callback wasn't initiated by us.
+    if (!verifyOauthState(params.get("state"))) {
+      setError(true);
       return;
     }
     completePasskeyLogin(code)

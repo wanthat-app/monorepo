@@ -9,8 +9,11 @@ import { meApi } from "./api";
  */
 const MANAGED_LOGIN_URL: string = import.meta.env.VITE_MANAGED_LOGIN_URL ?? "";
 const CLIENT_ID: string = import.meta.env.VITE_USER_POOL_CLIENT_ID ?? "";
-const REDIRECT_URI = `${window.location.origin}/auth/callback`;
 const VERIFIER_KEY = "wanthat.pkceVerifier";
+const STATE_KEY = "wanthat.oauthState";
+
+// Computed lazily (not at module load) so the module is importable in a DOM-less context.
+const redirectUri = () => `${window.location.origin}/auth/callback`;
 
 function base64url(bytes: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)))
@@ -23,21 +26,39 @@ async function sha256(input: string): Promise<ArrayBuffer> {
   return crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
 }
 
-/** Redirect to the hosted UI to begin a discoverable passkey login (stores the PKCE verifier). */
+/**
+ * Redirect to the hosted UI to begin a discoverable passkey login. Stores the PKCE verifier and a
+ * random `state` (CSRF) in sessionStorage; `state` is echoed back on the callback and verified
+ * before the code is exchanged.
+ */
 export async function beginPasskeyLogin(): Promise<void> {
   const verifier = base64url(crypto.getRandomValues(new Uint8Array(32)).buffer);
+  const state = base64url(crypto.getRandomValues(new Uint8Array(32)).buffer);
   sessionStorage.setItem(VERIFIER_KEY, verifier);
+  sessionStorage.setItem(STATE_KEY, state);
   const challenge = base64url(await sha256(verifier));
   const url = new URL(`${MANAGED_LOGIN_URL}/oauth2/authorize`);
   url.search = new URLSearchParams({
     client_id: CLIENT_ID,
     response_type: "code",
     scope: "openid phone profile",
-    redirect_uri: REDIRECT_URI,
+    redirect_uri: redirectUri(),
     code_challenge: challenge,
     code_challenge_method: "S256",
+    state,
   }).toString();
   window.location.assign(url.toString());
+}
+
+/**
+ * Verify the `state` returned on the OAuth callback against the value stashed by `beginPasskeyLogin`
+ * (CSRF defence). The stored value is single-use: it is cleared whether or not it matched. Returns
+ * false when nothing was stored or the values differ.
+ */
+export function verifyOauthState(received: string | null): boolean {
+  const expected = sessionStorage.getItem(STATE_KEY);
+  sessionStorage.removeItem(STATE_KEY);
+  return !!expected && !!received && received === expected;
 }
 
 /**
@@ -57,7 +78,7 @@ export async function completePasskeyLogin(code: string): Promise<AuthSession | 
       grant_type: "authorization_code",
       client_id: CLIENT_ID,
       code,
-      redirect_uri: REDIRECT_URI,
+      redirect_uri: redirectUri(),
       code_verifier: verifier,
     }).toString(),
   });
