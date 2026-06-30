@@ -43,8 +43,9 @@ export const handler = async (): Promise<{ status: "ok"; applied: string[] }> =>
     user: secret.username,
     region,
     password: secret.password,
-    // Optional RDS CA bundle (see DbConfig.caCerts); set DB_CA_CERT if Aurora TLS verification fails.
-    caCerts: process.env.DB_CA_CERT,
+    // TLS verification trusts the Amazon RDS CA via NODE_EXTRA_CA_CERTS (the bundle shipped in the
+    // function artifact, wired in DataStack), so `pg` needs no explicit `ca` here — Node's default
+    // trust store already includes it. rejectUnauthorized stays on.
   });
 
   try {

@@ -103,6 +103,41 @@ export const REPO_ROOT = path.resolve(here, "..", "..");
 export const serviceEntry = (service: string): string =>
   path.join(REPO_ROOT, "services", service, "src", "handler.ts");
 
+/**
+ * Amazon RDS CA trust for in-VPC Aurora connections (ADR-0003/0020).
+ *
+ * Aurora presents a server cert that chains to a **private** Amazon RDS root CA, which is **not** in
+ * Node's default trust store — so `pg`'s `rejectUnauthorized: true` fails unless that CA is trusted.
+ * The bundle is AWS's *public*, version-pinned `global-bundle.pem` (every region) — not a secret and
+ * not runtime-tunable, so it belongs in the deployment artifact, not Secrets Manager or the runtime
+ * `config` table. We commit it under `packages/db/certs/`, copy it into each DB-touching Lambda's
+ * bundle, and point `NODE_EXTRA_CA_CERTS` at it so Node trusts it process-wide (covering pg + any SDK
+ * TLS) with no runtime fetch. Apply {@link rdsCaBundling} to the function's `bundling` **and** spread
+ * {@link RDS_CA_ENV} into its `environment`.
+ */
+const RDS_CA_BUNDLE_FILE = "rds-global-bundle.pem";
+const RDS_CA_BUNDLE_SRC = path.join("packages", "db", "certs", RDS_CA_BUNDLE_FILE); // relative to repo root
+
+/** Lambda env that makes Node trust the Amazon RDS CA bundle copied into the bundle root (`/var/task`). */
+export const RDS_CA_ENV = { NODE_EXTRA_CA_CERTS: `/var/task/${RDS_CA_BUNDLE_FILE}` } as const;
+
+/**
+ * NodejsFunction `bundling` that ships the RDS CA bundle alongside the handler. esbuild's input dir is
+ * the monorepo root (the pnpm lockfile dir), so the bundle is copied from there into the asset output
+ * (which Lambda unpacks to `/var/task`). Merge with any other bundling options at the call site.
+ */
+export const rdsCaBundling = {
+  minify: true,
+  sourceMap: true,
+  commandHooks: {
+    beforeBundling: () => [],
+    beforeInstall: () => [],
+    afterBundling: (inputDir: string, outputDir: string): string[] => [
+      `cp "${path.join(inputDir, RDS_CA_BUNDLE_SRC)}" "${outputDir}"`,
+    ],
+  },
+};
+
 /** Stack name helper — `wanthat-{env}-{suffix}`. */
 export const stackName = (env: WanthatEnv, suffix: string): string =>
   `wanthat-${env.name}-${suffix}`;

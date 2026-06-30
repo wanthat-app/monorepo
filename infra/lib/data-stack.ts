@@ -7,7 +7,7 @@ import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Trigger } from "aws-cdk-lib/triggers";
 import type { Construct } from "constructs";
-import { LAMBDA_RUNTIME, serviceEntry, type WanthatEnv } from "./config";
+import { LAMBDA_RUNTIME, RDS_CA_ENV, rdsCaBundling, serviceEntry, type WanthatEnv } from "./config";
 
 export interface DataStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -139,8 +139,11 @@ export class DataStack extends Stack {
         DB_HOST: this.cluster.clusterEndpoint.hostname,
         DB_PORT: String(this.cluster.clusterEndpoint.port),
         DB_NAME: "wanthat",
+        // Trust the Amazon RDS CA so the migrator's TLS connection to Aurora verifies (ADR-0020).
+        ...RDS_CA_ENV,
       },
-      bundling: { minify: true, sourceMap: true },
+      // Ship the RDS CA bundle in the function artifact (see rdsCaBundling / NODE_EXTRA_CA_CERTS).
+      bundling: rdsCaBundling,
     });
     this.cluster.secret?.grantRead(migratorFn);
 
