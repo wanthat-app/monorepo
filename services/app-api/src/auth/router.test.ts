@@ -15,6 +15,8 @@ const { fake, dbMock } = vi.hoisted(() => ({
       respondSmsOtp: vi.fn(),
       refresh: vi.fn(),
       revoke: vi.fn(),
+      startWebAuthnRegistration: vi.fn(),
+      completeWebAuthnRegistration: vi.fn(),
     },
     challenges: {
       putChallenge: vi.fn(),
@@ -265,5 +267,47 @@ describe("POST /auth/register", () => {
       lastName: "B",
     });
     expect(res.status).toBe(401);
+  });
+});
+
+describe("passkey registration", () => {
+  const credential = {
+    id: "cred-1",
+    rawId: "cred-1",
+    type: "public-key",
+    response: { clientDataJSON: "x", attestationObject: "y" },
+  };
+
+  function postAuthed(path: string, body: unknown) {
+    return app.request(path, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: "Bearer access-token" },
+      body: JSON.stringify(body),
+    });
+  }
+
+  it("options requires a Bearer token", async () => {
+    const res = await post("/auth/passkey/register/options", {});
+    expect(res.status).toBe(401);
+  });
+
+  it("returns server-generated creation options", async () => {
+    fake.cognito.startWebAuthnRegistration.mockResolvedValue({ challenge: "abc" });
+    const res = await postAuthed("/auth/passkey/register/options", {});
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ options: { challenge: "abc" } });
+    expect(fake.cognito.startWebAuthnRegistration).toHaveBeenCalledWith("access-token");
+  });
+
+  it("verify registers the credential and echoes the passkey", async () => {
+    fake.cognito.completeWebAuthnRegistration.mockResolvedValue(undefined);
+    const res = await postAuthed("/auth/passkey/register/verify", { credential });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { passkey: { credentialId: string } };
+    expect(body.passkey.credentialId).toBe("cred-1");
+    expect(fake.cognito.completeWebAuthnRegistration).toHaveBeenCalledWith(
+      "access-token",
+      credential,
+    );
   });
 });

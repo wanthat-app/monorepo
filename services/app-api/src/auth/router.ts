@@ -9,6 +9,9 @@ import {
   AuthStartResponse,
   AuthVerifyBody,
   AuthVerifyResponse,
+  PasskeyRegisterOptionsBody,
+  PasskeyRegisterVerifyBody,
+  PasskeyRegisterVerifyResponse,
 } from "@wanthat/contracts";
 import { findByCognitoSub, insertCustomer } from "@wanthat/db";
 import { Hono } from "hono";
@@ -28,6 +31,12 @@ const nowEpoch = (): number => Math.floor(Date.now() / 1000);
 /** Map a CloudFront viewer country to a default BCP-47 locale (Israeli-first app). */
 function countryToLocale(country: string | undefined): string {
   return country === "IL" || !country ? "he-IL" : "en-US";
+}
+
+/** Extract the Bearer access token from the Authorization header, or null. */
+function bearerToken(c: { req: { header: (n: string) => string | undefined } }): string | null {
+  const h = c.req.header("Authorization");
+  return h?.startsWith("Bearer ") ? h.slice(7) : null;
 }
 
 /** Parse a JSON body against a Zod schema; returns the value or null (the caller 400s on null). */
@@ -234,6 +243,40 @@ export function authRouter(): Hono {
     const ctx = getContext();
     if (body.refreshToken) await ctx.cognito.revoke(body.refreshToken);
     return c.json({ ok: true } as const);
+  });
+
+  // --- Passkeys (ADR-0006/0020) ---
+  // Enrolment is API-driven and authorised by the caller's access token (Cognito's WebAuthn
+  // registration is access-token-scoped), so these sit under /auth but read the Bearer directly.
+  //
+  // Discoverable (userless) passkey *login* is NOT served here: Cognito's raw API requires a username
+  // for the WEB_AUTHN challenge, so true discoverable login goes through Managed Login (provisioned
+  // in IdentityStack). The SPA opens the hosted UI and completes the OAuth code+PKCE exchange in the
+  // browser, then carries the resulting Bearer token like any other session (PR4 spike resolution).
+
+  auth.post("/passkey/register/options", async (c) => {
+    const token = bearerToken(c);
+    if (!token) return c.json({ error: "unauthorized" }, 401);
+    if (!(await parseBody(c, PasskeyRegisterOptionsBody)))
+      return c.json({ error: "invalid_request" }, 400);
+    const ctx = getContext();
+    // `options` is server-generated and passed straight to the browser; the contract types it loosely.
+    const options = await ctx.cognito.startWebAuthnRegistration(token);
+    return c.json({ options });
+  });
+
+  auth.post("/passkey/register/verify", async (c) => {
+    const token = bearerToken(c);
+    if (!token) return c.json({ error: "unauthorized" }, 401);
+    const body = await parseBody(c, PasskeyRegisterVerifyBody);
+    if (!body) return c.json({ error: "invalid_request" }, 400);
+    const ctx = getContext();
+    await ctx.cognito.completeWebAuthnRegistration(token, body.credential);
+    return c.json(
+      PasskeyRegisterVerifyResponse.parse({
+        passkey: { credentialId: body.credential.id, createdAt: new Date().toISOString() },
+      }),
+    );
   });
 
   return auth;

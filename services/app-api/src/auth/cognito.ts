@@ -9,7 +9,9 @@ import {
   type AttributeType,
   type AuthenticationResultType,
   CognitoIdentityProviderClient,
+  CompleteWebAuthnRegistrationCommand,
   RevokeTokenCommand,
+  StartWebAuthnRegistrationCommand,
   UserNotFoundException,
 } from "@aws-sdk/client-cognito-identity-provider";
 import type { AuthTokens } from "@wanthat/contracts";
@@ -175,6 +177,30 @@ export class Cognito {
         UserPoolId: this.userPoolId,
         Username: username,
         UserAttributes: attributes,
+      }),
+    );
+  }
+
+  /**
+   * Begin passkey (WebAuthn) enrolment for the signed-in user (ADR-0006). Authorised by the caller's
+   * access token; returns the `PublicKeyCredentialCreationOptions` the browser feeds to
+   * `navigator.credentials.create()`.
+   */
+  async startWebAuthnRegistration(accessToken: string): Promise<unknown> {
+    const res = await this.client.send(
+      new StartWebAuthnRegistrationCommand({ AccessToken: accessToken }),
+    );
+    if (!res.CredentialCreationOptions) throw new Error("no CredentialCreationOptions");
+    return res.CredentialCreationOptions;
+  }
+
+  /** Finish passkey enrolment: register the browser's attestation against the signed-in user. */
+  async completeWebAuthnRegistration(accessToken: string, credential: unknown): Promise<void> {
+    await this.client.send(
+      new CompleteWebAuthnRegistrationCommand({
+        AccessToken: accessToken,
+        // biome-ignore lint/suspicious/noExplicitAny: Cognito models Credential as an open document
+        Credential: credential as any,
       }),
     );
   }
