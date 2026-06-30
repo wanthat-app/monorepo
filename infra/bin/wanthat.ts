@@ -4,6 +4,7 @@ import { AdminStack } from "../lib/admin-stack";
 import { ApiStack } from "../lib/api-stack";
 import { resolveEnv, stackName } from "../lib/config";
 import { DataStack } from "../lib/data-stack";
+import { DnsStack } from "../lib/dns-stack";
 import { EdgeServicesStack } from "../lib/edge-services-stack";
 import { EdgeStack } from "../lib/edge-stack";
 import { IdentityStack } from "../lib/identity-stack";
@@ -23,7 +24,8 @@ import { NetworkStack } from "../lib/network-stack";
  * The us-east-1 **EdgeStack** (CloudFront + ACM + WAF) fronts the landing HTTP API (in il-central-1)
  * on `/p/*`, so EdgeServices (producer) and Edge (consumer) both set `crossRegionReferences: true`.
  *
- * Wired: NetworkStack, DataStack, IdentityStack, ApiStack, AdminStack, EdgeServicesStack, EdgeStack.
+ * Wired: NetworkStack, DataStack, IdentityStack, ApiStack, AdminStack, EdgeServicesStack, EdgeStack,
+ * DnsStack (prod).
  */
 const app = new cdk.App();
 const wanthatEnv = resolveEnv(process.env.WANTHAT_ENV ?? app.node.tryGetContext("env"));
@@ -80,5 +82,15 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
   crossRegionReferences: true,
   landingApiId: edgeServices.landingApi.apiId,
 });
+
+// DnsStack — domain verification / mail records (Zoho) in the existing Route 53 zone. Only where a
+// custom domain is configured (prod); dev has no domain to manage.
+if (wanthatEnv.domainName && wanthatEnv.hostedZoneId) {
+  new DnsStack(app, stackName(wanthatEnv, "dns"), {
+    ...common,
+    hostedZoneId: wanthatEnv.hostedZoneId,
+    domainName: wanthatEnv.domainName,
+  });
+}
 
 app.synth();
