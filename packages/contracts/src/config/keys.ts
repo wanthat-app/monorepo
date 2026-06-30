@@ -62,6 +62,19 @@ export const PollerLookbackHours = z.number().int().min(1).max(2160);
  */
 export const AuthSmsEnabled = z.boolean();
 
+/**
+ * Per-phone SMS-OTP send cap within the lockout window (ADR-0006 velocity layer): the most sends
+ * one phone may trigger before further `/auth/start` + `/auth/resend` requests are refused (HTTP
+ * 429). Admin-tunable so the gate can be tightened during an SMS-pumping spike without a redeploy;
+ * paired with `auth.smsLockoutMinutes`, which sets the window length.
+ */
+export const AuthSmsMaxPerWindow = z.number().int().min(1).max(20);
+/**
+ * How long the per-phone SMS velocity counter is held before it resets, in minutes — i.e. the
+ * lockout duration once a phone trips `auth.smsMaxPerWindow`. Admin-tunable (ADR-0006).
+ */
+export const AuthSmsLockoutMinutes = z.number().int().min(1).max(1440);
+
 /** Known config keys. Dotted namespaces group related settings. */
 export const CONFIG_KEYS = [
   "landing.countdownSeconds",
@@ -73,6 +86,8 @@ export const CONFIG_KEYS = [
   "poller.intervalMinutes",
   "poller.lookbackHours",
   "auth.smsEnabled",
+  "auth.smsMaxPerWindow",
+  "auth.smsLockoutMinutes",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -89,6 +104,8 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "poller.intervalMinutes": PollerIntervalMinutes,
   "poller.lookbackHours": PollerLookbackHours,
   "auth.smsEnabled": AuthSmsEnabled,
+  "auth.smsMaxPerWindow": AuthSmsMaxPerWindow,
+  "auth.smsLockoutMinutes": AuthSmsLockoutMinutes,
 };
 
 /**
@@ -109,6 +126,9 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "poller.lookbackHours": 72,
   // SMS OTP on by default; the kill switch flips this to false to stop sends during an abuse spike.
   "auth.smsEnabled": true,
+  // At most 5 OTP sends per phone per lockout window; tighten during an SMS-pumping spike.
+  "auth.smsMaxPerWindow": 5,
+  "auth.smsLockoutMinutes": 180, // 3h lockout once a phone trips the per-window cap
 };
 
 /** Validate a value against its key's schema — use in the config API handler before persisting. */

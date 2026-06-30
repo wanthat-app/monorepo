@@ -65,8 +65,20 @@ function post(path: string, body: unknown) {
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fake.config.get.mockResolvedValue(true); // sms enabled
-  fake.velocity.hit.mockResolvedValue(1); // within limit
+  // Per-key runtime config: SMS enabled, cap 5 sends per 180-minute window.
+  fake.config.get.mockImplementation((key: string) => {
+    switch (key) {
+      case "auth.smsEnabled":
+        return Promise.resolve(true);
+      case "auth.smsMaxPerWindow":
+        return Promise.resolve(5);
+      case "auth.smsLockoutMinutes":
+        return Promise.resolve(180);
+      default:
+        return Promise.resolve(undefined);
+    }
+  });
+  fake.velocity.hit.mockResolvedValue({ count: 1, ttl: 0 }); // within limit
 });
 
 describe("POST /auth/start", () => {
@@ -90,9 +102,10 @@ describe("POST /auth/start", () => {
   });
 
   it("429s when over the velocity limit", async () => {
-    fake.velocity.hit.mockResolvedValue(99);
+    fake.velocity.hit.mockResolvedValue({ count: 99, ttl: 1000 });
     const res = await post("/auth/start", { phone: PHONE });
     expect(res.status).toBe(429);
+    expect(await res.json()).toMatchObject({ error: "rate_limited" });
     expect(fake.cognito.getUserByPhone).not.toHaveBeenCalled();
   });
 
@@ -117,7 +130,7 @@ describe("POST /auth/verify", () => {
 
   it("returns authenticated when a customer exists", async () => {
     fake.challenges.getChallenge.mockResolvedValue(challenge);
-    fake.cognito.respondSmsOtp.mockResolvedValue(cognitoResult);
+    fake.cognito.respondSmsOtp.mockResolvedValue({ kind: "tokens", result: cognitoResult });
     dbMock.findByCognitoSub.mockResolvedValue(customer);
 
     const res = await post("/auth/verify", { challengeId: "c1", code: "123456" });
@@ -130,7 +143,7 @@ describe("POST /auth/verify", () => {
 
   it("returns registration_required and parks tokens when no customer exists", async () => {
     fake.challenges.getChallenge.mockResolvedValue(challenge);
-    fake.cognito.respondSmsOtp.mockResolvedValue(cognitoResult);
+    fake.cognito.respondSmsOtp.mockResolvedValue({ kind: "tokens", result: cognitoResult });
     dbMock.findByCognitoSub.mockResolvedValue(undefined);
     fake.tickets.sign.mockResolvedValue("signed-ticket");
 
@@ -151,6 +164,66 @@ describe("POST /auth/verify", () => {
     expect(fake.challenges.putChallenge).toHaveBeenCalledWith(
       expect.objectContaining({ attempts: 1 }),
     );
+  });
+
+  it("retries a wrong code on the same challengeId, then succeeds", async () => {
+    fake.challenges.getChallenge.mockResolvedValue(challenge);
+    // First answer is wrong: Cognito re-issues the challenge with a fresh session.
+    fake.cognito.respondSmsOtp.mockResolvedValueOnce({ kind: "retry", session: "sess2" });
+
+    const bad = await post("/auth/verify", { challengeId: "c1", code: "000000" });
+    expect(bad.status).toBe(401);
+    expect(await bad.json()).toEqual({ error: "invalid_code" });
+    // The new session is persisted under the SAME challengeId; it is not deleted.
+    expect(fake.challenges.putChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ challengeId: "c1", cognitoSession: "sess2", attempts: 1 }),
+    );
+    expect(fake.challenges.deleteChallenge).not.toHaveBeenCalled();
+
+    // Second answer is correct on the same challengeId.
+    fake.cognito.respondSmsOtp.mockResolvedValueOnce({ kind: "tokens", result: cognitoResult });
+    dbMock.findByCognitoSub.mockResolvedValue(customer);
+
+    const ok = await post("/auth/verify", { challengeId: "c1", code: "123456" });
+    expect(ok.status).toBe(200);
+    expect(((await ok.json()) as { status: string }).status).toBe("authenticated");
+    expect(fake.challenges.deleteChallenge).toHaveBeenCalledWith("c1");
+  });
+});
+
+describe("POST /auth/resend", () => {
+  const challenge = {
+    challengeId: "c1",
+    username: "u",
+    sub: SUB,
+    phone: PHONE,
+    cognitoSession: "sess",
+    isNewUser: false,
+    resendAfterEpoch: 0,
+    attempts: 0,
+    ttl: 0,
+  };
+
+  it("re-issues the OTP when within the velocity limit", async () => {
+    fake.challenges.getChallenge.mockResolvedValue(challenge);
+    fake.cognito.startSmsOtp.mockResolvedValue({ session: "sess2" });
+
+    const res = await post("/auth/resend", { challengeId: "c1" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ resendAfterSec: 30, expiresInSec: 180 });
+    expect(fake.cognito.startSmsOtp).toHaveBeenCalledOnce();
+  });
+
+  it("429s and does not resend once the phone trips the velocity cap", async () => {
+    fake.challenges.getChallenge.mockResolvedValue(challenge);
+    fake.velocity.hit.mockResolvedValue({ count: 6, ttl: 9999999999 });
+
+    const res = await post("/auth/resend", { challengeId: "c1" });
+    expect(res.status).toBe(429);
+    const body = (await res.json()) as { error: string; retryAfterSec: number };
+    expect(body.error).toBe("rate_limited");
+    expect(body.retryAfterSec).toBeGreaterThan(0);
+    expect(fake.cognito.startSmsOtp).not.toHaveBeenCalled();
   });
 });
 

@@ -20,6 +20,14 @@ export interface CognitoUser {
   sub: string;
 }
 
+/**
+ * Outcome of answering the SMS-OTP challenge: `tokens` on success, or `retry` with the fresh Cognito
+ * session to carry forward when the code was wrong but more attempts remain.
+ */
+export type RespondSmsOtpResult =
+  | { kind: "tokens"; result: AuthenticationResultType }
+  | { kind: "retry"; session: string };
+
 /** Map a Cognito AuthenticationResult to the AuthTokens contract; refresh reuses the prior token. */
 export function toAuthTokens(
   result: AuthenticationResultType,
@@ -114,12 +122,17 @@ export class Cognito {
     return { session: res.Session };
   }
 
-  /** Answer the SMS-OTP challenge; throws on a wrong/expired code (handled by the router). */
+  /**
+   * Answer the SMS-OTP challenge. `tokens` on success; `retry` (carrying a fresh Cognito session)
+   * when the code is wrong but Cognito re-issues the challenge — a wrong answer spends the session,
+   * so the caller must persist the new one to keep the same challengeId usable. Throws on a terminal
+   * failure (handled by the router via OTP_REJECTION_ERRORS).
+   */
   async respondSmsOtp(
     username: string,
     session: string,
     code: string,
-  ): Promise<AuthenticationResultType> {
+  ): Promise<RespondSmsOtpResult> {
     const res = await this.client.send(
       new AdminRespondToAuthChallengeCommand({
         UserPoolId: this.userPoolId,
@@ -129,8 +142,9 @@ export class Cognito {
         ChallengeResponses: { USERNAME: username, SMS_OTP_CODE: code },
       }),
     );
-    if (!res.AuthenticationResult) throw new Error("respondSmsOtp: no AuthenticationResult");
-    return res.AuthenticationResult;
+    if (res.AuthenticationResult) return { kind: "tokens", result: res.AuthenticationResult };
+    if (res.ChallengeName && res.Session) return { kind: "retry", session: res.Session };
+    throw new Error("respondSmsOtp: no AuthenticationResult");
   }
 
   /** Exchange a refresh token for fresh access/id tokens. */
