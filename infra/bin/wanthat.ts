@@ -64,10 +64,15 @@ new ApiStack(app, stackName(wanthatEnv, "api"), {
 
 new AdminStack(app, stackName(wanthatEnv, "admin"), {
   ...common,
-  userPool: identity.userPool,
-  userPoolClient: identity.userPoolClient,
+  // Admin API authorizes against the employee pool (ADR-0020 §two-pool); app-api keeps the customer
+  // pool above. A customer token therefore can't reach /admin.
+  employeePool: identity.employeePool,
+  employeePoolClient: identity.employeePoolClient,
   runtimeConfigTable: data.runtimeConfigTable,
   recommendationTable: data.recommendationTable,
+  vpc: network.vpc,
+  lambdaSg: network.lambdaSg,
+  cluster: data.cluster,
 });
 
 const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-services"), {

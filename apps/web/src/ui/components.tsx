@@ -267,3 +267,93 @@ export function Spinner() {
 export function Logo() {
   return <div className="font-display text-3xl font-bold text-accent">Wanthat</div>;
 }
+
+// Wordmark mark used on the admin sidebar: a rounded evergreen tile with a "W" monogram. Rendered as
+// markup (no binary asset) so it tints cleanly on the dark sidebar and mirrors with the layout.
+export function BrandMark({ size = 30 }: { size?: number }) {
+  return (
+    <span
+      aria-hidden
+      className="inline-flex shrink-0 items-center justify-center rounded-[9px] bg-accent font-display font-bold text-white"
+      style={{ width: size, height: size, fontSize: size * 0.5 }}
+    >
+      W
+    </span>
+  );
+}
+
+// Switch toggle (Wanthat Admin → booleans / auto-approve): a 46×27 pill whose 21px knob slides on the
+// inline (logical) axis, so it mirrors correctly in RTL. Track turns evergreen when on.
+export function Switch({
+  checked,
+  onChange,
+  label,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  label: string;
+}) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+      className={`relative h-[27px] w-[46px] shrink-0 rounded-full transition-colors ${
+        checked ? "bg-accent" : "bg-[#d2dad6]"
+      }`}
+    >
+      <span
+        aria-hidden
+        className="absolute top-[3px] h-[21px] w-[21px] rounded-full bg-surface shadow-[0_1px_2px_rgba(0,0,0,0.2)] transition-all"
+        style={{ insetInlineStart: checked ? 22 : 3 }}
+      />
+    </button>
+  );
+}
+
+// Range slider (Wanthat Admin → margins & rewards). The accent→line fill gradient is computed from the
+// value; in RTL the gradient and the native control both run end-to-start. `format` renders the live
+// numeric label (e.g. a percentage) beside the track.
+export function RangeSlider({
+  value,
+  min,
+  max,
+  step = 1,
+  onChange,
+  label,
+  format,
+}: {
+  value: number;
+  min: number;
+  max: number;
+  step?: number;
+  onChange: (value: number) => void;
+  label: string;
+  format?: (value: number) => string;
+}) {
+  const pct = max === min ? 0 : ((value - min) / (max - min)) * 100;
+  const rtl = typeof document !== "undefined" && document.documentElement.dir === "rtl";
+  const fillTo = rtl ? "left" : "right";
+  return (
+    <div className="flex items-center gap-4">
+      <input
+        type="range"
+        className="range flex-1"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        aria-label={label}
+        onChange={(e) => onChange(Number(e.target.value))}
+        style={{
+          background: `linear-gradient(to ${fillTo}, #1f7a57 ${pct}%, #e2e7e4 ${pct}%)`,
+        }}
+      />
+      <div className="tabular w-16 text-end font-display text-lg font-bold text-ink">
+        {format ? format(value) : value}
+      </div>
+    </div>
+  );
+}
