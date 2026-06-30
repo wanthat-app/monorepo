@@ -12,7 +12,9 @@ export interface IdentityStackProps extends StackProps {
 /** Per-env SNS monthly SMS spend hard cap (USD), the kill-switch fail-safe (ADR-0006 layer 4). */
 const SMS_MONTHLY_SPEND_LIMIT_USD: Record<WanthatEnv["name"], number> = {
   dev: 1,
-  prod: 25,
+  // Capped at the SMS-sandbox account ceiling ($1). Raise to 25 once AWS lifts the account-level SMS
+  // monthly spend limit (support case) and the account exits the SMS sandbox.
+  prod: 1,
 };
 
 /**
