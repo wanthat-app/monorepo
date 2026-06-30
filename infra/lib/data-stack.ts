@@ -103,7 +103,8 @@ export class DataStack extends Stack {
     // --- Aurora Serverless v2 (PII + ledger) — scale-to-zero, IAM auth, no RDS Proxy (ADR-0003) ---
     this.cluster = new rds.DatabaseCluster(this, "Aurora", {
       engine: rds.DatabaseClusterEngine.auroraPostgres({
-        version: rds.AuroraPostgresEngineVersion.VER_16_6,
+        // 16.13 is available in il-central-1 (16.6 is not) and supports serverless v2 min-ACU 0.
+        version: rds.AuroraPostgresEngineVersion.VER_16_13,
       }),
       vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
@@ -132,7 +133,10 @@ export class DataStack extends Stack {
       vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [lambdaSg],
-      reservedConcurrentExecutions: 1, // never migrate concurrently
+      // No reserved concurrency: a one-shot Trigger invokes this once per deploy, so it runs in the
+      // unreserved pool (reserving any concurrency needs account quota >= 21; see infra issues). The
+      // app-api/admin reserved budget (7/2) is the Aurora connection ceiling; this migrator isn't part
+      // of it. CDK's Trigger already serialises invocation, and migrations are transactional.
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         DB_SECRET_ARN: this.cluster.secret?.secretArn ?? "",
