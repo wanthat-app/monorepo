@@ -1,14 +1,16 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { completeAdminLogin, verifyAdminOauthState } from "../../lib/admin-login";
 import { Spinner } from "../../ui/components";
 
 /**
  * OAuth callback for the employee Managed Login flow (ADR-0020 §two-pool): verify CSRF `state`,
- * exchange the code for admin tokens, then route into the console. English/LTR like the rest of the
- * admin surface.
+ * exchange the code for admin tokens, then route into the console. Follows the document direction
+ * (RTL for Hebrew, the default) like the rest of the admin surface.
  */
 export function AdminCallbackPage() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const [error, setError] = useState(false);
 
@@ -31,11 +33,8 @@ export function AdminCallbackPage() {
   }, [navigate]);
 
   return (
-    <div
-      dir="ltr"
-      className="flex min-h-screen flex-col items-center justify-center gap-3 text-muted"
-    >
-      {error ? <p>Sign-in failed. Please try again.</p> : <Spinner />}
+    <div className="flex min-h-screen flex-col items-center justify-center gap-3 text-muted">
+      {error ? <p>{t("auth.errors.generic")}</p> : <Spinner />}
     </div>
   );
 }

@@ -22,3 +22,32 @@ export function groupsFromIdToken(idToken: string): string[] {
 export function isAdminToken(idToken: string | undefined): boolean {
   return idToken ? groupsFromIdToken(idToken).includes("admin") : false;
 }
+
+/**
+ * Read display identity (name + email) from an id token, for the admin user card only. Unverified,
+ * like {@link groupsFromIdToken}: it only labels the UI. Falls back through `name` → `given_name`.
+ */
+export function identityFromIdToken(idToken: string | undefined): {
+  name?: string;
+  email?: string;
+} {
+  if (!idToken) return {};
+  try {
+    const payload = idToken.split(".")[1];
+    if (!payload) return {};
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as Record<
+      string,
+      unknown
+    >;
+    const name =
+      typeof json.name === "string"
+        ? json.name
+        : typeof json.given_name === "string"
+          ? json.given_name
+          : undefined;
+    const email = typeof json.email === "string" ? json.email : undefined;
+    return { name, email };
+  } catch {
+    return {};
+  }
+}
