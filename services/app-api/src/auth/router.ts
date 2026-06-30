@@ -54,8 +54,9 @@ export function authRouter(): Hono {
     const ctx = getContext();
 
     if (!(await smsEnabled(ctx.config))) return c.json({ error: "sms_disabled" }, 503);
-    if (!(await withinVelocity(ctx.velocity, body.phone, nowEpoch())))
-      return c.json({ error: "rate_limited" }, 429);
+    const gate = await withinVelocity(ctx.config, ctx.velocity, body.phone, nowEpoch());
+    if (!gate.allowed)
+      return c.json({ error: "rate_limited", retryAfterSec: gate.retryAfterSec }, 429);
 
     const existing = await ctx.cognito.getUserByPhone(body.phone);
     const user = existing ?? (await ctx.cognito.createUser(body.phone));
@@ -96,6 +97,10 @@ export function authRouter(): Hono {
     const now = nowEpoch();
     if (now < challenge.resendAfterEpoch) return c.json({ error: "rate_limited" }, 429);
     if (!(await smsEnabled(ctx.config))) return c.json({ error: "sms_disabled" }, 503);
+    // The 30s cooldown caps burst; the velocity gate caps total sends per phone (ADR-0006).
+    const gate = await withinVelocity(ctx.config, ctx.velocity, challenge.phone, now);
+    if (!gate.allowed)
+      return c.json({ error: "rate_limited", retryAfterSec: gate.retryAfterSec }, 429);
 
     const { session } = await ctx.cognito.startSmsOtp(challenge.username);
     await ctx.challenges.putChallenge({
@@ -134,8 +139,19 @@ export function authRouter(): Hono {
       throw err;
     }
 
+    // Wrong code, but Cognito re-issued the challenge: persist the NEW session under the SAME
+    // challengeId so the next attempt works without a /resend, and count the failed try.
+    if (result.kind === "retry") {
+      await ctx.challenges.putChallenge({
+        ...challenge,
+        cognitoSession: result.session,
+        attempts: challenge.attempts + 1,
+      });
+      return c.json({ error: "invalid_code" }, 401);
+    }
+
     await ctx.challenges.deleteChallenge(challenge.challengeId);
-    const tokens = toAuthTokens(result);
+    const tokens = toAuthTokens(result.result);
     const customer = await findByCognitoSub(ctx.db, challenge.sub);
 
     if (customer) {

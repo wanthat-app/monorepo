@@ -13,10 +13,15 @@ export class PhoneVelocityRepo {
   ) {}
 
   /**
-   * Atomically increment the counter for `phoneHash` and return the new count. `nowEpoch` is Unix
-   * seconds (passed in for testability); the TTL is set only on first write within the window.
+   * Atomically increment the counter for `phoneHash` and return the new `count` plus the window's
+   * `ttl` (Unix seconds), so the caller can derive a retry-after when over the cap. `nowEpoch` is
+   * Unix seconds (passed in for testability); the TTL is set only on first write within the window.
    */
-  async hit(phoneHash: string, windowSeconds: number, nowEpoch: number): Promise<number> {
+  async hit(
+    phoneHash: string,
+    windowSeconds: number,
+    nowEpoch: number,
+  ): Promise<{ count: number; ttl: number }> {
     const res = await this.doc.send(
       new UpdateCommand({
         TableName: this.tableName,
@@ -27,6 +32,9 @@ export class PhoneVelocityRepo {
         ReturnValues: "UPDATED_NEW",
       }),
     );
-    return Number(res.Attributes?.count ?? 0);
+    return {
+      count: Number(res.Attributes?.count ?? 0),
+      ttl: Number(res.Attributes?.ttl ?? nowEpoch + windowSeconds),
+    };
   }
 }
