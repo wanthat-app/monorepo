@@ -8,6 +8,7 @@
     "lint": {},
     "synth": { "dependsOn": ["^build"], "outputs": ["cdk.out/**"], "env": ["WANTHAT_ENV"] },
     "diff": { "dependsOn": ["^build"], "cache": false, "env": ["WANTHAT_ENV"] },
-    "deploy": { "dependsOn": ["^build"], "cache": false, "env": ["WANTHAT_ENV"] }
+    "deploy": { "dependsOn": ["^build"], "cache": false, "env": ["WANTHAT_ENV"] },
+    "deploy:dev": { "dependsOn": ["^build"], "cache": false, "env": ["WANTHAT_ENV"] }
   }
 }

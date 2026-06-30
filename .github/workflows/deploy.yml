@@ -62,7 +62,15 @@ jobs:
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
-      - run: pnpm run deploy # cdk deploy (prod gated by Environment approval)
+      # cdk deploy (prod gated by Environment approval). Both paths use --concurrency to deploy
+      # independent stacks in parallel and skip unchanged ones (CDK no-ops them). dev additionally uses
+      # --hotswap-fallback: Lambda code/env/asset changes patch the function directly (seconds),
+      # falling back to a full CloudFormation deploy for anything it can't hotswap. Hotswap is
+      # dev-only — it bypasses CloudFormation and causes drift, so prod always goes through CFN.
+      # Caveat: hotswap will not re-fire the migrator Trigger (a custom resource), so a NEW migration
+      # needs a normal deploy — run `pnpm run deploy` (or merge to main) for those.
+      - run: |
+          if [ "$WANTHAT_ENV" = "prod" ]; then pnpm run deploy; else pnpm run deploy:dev; fi
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1

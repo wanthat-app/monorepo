@@ -8,7 +8,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "synth": "cdk synth",
     "diff": "cdk diff --all",
-    "deploy": "cdk deploy --all --require-approval never",
+    "deploy": "cdk deploy --all --require-approval never --concurrency 4",
+    "deploy:dev": "cdk deploy --all --require-approval never --concurrency 4 --hotswap-fallback",
     "test": "echo \"no tests yet\""
   },
   "dependencies": {
