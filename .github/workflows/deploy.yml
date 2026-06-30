@@ -82,14 +82,12 @@ jobs:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
           WANTHAT_VERSION: ${{ steps.ver.outputs.version }}
-      # --concurrency deploys independent stacks in parallel and skips unchanged ones (CDK no-ops them).
-      # dev uses --hotswap-fallback (deploy:dev): Lambda code/env/asset changes patch the function
-      # directly (seconds), full-CloudFormation fallback otherwise. Hotswap is dev-only — it bypasses
-      # CloudFormation and causes drift, so prod always goes through CFN. Caveat: hotswap won't re-fire
-      # the migrator Trigger (a custom resource), so a NEW migration needs `pnpm run deploy`.
+      # cdk deploy --all --concurrency: independent stacks deploy in parallel, unchanged ones are
+      # no-op'd. Goes through the assumed cdk-* bootstrap (CFN exec) role. NOTE: no --hotswap-fallback
+      # — hotswap mutates resources with the *bare* deploy role, but that role is intentionally
+      # assume-only/least-privilege (ADR-0015), so hotswap is AccessDenied. Same path for dev + prod.
       - name: Deploy
-        run: |
-          if [ "$WANTHAT_ENV" = "prod" ]; then pnpm run deploy; else pnpm run deploy:dev; fi
+        run: pnpm run deploy
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
