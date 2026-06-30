@@ -42,13 +42,13 @@ export class NetworkStack extends Stack {
     this.lambdaSg = new ec2.SecurityGroup(this, "LambdaSg", {
       vpc: this.vpc,
       description:
-        "In-VPC Lambdas (app-api, admin, poller-writer, migrator) — egress to Aurora + endpoints",
+        "In-VPC Lambdas (app-api, admin, poller-writer, migrator) - egress to Aurora + endpoints",
       allowAllOutbound: true,
     });
 
     this.auroraSg = new ec2.SecurityGroup(this, "AuroraSg", {
       vpc: this.vpc,
-      description: "Aurora Serverless v2 — Postgres ingress from in-VPC Lambdas only",
+      description: "Aurora Serverless v2 - Postgres ingress from in-VPC Lambdas only",
       allowAllOutbound: false,
     });
     this.auroraSg.addIngressRule(this.lambdaSg, ec2.Port.tcp(5432), "Postgres from in-VPC Lambdas");
@@ -62,7 +62,7 @@ export class NetworkStack extends Stack {
     // SG would need a self-referencing 443 rule).
     const endpointSg = new ec2.SecurityGroup(this, "EndpointSg", {
       vpc: this.vpc,
-      description: "VPC interface endpoints — HTTPS ingress from in-VPC Lambdas only",
+      description: "VPC interface endpoints - HTTPS ingress from in-VPC Lambdas only",
       allowAllOutbound: false,
     });
     endpointSg.addIngressRule(this.lambdaSg, ec2.Port.tcp(443), "HTTPS from in-VPC Lambdas");

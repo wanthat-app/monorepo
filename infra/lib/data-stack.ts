@@ -97,7 +97,7 @@ export class DataStack extends Stack {
     // Secret-scoped retailer (AliExpress) credential — created empty, populated out-of-band.
     this.retailerSecret = new secretsmanager.Secret(this, "RetailerCredential", {
       secretName: `wanthat/${wanthatEnv.name}/retailer/aliexpress`,
-      description: "AliExpress affiliate app key/secret — populate out-of-band (never in the repo)",
+      description: "AliExpress affiliate app key/secret - populate out-of-band (never in the repo)",
     });
 
     // --- Aurora Serverless v2 (PII + ledger) — scale-to-zero, IAM auth, no RDS Proxy (ADR-0003) ---
