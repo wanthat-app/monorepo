@@ -1,0 +1,75 @@
+name: Check Deploy
+
+# PR dry run: synth + `cdk diff` against the deployed **dev** stacks (no mutation) — i.e. what merging
+# this PR to main would deploy — with an **explicit warning if the change would DELETE or REPLACE
+# infrastructure** (e.g. a stale branch that would tear down Aurora). PRs never deploy; the real apply
+# is deploy.yml, on merge to main.
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: check-deploy-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  id-token: write # OIDC — to read deployed stack state for the diff
+  contents: read
+
+jobs:
+  check-deploy:
+    runs-on: ubuntu-latest
+    # The dev GitHub Environment carries CDK_DEPLOY_ROLE_ARN (env-scoped var); dev has no required
+    # reviewers, so this doesn't gate the PR. (A read-only diff role would be tighter — see below.)
+    environment: dev
+    env:
+      WANTHAT_ENV: dev # diff against dev — that is what a merge to main deploys
+      FORCE_COLOR: "0" # plain output so the destructive-change grep is reliable
+    steps:
+      - uses: actions/checkout@v5
+      - uses: pnpm/action-setup@v6 # version read from package.json "packageManager"
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - uses: aws-actions/configure-aws-credentials@v6
+        id: aws
+        with:
+          # diff is read-only, but a PR can edit this workflow — a dedicated read-only role
+          # (vars.CDK_DIFF_ROLE_ARN) is the safer long-term setup than reusing the deploy role.
+          role-to-assume: ${{ vars.CDK_DEPLOY_ROLE_ARN }}
+          aws-region: il-central-1
+      - name: Check Deploy (cdk diff dry run + destructive-change warning)
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
+          CDK_DEFAULT_REGION: il-central-1
+        run: |
+          set -uo pipefail
+          # Match the version dev was deployed with (latest tag) so the diff doesn't show a spurious
+          # `version` tag change on every resource.
+          git fetch --tags --force >/dev/null 2>&1 || true
+          WANTHAT_VERSION=$(git tag -l 'v*.*.*' | sort -V | tail -1); export WANTHAT_VERSION=${WANTHAT_VERSION:-v0.0.0}
+          echo "Diffing dev with version=$WANTHAT_VERSION"
+          # Dry run: synth + diff vs the deployed dev stacks. No mutation.
+          pnpm run diff 2>&1 | sed -r 's/\x1b\[[0-9;]*m//g' | tee diff.out
+          diff_status=${PIPESTATUS[0]}
+          # Flag destructive changes — resource removals ([-] AWS::...) or replacements.
+          destructive=$(grep -niE '\[-\][[:space:]]*AWS::|requires replacement|may be replaced|[[:space:]]replace([[:space:]]|$)|[[:space:]]destroy([[:space:]]|$)' diff.out || true)
+          {
+            echo "## Check Deploy (dry run vs dev)"
+            if [ -n "$destructive" ]; then
+              echo "### ⚠️ DESTRUCTIVE — merging this PR would DELETE or REPLACE infrastructure:"
+              echo '```'
+              echo "$destructive"
+              echo '```'
+              echo "If that is not intended, the branch is probably stale — rebase on \`main\`."
+            else
+              echo "✅ No destructive changes (no resource deletions or replacements)."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          if [ -n "$destructive" ]; then
+            echo "::warning title=Destructive deploy::Merging this PR would DELETE or REPLACE infrastructure — see the Check Deploy job summary."
+          fi
+          # Fail only if synth/diff itself errored (not merely because a diff exists).
+          exit "$diff_status"

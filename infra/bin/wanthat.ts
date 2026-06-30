@@ -33,6 +33,10 @@ const common = { env, wanthatEnv };
 
 cdk.Tags.of(app).add("app", "wanthat");
 cdk.Tags.of(app).add("env", wanthatEnv.name);
+// Stamp every resource with the deploy version (set by the Deploy workflow; `0.0.0` for a local
+// synth). A manual prod deploy advances the least-significant version segment and tags the commit —
+// see deploy.yml.
+cdk.Tags.of(app).add("version", process.env.WANTHAT_VERSION ?? "0.0.0");
 
 const network = new NetworkStack(app, stackName(wanthatEnv, "network"), common);
 const data = new DataStack(app, stackName(wanthatEnv, "data"), {

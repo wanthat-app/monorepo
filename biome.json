@@ -18,7 +18,6 @@
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
       "suspicious": {
         "useBiomeIgnoreFolder": "off"
       }

@@ -14,9 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
-      - uses: pnpm/action-setup@v5
-        with:
-          version: 9.7.0
+      - uses: pnpm/action-setup@v6 # version read from package.json "packageManager"
       - uses: actions/setup-node@v5
         with:
           node-version-file: .nvmrc
