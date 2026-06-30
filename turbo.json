@@ -6,9 +6,21 @@
     "typecheck": { "dependsOn": ["^build"] },
     "test": { "dependsOn": ["^build"] },
     "lint": {},
-    "synth": { "dependsOn": ["^build"], "outputs": ["cdk.out/**"], "env": ["WANTHAT_ENV", "WANTHAT_VERSION"] },
+    "synth": {
+      "dependsOn": ["^build"],
+      "outputs": ["cdk.out/**"],
+      "env": ["WANTHAT_ENV", "WANTHAT_VERSION"]
+    },
     "diff": { "dependsOn": ["^build"], "cache": false, "env": ["WANTHAT_ENV", "WANTHAT_VERSION"] },
-    "deploy": { "dependsOn": ["^build"], "cache": false, "env": ["WANTHAT_ENV", "WANTHAT_VERSION"] },
-    "deploy:dev": { "dependsOn": ["^build"], "cache": false, "env": ["WANTHAT_ENV", "WANTHAT_VERSION"] }
+    "deploy": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": ["WANTHAT_ENV", "WANTHAT_VERSION"]
+    },
+    "deploy:dev": {
+      "dependsOn": ["^build"],
+      "cache": false,
+      "env": ["WANTHAT_ENV", "WANTHAT_VERSION"]
+    }
   }
 }

@@ -19,6 +19,9 @@ permissions:
 jobs:
   check-deploy:
     runs-on: ubuntu-latest
+    # The dev GitHub Environment carries CDK_DEPLOY_ROLE_ARN (env-scoped var); dev has no required
+    # reviewers, so this doesn't gate the PR. (A read-only diff role would be tighter — see below.)
+    environment: dev
     env:
       WANTHAT_ENV: dev # diff against dev — that is what a merge to main deploys
       FORCE_COLOR: "0" # plain output so the destructive-change grep is reliable
