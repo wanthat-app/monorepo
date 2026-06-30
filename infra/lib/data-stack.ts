@@ -2,6 +2,7 @@ import { Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
@@ -13,6 +14,7 @@ import {
   migratorBundling,
   RDS_CA_ENV,
   serviceEntry,
+  serviceLogGroup,
   type WanthatEnv,
 } from "./config";
 
@@ -145,6 +147,11 @@ export class DataStack extends Stack {
       runtime: LAMBDA_RUNTIME,
       memorySize: 256,
       timeout: Duration.minutes(5), // generous for a cold scale-to-zero resume
+      // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability). The
+      // ObservabilityStack does NOT alarm this one-shot's errors (a failed migration surfaces via the
+      // deploy itself), but its logs/traces are still retained for post-mortems.
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "DbMigratorLogs", wanthatEnv),
       vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [lambdaSg],

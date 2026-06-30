@@ -8,7 +8,8 @@ Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices 
 > `WANTHAT_ENV`; account resolved from the deploy credentials, not pinned in the repo). The auth
 > slice (UC1/UC2, ADR-0020) added **`NetworkStack` (the VPC) + Aurora Serverless v2** to `DataStack`
 > and a one-shot in-VPC migration runner; `app-api`/`admin` move in-VPC with their auth backends.
-> Still deferred: **Firehose/Athena + cross-region backup** in `DataStack`, and `ObservabilityStack`.
+> `ObservabilityStack` is now wired (starter scope; see its row). Still deferred: **Firehose/Athena +
+> cross-region backup** in `DataStack`.
 > The custom domain (ACM + Route 53 alias) is wired only in prod (`wanthat.app`); dev runs on the
 > default `*.cloudfront.net` hostname. Service handlers return `501` until their feature slices land.
 
@@ -21,7 +22,7 @@ Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices 
 | `AdminStack` | admin Lambda (**in-VPC**, own role/exposure) | 0002 |
 | `EdgeServicesStack` | landing Lambda (**non-VPC** → DynamoDB); conversion poller as a **non-VPC fetcher + in-VPC writer**; retailer fetcher(s) (non-VPC, secret-scoped); EventBridge Scheduler (configurable period) | 0007, 0009, 0008, 0004 |
 | `EdgeStack` (**us-east-1**) | One CloudFront distribution: **default → S3 SPA** (OAC, private), **`/p/*` → landing HTTP API** (cross-region origin); CloudFront WAF web ACL; ACM cert + Route 53 apex alias (prod). app-api/admin reached directly via Bearer, not fronted | 0019, 0016, 0007 |
-| `ObservabilityStack` | dashboards, alarms (SMS spend/rate, poll lag, redirect p95), CloudTrail alarm on the retailer secret | 0006, 0002 |
+| `ObservabilityStack` (**deploys last**) | SNS alarm topic (`wanthat-{env}-alarms`, optional email sub); alarms for SMS month-to-date spend (80% of the IdentityStack cap), per-Lambda errors, per-HTTP-API 5xx, Aurora connections (80% of the 50 cap); per-surface CloudWatch dashboard (API count/5xx/p95, Lambda errors/throttles/p95, Aurora ACU+connections, SMS spend vs cap). Also sets **X-Ray tracing + retention-bounded log groups** on every application Lambda (via `config.serviceLogGroup`). Follow-ups: CloudFront/WAF dashboards (us-east-1), CloudTrail alarm on retailer-secret reads, business/funnel metrics | 0006, 0002 |
 
 Notes:
 - **No NAT Gateway and no RDS Proxy** (ADR-0003/0004). The only functions in the VPC are the ones

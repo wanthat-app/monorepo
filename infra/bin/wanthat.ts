@@ -7,8 +7,9 @@ import { DataStack } from "../lib/data-stack";
 import { DnsStack } from "../lib/dns-stack";
 import { EdgeServicesStack } from "../lib/edge-services-stack";
 import { EdgeStack } from "../lib/edge-stack";
-import { IdentityStack } from "../lib/identity-stack";
+import { IdentityStack, SMS_MONTHLY_SPEND_LIMIT_USD } from "../lib/identity-stack";
 import { NetworkStack } from "../lib/network-stack";
+import { ObservabilityStack } from "../lib/observability-stack";
 
 /**
  * Wanthat infrastructure entrypoint (AWS CDK).
@@ -19,13 +20,15 @@ import { NetworkStack } from "../lib/network-stack";
  * fixed per env. Stacks are sliced per ADR-0002/0003/0004/0005.
  *
  * **Incremental rollout:** stacks (and resources within them) are wired in one at a time, each
- * proven through the CI/CD pipeline before the next is added. Deferred entirely: ObservabilityStack.
+ * proven through the CI/CD pipeline before the next is added.
  *
  * The us-east-1 **EdgeStack** (CloudFront + ACM + WAF) fronts the landing HTTP API (in il-central-1)
  * on `/p/*`, so EdgeServices (producer) and Edge (consumer) both set `crossRegionReferences: true`.
  *
+ * Order: Network -> Data -> Identity -> Api / Admin / EdgeServices -> Edge -> Observability (last).
+ *
  * Wired: NetworkStack, DataStack, IdentityStack, ApiStack, AdminStack, EdgeServicesStack, EdgeStack,
- * DnsStack (prod).
+ * DnsStack (prod), ObservabilityStack.
  */
 const app = new cdk.App();
 const wanthatEnv = resolveEnv(process.env.WANTHAT_ENV ?? app.node.tryGetContext("env"));
@@ -48,7 +51,7 @@ const data = new DataStack(app, stackName(wanthatEnv, "data"), {
   lambdaSg: network.lambdaSg,
 });
 const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), common);
-new ApiStack(app, stackName(wanthatEnv, "api"), {
+const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   ...common,
   userPool: identity.userPool,
   userPoolClient: identity.userPoolClient,
@@ -62,7 +65,7 @@ new ApiStack(app, stackName(wanthatEnv, "api"), {
   cluster: data.cluster,
 });
 
-new AdminStack(app, stackName(wanthatEnv, "admin"), {
+const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   ...common,
   // Admin API authorizes against the employee pool (ADR-0020 §two-pool); app-api keeps the customer
   // pool above. A customer token therefore can't reach /admin.
@@ -91,6 +94,29 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
   wanthatEnv,
   crossRegionReferences: true,
   landingApiId: edgeServices.landingApi.apiId,
+});
+
+// ObservabilityStack deploys LAST — it only references resources the other il-central-1 stacks
+// already created (the HTTP APIs, the application Lambdas, and the Aurora cluster). The db-migrator is
+// intentionally excluded from the per-Lambda error alarms: a failed one-shot migration surfaces via
+// the deploy, not steady-state alarms.
+new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
+  ...common,
+  httpApis: [
+    { label: "app-api", api: api.httpApi },
+    { label: "admin-api", api: admin.httpApi },
+    { label: "landing", api: edgeServices.landingApi },
+  ],
+  functions: [
+    { label: "app-api", fn: api.appApiFn },
+    { label: "admin-api", fn: admin.adminApiFn },
+    { label: "landing", fn: edgeServices.landingFn },
+    { label: "retailer-proxy", fn: edgeServices.retailerProxyFn },
+    { label: "conversion-poller", fn: edgeServices.conversionPollerFn },
+    { label: "fx-rates", fn: edgeServices.fxRatesFn },
+  ],
+  cluster: data.cluster,
+  smsSpendLimitUsd: SMS_MONTHLY_SPEND_LIMIT_USD[wanthatEnv.name],
 });
 
 // DnsStack — domain verification / mail records (Zoho) in the existing Route 53 zone. Only where a
