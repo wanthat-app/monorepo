@@ -31,3 +31,31 @@ Notes:
   fetchers.
 - The `EdgeStack` resources (ACM cert + CloudFront WAF) must live in **us-east-1** — control-plane
   only; traffic still terminates at the edge near the user. Everything else is `il-central-1`.
+
+## Runbook — first-admin bootstrap (employee pool)
+
+The admin surface authenticates against the **employee** Cognito pool (ADR-0020 §two-pool, decision
+6), which has **no self-signup** — staff are provisioned, never registered. The very first admin is
+created out-of-band by an operator; everyone after that can be added the same way (or, later, from
+the console). This is the only manual identity step, and every command below is CloudTrail-audited.
+
+Take the employee pool id from the `IdentityStack` output `EmployeePoolIdOut` (`aws cloudformation
+describe-stacks --stack-name wanthat-<env>-identity`), then, for each new admin:
+
+```bash
+# 1. Create the employee (no password — Cognito emails a one-time temporary password).
+aws cognito-idp admin-create-user \
+  --user-pool-id <employeePoolId> \
+  --username <email> \
+  --user-attributes Name=email,Value=<email> Name=email_verified,Value=true
+
+# 2. Put them in the `admin` group (the claim the admin-api authorizer + in-handler guard check).
+aws cognito-idp admin-add-user-to-group \
+  --user-pool-id <employeePoolId> \
+  --group-name admin \
+  --username <email>
+```
+
+On first sign-in through the admin hosted UI (`AdminLoginBaseUrl`, reached via the SPA `/admin`
+route), the employee sets a permanent password and **enrols a TOTP authenticator** (MFA is mandatory
+on this pool). No further out-of-band steps; routine config/stats are managed in the console.

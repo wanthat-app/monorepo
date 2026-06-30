@@ -1,25 +1,38 @@
 import type { ConfigItem, ConfigValue } from "@wanthat/contracts";
 import { useCallback, useEffect, useState } from "react";
 import { adminApi, type StatsOverview } from "../../lib/admin-api";
-import { useSession } from "../../lib/session";
+import {
+  beginAdminLogin,
+  clearAdminTokens,
+  isAdminSession,
+  loadAdminTokens,
+} from "../../lib/admin-login";
 import { Button, Card, Spinner } from "../../ui/components";
 
 /**
  * Admin console (Wanthat Admin) — desktop, English/LTR. Config editor (full CRUD over the typed keys)
  * + a stats panel whose users count is live (Aurora COUNT) and whose other metrics are placeholders.
- * Gated on the `admin` group client-side; admin-api re-enforces it server-side.
+ *
+ * Authenticated against the **employee** Cognito pool (ADR-0020 §two-pool), separate from the customer
+ * session: an admin token is obtained via the employee hosted UI (`/admin/callback`). Without one we
+ * redirect to that login; the `admin` group gates the UI client-side and admin-api re-enforces it.
  */
 export function AdminPage() {
-  const { isAdmin, loading, accessToken } = useSession();
+  const tokens = loadAdminTokens();
 
-  if (loading) {
+  // No admin token yet → bounce to the employee hosted UI (email + password + TOTP).
+  useEffect(() => {
+    if (!tokens) void beginAdminLogin();
+  }, [tokens]);
+
+  if (!tokens) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <Spinner />
       </div>
     );
   }
-  if (!isAdmin) {
+  if (!isAdminSession(tokens)) {
     return (
       <div dir="ltr" className="flex min-h-screen items-center justify-center text-muted">
         Not authorised.
@@ -27,11 +40,21 @@ export function AdminPage() {
     );
   }
 
+  const signOut = () => {
+    clearAdminTokens();
+    void beginAdminLogin();
+  };
+
   return (
     <div dir="ltr" className="mx-auto flex min-h-screen max-w-4xl flex-col gap-6 p-8">
-      <h1 className="text-3xl">Wanthat Admin</h1>
-      <StatsPanel token={accessToken()} />
-      <ConfigPanel token={accessToken()} />
+      <div className="flex items-center justify-between">
+        <h1 className="text-3xl">Wanthat Admin</h1>
+        <button type="button" className="text-sm text-muted hover:text-ink" onClick={signOut}>
+          Sign out
+        </button>
+      </div>
+      <StatsPanel token={tokens.accessToken} />
+      <ConfigPanel token={tokens.accessToken} />
     </div>
   );
 }

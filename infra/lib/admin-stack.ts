@@ -13,8 +13,11 @@ import { applyThrottle, LAMBDA_RUNTIME, serviceEntry, THROTTLING, type WanthatEn
 
 export interface AdminStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
-  readonly userPool: cognito.IUserPool;
-  readonly userPoolClient: cognito.IUserPoolClient;
+  // Employee/admin pool, not the customer pool (ADR-0020 §two-pool): a customer token structurally
+  // can't satisfy this authorizer, so it can't reach /admin. The in-handler `admin` group check stays
+  // as defence-in-depth.
+  readonly employeePool: cognito.IUserPool;
+  readonly employeePoolClient: cognito.IUserPoolClient;
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
   readonly vpc: ec2.IVpc;
@@ -65,8 +68,8 @@ export class AdminStack extends Stack {
     const integration = new HttpLambdaIntegration("AdminApiIntegration", fn);
     const authorizer = new HttpJwtAuthorizer(
       "CognitoAuthorizer",
-      `https://cognito-idp.${this.region}.amazonaws.com/${props.userPool.userPoolId}`,
-      { jwtAudience: [props.userPoolClient.userPoolClientId] },
+      `https://cognito-idp.${this.region}.amazonaws.com/${props.employeePool.userPoolId}`,
+      { jwtAudience: [props.employeePoolClient.userPoolClientId] },
     );
 
     this.httpApi = new HttpApi(this, "HttpApi", { apiName: `wanthat-${wanthatEnv.name}-admin` });

@@ -9,6 +9,10 @@ interface ImportMetaEnv {
   readonly VITE_MANAGED_LOGIN_URL?: string;
   /** Cognito SPA app client id (public). */
   readonly VITE_USER_POOL_CLIENT_ID?: string;
+  /** Employee pool Managed Login base URL for the admin console OAuth flow. */
+  readonly VITE_ADMIN_MANAGED_LOGIN_URL?: string;
+  /** Employee pool admin SPA app client id (public). */
+  readonly VITE_ADMIN_POOL_CLIENT_ID?: string;
 }
 
 interface ImportMeta {
