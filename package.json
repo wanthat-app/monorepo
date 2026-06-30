@@ -14,7 +14,8 @@
     "format": "biome format --write .",
     "synth": "turbo run synth --filter=@wanthat/infra",
     "diff": "turbo run diff --filter=@wanthat/infra",
-    "deploy": "turbo run deploy --filter=@wanthat/infra"
+    "deploy": "turbo run deploy --filter=@wanthat/infra",
+    "deploy:dev": "turbo run deploy:dev --filter=@wanthat/infra"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.0.0",

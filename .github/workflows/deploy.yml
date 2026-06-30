@@ -1,16 +1,17 @@
 name: Deploy
 
-# OIDC-assumed per-environment role (no static keys); cdk diff gate; prod behind a
-# GitHub Environment approval (ADR-0015). A push to main auto-deploys dev; a PR (targeting main)
-# deploys to dev only once it is **out of draft** (ready for review) — the PR run is a deploy
-# *attempt* that surfaces deploy-time failures (e.g. an unsupported resource) before merge.
-# workflow_dispatch promotes to prod.
+# OIDC-assumed per-environment role (no static keys); prod behind a GitHub Environment approval
+# (ADR-0015). **Only `main` deploys to the shared dev env** — a push to main auto-deploys dev, and
+# workflow_dispatch promotes to prod. **PRs run `cdk diff` only, never deploy:** dev is a single shared
+# environment, so a PR deploying `--all` from its (possibly stale) base would revert whatever another
+# branch deployed — e.g. a main-based PR would tear down infra that an unmerged feature branch added.
+# So the model is: review PR (CI + diff) -> merge to main in order -> the merge deploys.
 on:
   push:
     branches: [main]
   pull_request:
     branches: [main]
-    # `ready_for_review` so taking a PR out of draft triggers the deploy attempt.
+    # `ready_for_review` so taking a PR out of draft runs the diff gate (PRs diff only, never deploy).
     types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
@@ -33,7 +34,8 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # On PRs, deploy only once the PR is out of draft (ready for review); push/dispatch always run.
+    # On PRs (out of draft) this job runs the diff gate only; the deploy + reconcile steps below are
+    # gated to push/dispatch. push/dispatch run the full deploy.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     environment: ${{ github.event.inputs.environment || 'dev' }}
     env:
@@ -62,13 +64,25 @@ jobs:
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
-      - run: pnpm run deploy # cdk deploy (prod gated by Environment approval)
+      # cdk deploy (prod gated by Environment approval). Both paths use --concurrency to deploy
+      # independent stacks in parallel and skip unchanged ones (CDK no-ops them). dev additionally uses
+      # --hotswap-fallback: Lambda code/env/asset changes patch the function directly (seconds),
+      # falling back to a full CloudFormation deploy for anything it can't hotswap. Hotswap is
+      # dev-only — it bypasses CloudFormation and causes drift, so prod always goes through CFN.
+      # Caveat: hotswap will not re-fire the migrator Trigger (a custom resource), so a NEW migration
+      # needs a normal deploy — run `pnpm run deploy` (or merge to main) for those.
+      - name: Deploy (main push / dispatch only — PRs are diff-only, never deploy to shared dev)
+        if: github.event_name != 'pull_request'
+        run: |
+          if [ "$WANTHAT_ENV" = "prod" ]; then pnpm run deploy; else pnpm run deploy:dev; fi
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
       # Drift guard: fail if a `wanthat-<env>-*` stack is deployed but no longer in code
-      # (an orphan). CDK never deletes stacks removed from the app, so we catch them here.
+      # (an orphan). CDK never deletes stacks removed from the app, so we catch them here. Only after a
+      # real deploy (main/dispatch) — on a PR the deployed state legitimately differs from the PR's code.
       - name: Reconcile deployed stacks vs code
+        if: github.event_name != 'pull_request'
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
