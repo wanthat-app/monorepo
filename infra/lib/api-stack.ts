@@ -60,11 +60,10 @@ export class ApiStack extends Stack {
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
-      // Aurora connection ceiling (ADR-0002, no RDS Proxy): the in-VPC functions share a fixed
-      // reserved-concurrency budget of 10 = max concurrent DB connections. Split app:7 / admin:2 /
-      // migrator:1. Requires the account's Lambda "Concurrent executions" quota >= 20 (10 reserved +
-      // the 10 unreserved AWS keeps free).
-      reservedConcurrentExecutions: 7,
+      // No reserved concurrency: the account's Lambda concurrency limit (10) is itself the cap, and
+      // app-api is DynamoDB-hot (Aurora holds only PII + ledger, ADR-0003), so its Aurora connection
+      // pressure is minimal vs max_connections=50. Re-introduce a reserved budget (app 7 / admin 2 /
+      // migrator 1) once the account quota is raised — see infra issue (ADR-0002).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
