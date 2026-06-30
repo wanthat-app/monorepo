@@ -52,8 +52,23 @@ and ADR-0006 stay **Accepted** rather than fully superseded.
 
 5. **`customer.cognito_sub` is the stable Cognito↔customer link.** Phone is mutable and is the
    Cognito sign-in alias, so it is unsuitable as the join key. Migration `0002_auth.sql` adds
-   `cognito_sub text` + a unique index; `/auth/register` inserts with `ON CONFLICT (cognito_sub) DO
-   NOTHING` for idempotency under retries.
+   `cognito_sub text NOT NULL` + a unique index; `/auth/register` inserts with `ON CONFLICT
+   (cognito_sub) DO NOTHING` for idempotency under retries. **NOT NULL is deliberate (fail-fast):** a
+   customer is always provisioned with its sub, so a missing one is a bug the DB rejects at INSERT
+   (registration retries) rather than persisting an unlinkable PII row. Safe with no backfill because
+   `0001` creates `customer` empty.
+
+6. **Two Cognito pools, split by population — customers vs. employees.** Admins are company staff, not
+   customers: different trust level, lifecycle, and auth method. Rather than one pool split by an
+   `admin` group, staff get a **separate `employeePool`** — **no self-signup** (provisioned via
+   `admin-create-user`), **email + mandatory TOTP MFA** (no SMS, so staff auth sits off the SMS-abuse
+   surface the customer pool is hardened against), and its own Managed Login hosted UI. The admin API
+   authorizer points at this pool, so a customer token **structurally cannot** reach `/admin` — a
+   boundary, not just an in-handler group check (the in-handler `admin`-group check is kept as
+   defence-in-depth). **First-admin bootstrap:** an operator with AWS access runs `admin-create-user`
+   for the employee's email once, then `admin-add-user-to-group --group-name admin`; the employee sets
+   a password and enrols TOTP on first hosted-UI login. No standing privilege, CloudTrail-audited.
+   Doing this now (zero admins exist) avoids a later pool migration.
 
 ## Alternatives considered
 
@@ -65,6 +80,10 @@ and ADR-0006 stay **Accepted** rather than fully superseded.
 - **Withholding OTP from unknown numbers** — leaks which numbers are registered via response/timing
   differences unless carefully equalised anyway, and complicates the single-call onboarding; rejected
   in favour of uniform responses + the existing abuse controls.
+- **One pool, admins as an `admin` group** — couples privileged staff access to the customer pool's
+  abuse surface, forces consumer SMS-OTP onto staff, and reduces the boundary to an in-handler claim
+  check; rejected in favour of a separate employee pool (decision 6). Cheapest to split now, before
+  any admin exists.
 
 ## Consequences
 

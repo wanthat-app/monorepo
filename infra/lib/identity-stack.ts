@@ -1,4 +1,4 @@
-import { Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
+import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
@@ -25,11 +25,23 @@ const SMS_MONTHLY_SPEND_LIMIT_USD: Record<WanthatEnv["name"], number> = {
  * No Post-Confirmation trigger (ADR-0020): the `customer` row is provisioned by `/auth/register`,
  * since `first_name`/`last_name` are only known then. The SMS kill switch is the DynamoDB
  * `auth.smsEnabled` config key (read by app-api), backstopped here by the SNS monthly spend cap.
+ *
+ * **Two pools, by population (ADR-0020 §two-pool).** Customers and employees are different
+ * populations with different trust levels and lifecycles, so they get separate user pools rather than
+ * one pool split by group. The `employeePool` below is for company staff: **no self-signup**
+ * (provisioned only), email + **mandatory TOTP MFA** (no SMS), its own Managed Login hosted UI. The
+ * admin API authorizer points at this pool (Slice 6), so a customer token structurally can't reach
+ * `/admin` — a boundary, not just an in-handler check. First admin is bootstrapped out-of-band
+ * (`admin-create-user` + add to the `admin` group); see the runbook.
  */
 export class IdentityStack extends Stack {
   readonly userPool: cognito.UserPool;
   readonly userPoolClient: cognito.UserPoolClient;
   readonly userPoolDomain: cognito.UserPoolDomain;
+  // Separate employee/admin pool (ADR-0020 §two-pool): company staff, not customers.
+  readonly employeePool: cognito.UserPool;
+  readonly employeePoolClient: cognito.UserPoolClient;
+  readonly employeePoolDomain: cognito.UserPoolDomain;
 
   constructor(scope: Construct, id: string, props: IdentityStackProps) {
     super(scope, id, props);
@@ -127,6 +139,73 @@ export class IdentityStack extends Stack {
       }),
       // sns:setSMSAttributes is in Lambda's built-in SDK; no need to fetch the latest at deploy.
       installLatestAwsSdk: false,
+    });
+
+    // --- Employee/admin pool (ADR-0020 §two-pool) — staff identities, isolated from customers ---
+    this.employeePool = new cognito.UserPool(this, "EmployeePool", {
+      userPoolName: `wanthat-${wanthatEnv.name}-employees`,
+      featurePlan: cognito.FeaturePlan.ESSENTIALS,
+      selfSignUpEnabled: false, // staff are provisioned (admin-create-user), never self-signup
+      signInAliases: { email: true },
+      standardAttributes: { email: { required: true, mutable: true } },
+      autoVerify: { email: true },
+      // Privileged access → MFA mandatory, TOTP only (no SMS — keeps staff auth off the SMS abuse
+      // surface the customer pool is hardened against).
+      mfa: cognito.Mfa.REQUIRED,
+      mfaSecondFactor: { sms: false, otp: true },
+      passwordPolicy: {
+        minLength: 12,
+        requireLowercase: true,
+        requireUppercase: true,
+        requireDigits: true,
+        requireSymbols: true,
+      },
+      removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+    });
+
+    // Every employee is an admin for the MVP; the group leaves room for finer roles later (support…).
+    new cognito.UserPoolGroup(this, "EmployeeAdminGroup", {
+      userPool: this.employeePool,
+      groupName: "admin",
+      precedence: 0,
+    });
+
+    // Admin SPA client: public (no secret), OAuth code+PKCE via the hosted UI; shorter refresh TTL
+    // than customers (privileged). The admin SPA serves its callback at /admin/callback.
+    const adminCallbackUrls = isProd
+      ? [`https://${wanthatEnv.domainName}/admin/callback`]
+      : ["http://localhost:5173/admin/callback"];
+    this.employeePoolClient = this.employeePool.addClient("AdminSpa", {
+      userPoolClientName: `wanthat-${wanthatEnv.name}-admin-spa`,
+      generateSecret: false,
+      authFlows: { user: true },
+      enableTokenRevocation: true,
+      accessTokenValidity: Duration.hours(1),
+      idTokenValidity: Duration.hours(1),
+      refreshTokenValidity: Duration.days(7),
+      oAuth: {
+        flows: { authorizationCodeGrant: true },
+        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.EMAIL, cognito.OAuthScope.PROFILE],
+        callbackUrls: adminCallbackUrls,
+        logoutUrls: adminCallbackUrls,
+      },
+    });
+
+    // Hosted UI (email + password + TOTP) for staff login — separate domain prefix from customers.
+    this.employeePoolDomain = this.employeePool.addDomain("AdminLoginDomain", {
+      cognitoDomain: { domainPrefix: `wanthat-${wanthatEnv.name}-admin` },
+      managedLoginVersion: cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
+    });
+    new cognito.CfnManagedLoginBranding(this, "AdminLoginBranding", {
+      userPoolId: this.employeePool.userPoolId,
+      clientId: this.employeePoolClient.userPoolClientId,
+      useCognitoProvidedValues: true,
+    });
+
+    new CfnOutput(this, "EmployeePoolIdOut", { value: this.employeePool.userPoolId });
+    new CfnOutput(this, "AdminLoginBaseUrl", { value: this.employeePoolDomain.baseUrl() });
+    new CfnOutput(this, "AdminSpaClientIdOut", {
+      value: this.employeePoolClient.userPoolClientId,
     });
   }
 }
