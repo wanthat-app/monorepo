@@ -16,11 +16,6 @@
       "dependsOn": ["^build"],
       "cache": false,
       "env": ["WANTHAT_ENV", "WANTHAT_VERSION"]
-    },
-    "deploy:dev": {
-      "dependsOn": ["^build"],
-      "cache": false,
-      "env": ["WANTHAT_ENV", "WANTHAT_VERSION"]
     }
   }
 }
