@@ -52,6 +52,16 @@ export const PollerIntervalMinutes = z.number().int().min(1).max(1440);
 /** How far back each poll re-scans to catch status maturation, in hours — read by the poller at run time. */
 export const PollerLookbackHours = z.number().int().min(1).max(2160);
 
+/**
+ * SMS-OTP kill switch (ADR-0006, ADR-0020). When `false`, `app-api` short-circuits any Cognito SMS
+ * send before it is attempted — the layered defence against an SMS-pumping abuse spike, flippable at
+ * runtime (admin panel or an automated alarm action) without a redeploy. Lives here (DynamoDB
+ * `config`) rather than SSM so the in-VPC Lambdalith reads it over the existing DynamoDB gateway
+ * endpoint, with no extra interface endpoint. `@wanthat/config` `OTP_SMS_ENABLED` remains the
+ * boot-time default applied before this key has ever been written.
+ */
+export const AuthSmsEnabled = z.boolean();
+
 /** Known config keys. Dotted namespaces group related settings. */
 export const CONFIG_KEYS = [
   "landing.countdownSeconds",
@@ -62,6 +72,7 @@ export const CONFIG_KEYS = [
   "fx.provider",
   "poller.intervalMinutes",
   "poller.lookbackHours",
+  "auth.smsEnabled",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -77,6 +88,7 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "fx.provider": FxProvider,
   "poller.intervalMinutes": PollerIntervalMinutes,
   "poller.lookbackHours": PollerLookbackHours,
+  "auth.smsEnabled": AuthSmsEnabled,
 };
 
 /**
@@ -95,6 +107,8 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   // Lookback must cover an order's full maturation; 72h is a placeholder — tune at integration
   // to AliExpress's confirm/return latency (see ADR-0009).
   "poller.lookbackHours": 72,
+  // SMS OTP on by default; the kill switch flips this to false to stop sends during an abuse spike.
+  "auth.smsEnabled": true,
 };
 
 /** Validate a value against its key's schema — use in the config API handler before persisting. */

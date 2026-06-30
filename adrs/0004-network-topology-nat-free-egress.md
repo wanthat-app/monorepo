@@ -3,6 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-06-28
 - **Related:** [ADR-0002](0002-app-compute-topology.md) (compute), [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (datastore), [ADR-0009](0009-conversion-ingestion-poller.md) (poller)
+- **Refined by:** [ADR-0020](0020-auth-foundation.md) (adds one in-VPC `cognito-idp` interface endpoint for `app-api`)
 
 ## Context
 

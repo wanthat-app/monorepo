@@ -16,6 +16,10 @@ export interface CustomerTable {
   last_name: string;
   locale: string;
   status: "active" | "suspended";
+  // Stable link to the Cognito user (the `sub` claim). Phone is mutable + the sign-in alias, so it
+  // is unsuitable as the join key; this is the canonical identity anchor for /me (0002_auth, ADR-0020).
+  // NOT NULL (fail-fast): set at registration, so the type forbids inserting a customer without a sub.
+  cognito_sub: string;
   created_at: Generated<Date>;
   updated_at: Generated<Date>;
 }

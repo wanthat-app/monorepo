@@ -5,7 +5,9 @@ consequences. **0001–0009** cover the architecture (foundation-first: structur
 → network → DR, then the consumer journey: identity → landing → attribution → conversion);
 **0010–0016** cover the implementation stack; **0017** extends the architecture set with the
 currency / FX model; **0018** supersedes ADR-0007's landing front-door (Function URL → HTTP API);
-**0019** fixes the EdgeStack composition (one CloudFront distribution: SPA + landing).
+**0019** fixes the EdgeStack composition (one CloudFront distribution: SPA + landing); **0020**
+refines the auth foundation (registration-time `customer` provisioning, in-VPC Cognito egress,
+DynamoDB-backed SMS kill switch) for UC1/UC2.
 
 | # | Decision |
 |---|---|
@@ -28,6 +30,7 @@ currency / FX model; **0018** supersedes ADR-0007's landing front-door (Function
 | [0017](0017-currency-model-and-fx-rate-sourcing.md) | Currency model & FX rate sourcing (hold settlement currency, convert at withdrawal, Bank of Israel rate) |
 | [0018](0018-landing-front-door-http-api.md) | Landing front door: API Gateway HTTP API (supersedes ADR-0007's Function URL — unavailable in il-central-1) |
 | [0019](0019-edge-front-door-cloudfront.md) | Edge front door: one CloudFront distribution (SPA default + landing `/p/*`), us-east-1 cert + WAF |
+| [0020](0020-auth-foundation.md) | Auth foundation: provision `customer` in `/auth/register` (no Post-Confirmation trigger), in-VPC `cognito-idp` endpoint, DynamoDB kill switch, unified flow SMSes new numbers (refines [0004](0004-network-topology-nat-free-egress.md)/[0006](0006-identity-sms-otp-and-passkeys.md)) |
 
 ## Status & change policy
 

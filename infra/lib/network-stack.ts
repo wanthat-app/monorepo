@@ -1,4 +1,5 @@
 import { Stack, type StackProps } from "aws-cdk-lib";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
 import type { Construct } from "constructs";
 import type { WanthatEnv } from "./config";
 
@@ -7,22 +8,74 @@ export interface NetworkStackProps extends StackProps {
 }
 
 /**
- * NetworkStack — VPC + subnets + security groups (ADR-0003/0004).
+ * NetworkStack — VPC + subnets + security groups (ADR-0003/0004/0020).
  *
- * **Deferred** (not yet instantiated). The only reason this app needs a VPC is Aurora: the relational
- * store for PII + ledger runs in a VPC, and the functions that talk to it (Lambdalith, admin,
- * poller-writer) attach there to reach it via IAM database auth — no RDS Proxy. The serverless
- * compute is otherwise VPC-free (`aws-ec2` here is CDK's *networking* module — VPC/subnets/SG — not
- * EC2 instances).
+ * The only reason this app needs a VPC is Aurora: the relational store for PII + ledger runs in a
+ * VPC, and the functions that talk to it (Lambdalith, admin, poller-writer) attach there to reach it
+ * via IAM database auth — no RDS Proxy. (`aws-ec2` here is CDK's *networking* module — VPC/subnets/
+ * SG — not EC2 instances.)
  *
- * Since Aurora is deferred to the wallet slice, there is nothing in the VPC yet, so the skeleton
- * runs every Lambda outside a VPC (simpler, faster cold starts, no idle networking). This stack and
- * the in-VPC placement of app-api/admin land together with Aurora. Until then it is an empty stub.
+ * NAT-free (ADR-0004): `natGateways: 0`, a single PRIVATE_ISOLATED subnet group. DynamoDB is reached
+ * through a free gateway endpoint. Per ADR-0020 the in-VPC Lambdalith also calls Cognito, and the
+ * one-shot migrator reads the master secret, so we add the two interface endpoints those need
+ * (`cognito-idp`, `secretsmanager`) — the only paid endpoints. Everything else stays out of the VPC.
+ *
+ * Two SGs split the trust boundary: `lambdaSg` (in-VPC functions) is allowed to reach `auroraSg`
+ * (the cluster) on 5432; nothing else can.
  */
 export class NetworkStack extends Stack {
+  readonly vpc: ec2.Vpc;
+  readonly auroraSg: ec2.SecurityGroup;
+  readonly lambdaSg: ec2.SecurityGroup;
+
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
     super(scope, id, props);
-    // VPC defined here when Aurora lands:
-    //   new ec2.Vpc(this, "Vpc", { maxAzs: 2, natGateways: 0, subnetConfiguration: [...] })
+
+    this.vpc = new ec2.Vpc(this, "Vpc", {
+      maxAzs: 2,
+      natGateways: 0,
+      subnetConfiguration: [
+        { name: "isolated", subnetType: ec2.SubnetType.PRIVATE_ISOLATED, cidrMask: 24 },
+      ],
+    });
+
+    this.lambdaSg = new ec2.SecurityGroup(this, "LambdaSg", {
+      vpc: this.vpc,
+      description:
+        "In-VPC Lambdas (app-api, admin, poller-writer, migrator) - egress to Aurora + endpoints",
+      allowAllOutbound: true,
+    });
+
+    this.auroraSg = new ec2.SecurityGroup(this, "AuroraSg", {
+      vpc: this.vpc,
+      description: "Aurora Serverless v2 - Postgres ingress from in-VPC Lambdas only",
+      allowAllOutbound: false,
+    });
+    this.auroraSg.addIngressRule(this.lambdaSg, ec2.Port.tcp(5432), "Postgres from in-VPC Lambdas");
+
+    // DynamoDB over the free gateway endpoint (no NAT) for in-VPC functions.
+    this.vpc.addGatewayEndpoint("DynamoDbEndpoint", {
+      service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
+    });
+
+    // Interface endpoints get their own SG that admits HTTPS from the in-VPC Lambdas only (a shared
+    // SG would need a self-referencing 443 rule).
+    const endpointSg = new ec2.SecurityGroup(this, "EndpointSg", {
+      vpc: this.vpc,
+      description: "VPC interface endpoints - HTTPS ingress from in-VPC Lambdas only",
+      allowAllOutbound: false,
+    });
+    endpointSg.addIngressRule(this.lambdaSg, ec2.Port.tcp(443), "HTTPS from in-VPC Lambdas");
+
+    // Paid interface endpoints (ADR-0020): the Lambdalith calls Cognito; the migrator reads the
+    // master secret. Both terminate in the isolated subnets; reachable from the in-VPC Lambdas.
+    this.vpc.addInterfaceEndpoint("CognitoIdpEndpoint", {
+      service: ec2.InterfaceVpcEndpointAwsService.COGNITO_IDP,
+      securityGroups: [endpointSg],
+    });
+    this.vpc.addInterfaceEndpoint("SecretsManagerEndpoint", {
+      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+      securityGroups: [endpointSg],
+    });
   }
 }
