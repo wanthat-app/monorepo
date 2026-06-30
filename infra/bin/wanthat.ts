@@ -55,6 +55,11 @@ new ApiStack(app, stackName(wanthatEnv, "api"), {
   recommendationTable: data.recommendationTable,
   guestAttributionTable: data.guestAttributionTable,
   runtimeConfigTable: data.runtimeConfigTable,
+  authChallengeTable: data.authChallengeTable,
+  phoneVelocityTable: data.phoneVelocityTable,
+  vpc: network.vpc,
+  lambdaSg: network.lambdaSg,
+  cluster: data.cluster,
 });
 
 new AdminStack(app, stackName(wanthatEnv, "admin"), {

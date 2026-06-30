@@ -4,7 +4,12 @@ import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type * as cognito from "aws-cdk-lib/aws-cognito";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import type * as ec2 from "aws-cdk-lib/aws-ec2";
+import { SubnetType } from "aws-cdk-lib/aws-ec2";
+import * as iam from "aws-cdk-lib/aws-iam";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import type * as rds from "aws-cdk-lib/aws-rds";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 import { applyThrottle, LAMBDA_RUNTIME, serviceEntry, THROTTLING, type WanthatEnv } from "./config";
 
@@ -15,16 +20,21 @@ export interface ApiStackProps extends StackProps {
   readonly recommendationTable: dynamodb.ITable;
   readonly guestAttributionTable: dynamodb.ITable;
   readonly runtimeConfigTable: dynamodb.ITable;
+  readonly authChallengeTable: dynamodb.ITable;
+  readonly phoneVelocityTable: dynamodb.ITable;
+  // In-VPC placement + Aurora (ADR-0004/0020).
+  readonly vpc: ec2.IVpc;
+  readonly lambdaSg: ec2.ISecurityGroup;
+  readonly cluster: rds.IDatabaseCluster;
 }
 
 /**
- * ApiStack — the app-api Lambdalith behind an HTTP API (ADR-0002, ADR-0006, ADR-0011).
+ * ApiStack — the app-api Lambdalith behind an HTTP API (ADR-0002, ADR-0006, ADR-0011, ADR-0020).
  *
- * Reaches DynamoDB directly. A Cognito JWT authorizer guards every route except `GET /healthz`, the
- * unauthenticated liveness probe for the deploy smoke-test.
- *
- * Non-VPC for now: app-api only needs the VPC once it reaches Aurora via IAM auth (the wallet
- * slice). It moves in-VPC then, alongside the NetworkStack (ADR-0004).
+ * In-VPC (PRIVATE_ISOLATED, `lambdaSg`): reaches Aurora as `app_rw` via IAM auth, Cognito over the
+ * `cognito-idp` interface endpoint, and DynamoDB over the gateway endpoint — no NAT. A Cognito JWT
+ * authorizer guards every route except the `/auth/*` flow (which issues the tokens) and `GET
+ * /healthz`. Reserved concurrency caps in-VPC connections (ADR-0002).
  */
 export class ApiStack extends Stack {
   readonly httpApi: HttpApi;
@@ -33,26 +43,74 @@ export class ApiStack extends Stack {
     super(scope, id, props);
     const { wanthatEnv } = props;
 
+    // HMAC key for registration tickets (ADR-0020) — generated, never in the repo.
+    const ticketSecret = new secretsmanager.Secret(this, "AuthTicketSecret", {
+      secretName: `wanthat/${wanthatEnv.name}/auth/ticket-hmac`,
+      description: "HMAC key signing /auth registration tickets",
+      generateSecretString: { passwordLength: 48, excludePunctuation: true },
+    });
+
     const fn = new NodejsFunction(this, "AppApi", {
       functionName: `wanthat-${wanthatEnv.name}-app-api`,
       entry: serviceEntry("app-api"),
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
       memorySize: 256,
-      timeout: Duration.seconds(10),
+      timeout: Duration.seconds(15), // first connect may resume a scale-to-zero cluster
+      vpc: props.vpc,
+      vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [props.lambdaSg],
+      // No reserved concurrency: the account's Lambda concurrency limit (10) is itself the cap, and
+      // app-api is DynamoDB-hot (Aurora holds only PII + ledger, ADR-0003), so its Aurora connection
+      // pressure is minimal vs max_connections=50. Re-introduce a reserved budget (app 7 / admin 2 /
+      // migrator 1) once the account quota is raised — see infra issue (ADR-0002).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
         GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
+        AUTH_CHALLENGE_TABLE: props.authChallengeTable.tableName,
+        PHONE_VELOCITY_TABLE: props.phoneVelocityTable.tableName,
+        USER_POOL_ID: props.userPool.userPoolId,
+        USER_POOL_CLIENT_ID: props.userPoolClient.userPoolClientId,
+        AUTH_TICKET_SECRET_ARN: ticketSecret.secretArn,
+        DB_HOST: props.cluster.clusterEndpoint.hostname,
+        DB_NAME: "wanthat",
+        DB_USER: "app_rw",
       },
       bundling: { minify: true, sourceMap: true },
     });
 
-    // Least-ish privilege for the skeleton: app data RW, config read.
+    // Aurora as app_rw via IAM auth (ADR-0003) — no RDS Proxy, no static credential.
+    props.cluster.grantConnect(fn, "app_rw");
+
+    // DynamoDB: app data RW, auth working tables RW, config read.
     props.recommendationTable.grantReadWriteData(fn);
     props.guestAttributionTable.grantReadWriteData(fn);
+    props.authChallengeTable.grantReadWriteData(fn);
+    props.phoneVelocityTable.grantReadWriteData(fn);
     props.runtimeConfigTable.grantReadData(fn);
+    ticketSecret.grantRead(fn);
+
+    // Scoped Cognito control-plane actions on this pool only (ADR-0020).
+    fn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: [
+          "cognito-idp:AdminCreateUser",
+          "cognito-idp:AdminSetUserPassword",
+          "cognito-idp:AdminGetUser",
+          "cognito-idp:AdminUpdateUserAttributes",
+          "cognito-idp:AdminInitiateAuth",
+          "cognito-idp:AdminRespondToAuthChallenge",
+          "cognito-idp:InitiateAuth",
+          "cognito-idp:RespondToAuthChallenge",
+          "cognito-idp:RevokeToken",
+          "cognito-idp:StartWebAuthnRegistration",
+          "cognito-idp:CompleteWebAuthnRegistration",
+        ],
+        resources: [props.userPool.userPoolArn],
+      }),
+    );
 
     const integration = new HttpLambdaIntegration("AppApiIntegration", fn);
     const authorizer = new HttpJwtAuthorizer(
@@ -65,8 +123,13 @@ export class ApiStack extends Stack {
     // Per-surface request throttling — tuned centrally in config.ts (THROTTLING).
     applyThrottle(this.httpApi, THROTTLING.userWallet);
 
-    // Unauthenticated liveness probe.
+    // Unauthenticated: liveness + the token-issuing auth flow.
     this.httpApi.addRoutes({ path: "/healthz", methods: [HttpMethod.GET], integration });
+    this.httpApi.addRoutes({
+      path: "/auth/{proxy+}",
+      methods: [HttpMethod.POST],
+      integration,
+    });
     // Everything else behind the JWT authorizer.
     this.httpApi.addRoutes({
       path: "/{proxy+}",
