@@ -48,9 +48,8 @@ export class AdminStack extends Stack {
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
-      // Part of the fixed in-VPC reserved-concurrency budget of 10 (Aurora connection ceiling,
-      // ADR-0002): app:7 / admin:2 / migrator:1. Admin has few operators, so 2 is ample.
-      reservedConcurrentExecutions: 2,
+      // No reserved concurrency: the account's Lambda concurrency limit (10) is the cap; admin traffic
+      // is tiny. Re-introduce app 7 / admin 2 / migrator 1 once the account quota is raised (ADR-0002).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
