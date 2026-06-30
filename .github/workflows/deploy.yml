@@ -1,18 +1,12 @@
 name: Deploy
 
-# OIDC-assumed per-environment role (no static keys); prod behind a GitHub Environment approval
-# (ADR-0015). **Only `main` deploys to the shared dev env** — a push to main auto-deploys dev, and
-# workflow_dispatch promotes to prod. **PRs run `cdk diff` only, never deploy:** dev is a single shared
-# environment, so a PR deploying `--all` from its (possibly stale) base would revert whatever another
-# branch deployed — e.g. a main-based PR would tear down infra that an unmerged feature branch added.
-# So the model is: review PR (CI + diff) -> merge to main in order -> the merge deploys.
+# Deploys to the shared environments **only on merge to `main`** (dev) and via workflow_dispatch
+# (prod, behind a GitHub Environment approval — ADR-0015). OIDC-assumed per-env role, no static keys.
+# PRs never deploy: they run CI (ci.yml) + Check Deploy (check-deploy.yml, a cdk-diff dry run). This
+# keeps the single shared dev env changing only on a merge, so branches can't clobber each other.
 on:
   push:
     branches: [main]
-  pull_request:
-    branches: [main]
-    # `ready_for_review` so taking a PR out of draft runs the diff gate (PRs diff only, never deploy).
-    types: [opened, synchronize, reopened, ready_for_review]
   workflow_dispatch:
     inputs:
       environment:
@@ -21,7 +15,7 @@ on:
         options: [dev, prod]
         default: dev
 
-# Serialize deploys per environment so concurrent PRs/pushes don't clobber the shared stacks;
+# Serialize deploys per environment so concurrent merges/dispatches don't clobber the shared stacks;
 # never cancel an in-flight deploy mid-apply.
 concurrency:
   group: deploy-${{ github.event.inputs.environment || 'dev' }}
@@ -34,9 +28,6 @@ permissions:
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    # On PRs (out of draft) this job runs the diff gate only; the deploy + reconcile steps below are
-    # gated to push/dispatch. push/dispatch run the full deploy.
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     environment: ${{ github.event.inputs.environment || 'dev' }}
     env:
       # Selects which wanthat-{env}-* stacks the CDK app instantiates (infra/bin/wanthat.ts).
@@ -58,31 +49,26 @@ jobs:
           aws-region: il-central-1
       # Pass the resolved account/region to CDK explicitly. Turbo runs cdk in strict env mode
       # (globalPassThroughEnv allows AWS_*/CDK_DEFAULT_* through); the app reads CDK_DEFAULT_ACCOUNT.
-      # `pnpm run` (not bare `pnpm diff`/`pnpm deploy`) — `deploy` is a pnpm built-in command that
-      # would otherwise shadow our Turbo script.
-      - run: pnpm run diff # cdk diff — required review gate before any change
+      # `pnpm run` (not bare `pnpm diff`/`pnpm deploy`) — `deploy` is a pnpm built-in that would
+      # otherwise shadow our Turbo script.
+      - run: pnpm run diff # cdk diff — recorded in the log right before the apply
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
-      # cdk deploy (prod gated by Environment approval). Both paths use --concurrency to deploy
-      # independent stacks in parallel and skip unchanged ones (CDK no-ops them). dev additionally uses
-      # --hotswap-fallback: Lambda code/env/asset changes patch the function directly (seconds),
-      # falling back to a full CloudFormation deploy for anything it can't hotswap. Hotswap is
-      # dev-only — it bypasses CloudFormation and causes drift, so prod always goes through CFN.
-      # Caveat: hotswap will not re-fire the migrator Trigger (a custom resource), so a NEW migration
-      # needs a normal deploy — run `pnpm run deploy` (or merge to main) for those.
-      - name: Deploy (main push / dispatch only — PRs are diff-only, never deploy to shared dev)
-        if: github.event_name != 'pull_request'
+      # --concurrency deploys independent stacks in parallel and skips unchanged ones (CDK no-ops them).
+      # dev uses --hotswap-fallback (deploy:dev): Lambda code/env/asset changes patch the function
+      # directly (seconds), full-CloudFormation fallback otherwise. Hotswap is dev-only — it bypasses
+      # CloudFormation and causes drift, so prod always goes through CFN. Caveat: hotswap won't re-fire
+      # the migrator Trigger (a custom resource), so a NEW migration needs `pnpm run deploy`.
+      - name: Deploy
         run: |
           if [ "$WANTHAT_ENV" = "prod" ]; then pnpm run deploy; else pnpm run deploy:dev; fi
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
-      # Drift guard: fail if a `wanthat-<env>-*` stack is deployed but no longer in code
-      # (an orphan). CDK never deletes stacks removed from the app, so we catch them here. Only after a
-      # real deploy (main/dispatch) — on a PR the deployed state legitimately differs from the PR's code.
+      # Drift guard: fail if a `wanthat-<env>-*` stack is deployed but no longer in code (an orphan).
+      # CDK never deletes stacks removed from the app, so we catch them here.
       - name: Reconcile deployed stacks vs code
-        if: github.event_name != 'pull_request'
         env:
           CDK_DEFAULT_ACCOUNT: ${{ steps.aws.outputs.aws-account-id }}
           CDK_DEFAULT_REGION: il-central-1
