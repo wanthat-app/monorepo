@@ -3,7 +3,7 @@ import * as cognito from "aws-cdk-lib/aws-cognito";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
-import type { WanthatEnv } from "./config";
+import { type WanthatEnv, webOrigins } from "./config";
 
 export interface IdentityStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -90,19 +90,13 @@ export class IdentityStack extends Stack {
       precedence: 10,
     });
 
-    // Browser origins allowed to complete the hosted-UI OAuth redirect. The deployed site (prod apex
-    // or dev subdomain) plus localhost:5173 in non-prod, so a developer can run the SPA locally
-    // against this environment AND use the hosted URL. Callback paths differ per client (below).
-    const webOrigins = isProd
-      ? [`https://${wanthatEnv.domainName}`]
-      : [
-          "http://localhost:5173",
-          ...(wanthatEnv.domainName ? [`https://${wanthatEnv.domainName}`] : []),
-        ];
+    // Browser origins allowed to complete the hosted-UI OAuth redirect — the same list the app/admin
+    // HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).
+    const origins = webOrigins(wanthatEnv);
 
     // Public SPA client: no secret; only the choice-based USER_AUTH flow (ADR-0006) — never
     // userSrp/userPassword/custom. Token revocation on so /auth/signout can revoke refresh tokens.
-    const callbackUrls = webOrigins.map((o) => `${o}/auth/callback`);
+    const callbackUrls = origins.map((o) => `${o}/auth/callback`);
     this.userPoolClient = this.userPool.addClient("Spa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-spa`,
       generateSecret: false,
@@ -196,7 +190,7 @@ export class IdentityStack extends Stack {
 
     // Admin SPA client: public (no secret), OAuth code+PKCE via the hosted UI; shorter refresh TTL
     // than customers (privileged). The admin SPA serves its callback at /admin/callback.
-    const adminCallbackUrls = webOrigins.map((o) => `${o}/admin/callback`);
+    const adminCallbackUrls = origins.map((o) => `${o}/admin/callback`);
     this.employeePoolClient = this.employeePool.addClient("AdminSpa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-admin-spa`,
       generateSecret: false,

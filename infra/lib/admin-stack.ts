@@ -1,5 +1,5 @@
 import { CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
-import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { CorsHttpMethod, HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type * as cognito from "aws-cdk-lib/aws-cognito";
@@ -17,6 +17,7 @@ import {
   serviceLogGroup,
   THROTTLING,
   type WanthatEnv,
+  webOrigins,
 } from "./config";
 
 export interface AdminStackProps extends StackProps {
@@ -87,7 +88,18 @@ export class AdminStack extends Stack {
       { jwtAudience: [props.employeePoolClient.userPoolClientId] },
     );
 
-    this.httpApi = new HttpApi(this, "HttpApi", { apiName: `wanthat-${wanthatEnv.name}-admin` });
+    // CORS so the admin SPA (a different origin than execute-api) can call /admin/*. Without it the
+    // preflight OPTIONS is rejected 401 by the authorizer and the console's data calls never fire.
+    // API Gateway answers OPTIONS itself once this is set. Origins shared with config.webOrigins.
+    this.httpApi = new HttpApi(this, "HttpApi", {
+      apiName: `wanthat-${wanthatEnv.name}-admin`,
+      corsPreflight: {
+        allowOrigins: webOrigins(wanthatEnv),
+        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.PUT, CorsHttpMethod.POST],
+        allowHeaders: ["content-type", "authorization"],
+        maxAge: Duration.hours(1),
+      },
+    });
     // Per-surface request throttling — tuned centrally in config.ts (THROTTLING).
     applyThrottle(this.httpApi, THROTTLING.admin);
 

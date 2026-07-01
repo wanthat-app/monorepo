@@ -72,6 +72,19 @@ export const ENVIRONMENTS: Record<EnvName, WanthatEnv> = {
   },
 };
 
+/**
+ * Browser origins allowed to (a) call our HTTP APIs cross-origin (CORS `allowOrigins`) and (b) complete
+ * the Cognito hosted-UI OAuth redirect (client callback URLs). The deployed site (prod apex / dev
+ * subdomain) plus `localhost:5173` in non-prod, so a developer can run the SPA locally against a
+ * deployed environment. Single source of truth — the CORS list and the Cognito callback list MUST
+ * match, or a cross-origin `POST` preflight (OPTIONS) is rejected by the JWT authorizer and the real
+ * request never fires.
+ */
+export function webOrigins(env: WanthatEnv): string[] {
+  const site = env.domainName ? [`https://${env.domainName}`] : [];
+  return env.name === "prod" ? site : ["http://localhost:5173", ...site];
+}
+
 export function resolveEnv(name: string | undefined): WanthatEnv {
   const key = (name ?? "dev") as EnvName;
   const env = ENVIRONMENTS[key];

@@ -1,5 +1,5 @@
 import { CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
-import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
+import { CorsHttpMethod, HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type * as cognito from "aws-cdk-lib/aws-cognito";
@@ -19,6 +19,7 @@ import {
   serviceLogGroup,
   THROTTLING,
   type WanthatEnv,
+  webOrigins,
 } from "./config";
 
 export interface ApiStackProps extends StackProps {
@@ -133,7 +134,19 @@ export class ApiStack extends Stack {
       { jwtAudience: [props.userPoolClient.userPoolClientId] },
     );
 
-    this.httpApi = new HttpApi(this, "HttpApi", { apiName: `wanthat-${wanthatEnv.name}-app` });
+    // CORS so the browser SPA (a different origin than execute-api) can call /auth + /me. Without it,
+    // the preflight OPTIONS falls through to the authorizer-protected catch-all route and is rejected
+    // 401, so the real request never fires. API Gateway answers OPTIONS itself (no authorizer) once
+    // this is set. Origins shared with the Cognito callback list (config.webOrigins).
+    this.httpApi = new HttpApi(this, "HttpApi", {
+      apiName: `wanthat-${wanthatEnv.name}-app`,
+      corsPreflight: {
+        allowOrigins: webOrigins(wanthatEnv),
+        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.POST, CorsHttpMethod.PATCH],
+        allowHeaders: ["content-type", "authorization"],
+        maxAge: Duration.hours(1),
+      },
+    });
     // Per-surface request throttling — tuned centrally in config.ts (THROTTLING).
     applyThrottle(this.httpApi, THROTTLING.userWallet);
 
