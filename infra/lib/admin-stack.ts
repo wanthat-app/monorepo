@@ -55,7 +55,7 @@ export class AdminStack extends Stack {
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
       memorySize: 256,
-      timeout: Duration.seconds(15),
+      timeout: Duration.seconds(30), // in-VPC Aurora: first connect may resume a scale-to-zero cluster
       // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
       tracing: lambda.Tracing.ACTIVE,
       logGroup: serviceLogGroup(this, "AdminApiLogs", wanthatEnv),
