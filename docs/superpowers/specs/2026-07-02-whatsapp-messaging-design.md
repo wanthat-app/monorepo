@@ -202,15 +202,25 @@ app-core role.
 Template body text lives in the onboarding runbook for Meta submission; the registry holds
 name/category/variable schema.
 
+## Config table access (single-writer enforcement)
+
+The runtime `config` table stays **single-writer**: admin-api keeps `grantReadWriteData`; every
+other consumer — app-auth, app-core, landing, fx-rates, and the new `message-sender` and
+`whatsapp-dispatcher` — gets `grantReadData` only (IAM default-deny makes writes fail hard).
+PR 1 also adds a compile-time expression of the same rule: `@wanthat/dynamo` exports
+`RuntimeConfigReader` (`Pick<RuntimeConfigRepo, "get">`), and all non-admin service contexts
+type their config field as the reader, so a write outside admin-api doesn't compile. IAM is the
+enforcement; the type is documentation that can't drift.
+
 ## Kill-switch matrix (launch state → flipped)
 
-| Key | Ships as | Post-onboarding | Consumed by |
-| --- | --- | --- | --- |
-| `auth.smsEnabled` | `true` (existing) | `true` | app-auth gate + `/auth/config` |
-| `auth.whatsappEnabled` | `false` | `true` | app-auth gate + `/auth/config` |
-| `auth.defaultOtpChannel` | `"whatsapp"` (inert while disabled) | `"whatsapp"` | `/auth/config` → UI preselect |
-| `notifications.whatsappEnabled` | `false` | `true` | dispatcher |
-| `whatsapp.phoneNumberId` | `""` | the EUM Social phone-number ID | availability predicate, message-sender, dispatcher |
+| Key                             | Ships as                            | Post-onboarding                | Consumed by                                       |
+| ------------------------------- | ----------------------------------- | ------------------------------ | ------------------------------------------------- |
+| `auth.smsEnabled`               | `true` (existing)                   | `true`                         | app-auth gate + `/auth/config`                    |
+| `auth.whatsappEnabled`          | `false`                             | `true`                         | app-auth gate + `/auth/config`                    |
+| `auth.defaultOtpChannel`        | `"whatsapp"` (inert while disabled) | `"whatsapp"`                   | `/auth/config` -> UI preselect                    |
+| `notifications.whatsappEnabled` | `false`                             | `true`                         | dispatcher                                        |
+| `whatsapp.phoneNumberId`        | `""`                                | the EUM Social phone-number ID | availability predicate, message-sender, dispatcher |
 
 ## Testing
 
