@@ -3,12 +3,19 @@ import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
-import type * as lambda from "aws-cdk-lib/aws-lambda";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import type * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
-import { applyThrottle, LAMBDA_RUNTIME, serviceEntry, THROTTLING, type WanthatEnv } from "./config";
+import {
+  applyThrottle,
+  LAMBDA_RUNTIME,
+  serviceEntry,
+  serviceLogGroup,
+  THROTTLING,
+  type WanthatEnv,
+} from "./config";
 
 export interface EdgeServicesStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -35,6 +42,11 @@ export interface EdgeServicesStackProps extends StackProps {
 export class EdgeServicesStack extends Stack {
   /** The public landing HTTP API — the us-east-1 EdgeStack fronts it on `/p/*` (cross-region). */
   readonly landingApi: HttpApi;
+  /** Non-VPC application functions — observed by the ObservabilityStack (errors/throttles/duration). */
+  readonly landingFn: lambda.Function;
+  readonly retailerProxyFn: lambda.Function;
+  readonly conversionPollerFn: lambda.Function;
+  readonly fxRatesFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: EdgeServicesStackProps) {
     super(scope, id, props);
@@ -48,12 +60,16 @@ export class EdgeServicesStack extends Stack {
         runtime: LAMBDA_RUNTIME,
         memorySize: 256,
         timeout: Duration.seconds(15),
+        // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
+        tracing: lambda.Tracing.ACTIVE,
+        logGroup: serviceLogGroup(this, `${idPart}Logs`, wanthatEnv),
         environment: { WANTHAT_ENV: wanthatEnv.name },
         bundling: { minify: true, sourceMap: true },
       });
 
     // --- landing (public HTTP API; Lambda Function URLs are unavailable in il-central-1, ADR-0018) ---
     const landing = makeFn("Landing", "landing");
+    this.landingFn = landing;
     props.recommendationTable.grantReadData(landing);
     props.runtimeConfigTable.grantReadData(landing);
     props.fxRateTable.grantReadData(landing);
@@ -71,17 +87,20 @@ export class EdgeServicesStack extends Stack {
 
     // --- retailer proxy (sole egress; holds the credential) ---
     const retailerProxy = makeFn("RetailerProxy", "retailer-proxy");
+    this.retailerProxyFn = retailerProxy;
     props.recommendationTable.grantReadWriteData(retailerProxy);
     props.retailerSecret.grantRead(retailerProxy);
     retailerProxy.addEnvironment("RETAILER_SECRET_ARN", props.retailerSecret.secretArn);
 
     // --- scheduled writers ---
     const poller = makeFn("ConversionPoller", "conversion-poller");
+    this.conversionPollerFn = poller;
     props.recommendationTable.grantReadData(poller);
     props.guestAttributionTable.grantReadData(poller);
 
     // fx-rates is implemented (ADR-0017): reads CONFIG `fx.provider`, writes the fx_rate cache.
     const fxRates = makeFn("FxRates", "fx-rates");
+    this.fxRatesFn = fxRates;
     props.fxRateTable.grantReadWriteData(fxRates);
     props.runtimeConfigTable.grantReadData(fxRates);
     fxRates.addEnvironment("FX_RATE_TABLE", props.fxRateTable.tableName);

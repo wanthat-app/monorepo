@@ -3,6 +3,7 @@ import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-
 import * as acm from "aws-cdk-lib/aws-certificatemanager";
 import * as cloudfront from "aws-cdk-lib/aws-cloudfront";
 import * as origins from "aws-cdk-lib/aws-cloudfront-origins";
+import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as route53 from "aws-cdk-lib/aws-route53";
 import * as targets from "aws-cdk-lib/aws-route53-targets";
 import * as s3 from "aws-cdk-lib/aws-s3";
@@ -177,6 +178,66 @@ export class EdgeStack extends Stack {
       new route53.ARecord(this, "AliasA", { zone, target: aliasTarget });
       new route53.AaaaRecord(this, "AliasAaaa", { zone, target: aliasTarget });
     }
+
+    // --- Edge observability dashboard (us-east-1) ---
+    // CloudFront and the CLOUDFRONT-scoped WAF publish metrics only in us-east-1, so this dashboard
+    // lives here (same region, local refs) rather than the il-central-1 ObservabilityStack, which
+    // would need cross-region metric plumbing. CloudFront metrics use the Region="Global" dimension.
+    const env = wanthatEnv.name;
+    const cfDims = { DistributionId: this.distribution.distributionId, Region: "Global" };
+    const cfRate = (metricName: string, label: string) =>
+      new cloudwatch.Metric({
+        namespace: "AWS/CloudFront",
+        metricName,
+        dimensionsMap: cfDims,
+        region: "us-east-1",
+        period: Duration.minutes(5),
+        statistic: "Average",
+        label,
+      });
+    // WAF: a SEARCH expression matches the ACL-level series by its metric name, so we do not depend on
+    // the exact CloudFront-scope value of the Region dimension. `Rule="ALL"` is the ACL aggregate.
+    const wafAcl = (metricName: string, label: string) =>
+      new cloudwatch.MathExpression({
+        expression: `SEARCH('{AWS/WAFV2,Region,Rule,WebACL} MetricName="${metricName}" WebACL="wanthat-${env}-cf" Rule="ALL"', 'Sum', 300)`,
+        label,
+        searchRegion: "us-east-1",
+        period: Duration.minutes(5),
+      });
+    const edgeDashboard = new cloudwatch.Dashboard(this, "EdgeDashboard", {
+      dashboardName: `wanthat-${env}-edge`,
+    });
+    edgeDashboard.addWidgets(
+      new cloudwatch.GraphWidget({
+        title: "CloudFront requests",
+        left: [
+          new cloudwatch.Metric({
+            namespace: "AWS/CloudFront",
+            metricName: "Requests",
+            dimensionsMap: cfDims,
+            region: "us-east-1",
+            period: Duration.minutes(5),
+            statistic: "Sum",
+            label: "requests",
+          }),
+        ],
+        width: 12,
+      }),
+      new cloudwatch.GraphWidget({
+        title: "CloudFront error rate (percent)",
+        left: [
+          cfRate("TotalErrorRate", "total"),
+          cfRate("4xxErrorRate", "4xx"),
+          cfRate("5xxErrorRate", "5xx"),
+        ],
+        width: 12,
+      }),
+      new cloudwatch.GraphWidget({
+        title: "WAF requests (ACL)",
+        left: [wafAcl("AllowedRequests", "allowed"), wafAcl("BlockedRequests", "blocked")],
+        width: 24,
+      }),
+    );
 
     new CfnOutput(this, "DistributionDomainName", {
       value: this.distribution.distributionDomainName,

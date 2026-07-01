@@ -7,11 +7,19 @@ import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import type * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
-import { applyThrottle, LAMBDA_RUNTIME, serviceEntry, THROTTLING, type WanthatEnv } from "./config";
+import {
+  applyThrottle,
+  LAMBDA_RUNTIME,
+  serviceEntry,
+  serviceLogGroup,
+  THROTTLING,
+  type WanthatEnv,
+} from "./config";
 
 export interface ApiStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -38,6 +46,8 @@ export interface ApiStackProps extends StackProps {
  */
 export class ApiStack extends Stack {
   readonly httpApi: HttpApi;
+  /** The app-api Lambdalith — observed by the ObservabilityStack (errors/throttles/duration). */
+  readonly appApiFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
@@ -57,6 +67,9 @@ export class ApiStack extends Stack {
       runtime: LAMBDA_RUNTIME,
       memorySize: 256,
       timeout: Duration.seconds(15), // first connect may resume a scale-to-zero cluster
+      // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "AppApiLogs", wanthatEnv),
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
@@ -80,6 +93,7 @@ export class ApiStack extends Stack {
       },
       bundling: { minify: true, sourceMap: true },
     });
+    this.appApiFn = fn;
 
     // Aurora as app_rw via IAM auth (ADR-0003) — no RDS Proxy, no static credential.
     props.cluster.grantConnect(fn, "app_rw");

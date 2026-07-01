@@ -1,7 +1,10 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
+import { RemovalPolicy } from "aws-cdk-lib";
 import type { CfnStage, HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import * as logs from "aws-cdk-lib/aws-logs";
+import type { Construct } from "constructs";
 
 /**
  * Per-environment configuration (ADR-0005, ADR-0015). The CDK app instantiates one set of
@@ -28,6 +31,12 @@ export interface WanthatEnv {
    * ACM cert and alias the apex at CloudFront. Set only where {@link domainName} is (prod).
    */
   readonly hostedZoneId?: string;
+  /**
+   * Optional address subscribed to the ObservabilityStack alarm SNS topic. When set, the topic gets
+   * an email subscription (confirm once via the AWS link). Unset (dev) leaves the topic without a
+   * subscriber so the alarms still fire and are visible in the console, just without a notification.
+   */
+  readonly alarmEmail?: string;
 }
 
 const REGION = "il-central-1";
@@ -166,3 +175,19 @@ export const migratorBundling = {
 /** Stack name helper — `wanthat-{env}-{suffix}`. */
 export const stackName = (env: WanthatEnv, suffix: string): string =>
   `wanthat-${env.name}-${suffix}`;
+
+/**
+ * An explicit, retention-bounded CloudWatch log group for a Lambda (ADR-0002 observability).
+ *
+ * Pass the result as the function's `logGroup` prop (NOT the deprecated `logRetention`): CDK then
+ * sets the function's `LoggingConfig.LogGroup` and Lambda writes there. Retention is dev one month /
+ * prod six months; the group is destroyed with the stack in dev but retained in prod so logs outlive
+ * a teardown. `tracing: lambda.Tracing.ACTIVE` is set alongside this at each call site for X-Ray.
+ */
+export function serviceLogGroup(scope: Construct, id: string, env: WanthatEnv): logs.LogGroup {
+  const isProd = env.name === "prod";
+  return new logs.LogGroup(scope, id, {
+    retention: isProd ? logs.RetentionDays.SIX_MONTHS : logs.RetentionDays.ONE_MONTH,
+    removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+  });
+}

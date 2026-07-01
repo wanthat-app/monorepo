@@ -6,10 +6,18 @@ import type * as cognito from "aws-cdk-lib/aws-cognito";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
+import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import type * as rds from "aws-cdk-lib/aws-rds";
 import type { Construct } from "constructs";
-import { applyThrottle, LAMBDA_RUNTIME, serviceEntry, THROTTLING, type WanthatEnv } from "./config";
+import {
+  applyThrottle,
+  LAMBDA_RUNTIME,
+  serviceEntry,
+  serviceLogGroup,
+  THROTTLING,
+  type WanthatEnv,
+} from "./config";
 
 export interface AdminStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -33,6 +41,8 @@ export interface AdminStackProps extends StackProps {
  */
 export class AdminStack extends Stack {
   readonly httpApi: HttpApi;
+  /** The admin-api Lambda — observed by the ObservabilityStack (errors/throttles/duration). */
+  readonly adminApiFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: AdminStackProps) {
     super(scope, id, props);
@@ -45,6 +55,9 @@ export class AdminStack extends Stack {
       runtime: LAMBDA_RUNTIME,
       memorySize: 256,
       timeout: Duration.seconds(15),
+      // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "AdminApiLogs", wanthatEnv),
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
@@ -60,6 +73,7 @@ export class AdminStack extends Stack {
       },
       bundling: { minify: true, sourceMap: true },
     });
+    this.adminApiFn = fn;
 
     // Read-only Aurora as app_ro (ADR-0002) + the config table it writes.
     props.cluster.grantConnect(fn, "app_ro");
