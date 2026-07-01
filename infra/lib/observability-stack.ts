@@ -58,10 +58,8 @@ export class ObservabilityStack extends Stack {
       topicName: `wanthat-${env}-alarms`,
       displayName: `Wanthat ${env} alarms`,
     });
-    if (wanthatEnv.alarmEmail) {
-      this.alarmTopic.addSubscription(
-        new sns_subscriptions.EmailSubscription(wanthatEnv.alarmEmail),
-      );
+    for (const email of wanthatEnv.alarmEmails ?? []) {
+      this.alarmTopic.addSubscription(new sns_subscriptions.EmailSubscription(email));
     }
     const alarmAction = new cloudwatch_actions.SnsAction(this.alarmTopic);
     const addAction = (alarm: cloudwatch.Alarm): cloudwatch.Alarm => {
