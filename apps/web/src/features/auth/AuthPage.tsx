@@ -1,4 +1,4 @@
-import { normalizeIsraeliPhone } from "@wanthat/contracts";
+import { normalizePhone } from "@wanthat/contracts";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -44,9 +44,10 @@ export function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  // The country affordance shows +972; the field carries the local part. Normalize to E.164 on submit
-  // (shared with the API, which re-normalizes defensively). "+972" + 9 national digits = 13 chars.
-  const e164 = normalizeIsraeliPhone(phone);
+  // The country affordance is IL (+972); the field carries the local part. Normalize + validate to
+  // E.164 (null until it's a valid number); the API re-normalizes defensively. A country picker would
+  // just pass a different default here.
+  const e164 = normalizePhone(phone, "IL");
   const lang = i18n.language.startsWith("he") ? "he" : "en";
 
   const run = async (fn: () => Promise<void>) => {
@@ -69,6 +70,7 @@ export function AuthPage() {
 
   const onStart = () =>
     run(async () => {
+      if (!e164) return; // guarded by the disabled button, but narrows the type
       const res = await authApi.start(e164);
       setChallengeId(res.challengeId);
       setStep("otp");
@@ -148,7 +150,7 @@ export function AuthPage() {
               </div>
               {error ? <span className="mt-1 block text-sm text-rejected">{error}</span> : null}
             </label>
-            <Button onClick={onStart} loading={busy} disabled={e164.length < 13}>
+            <Button onClick={onStart} loading={busy} disabled={!e164}>
               {t("auth.continue")}
             </Button>
             {passkeysSupported() && (

@@ -7,7 +7,7 @@ import {
   AuthStartResponse,
   AuthVerifyBody,
   AuthVerifyResponse,
-  normalizeIsraeliPhone,
+  normalizePhone,
   PasskeyRegisterOptionsBody,
   PasskeyRegisterVerifyBody,
   PasskeyRegisterVerifyResponse,
@@ -61,9 +61,10 @@ export function authRouter(): Hono {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
-    // Re-normalize at the boundary (the SPA can be bypassed, and the strict E.164 regex still accepts a
-    // doubled country code / trunk 0 that Cognito would reject) so every downstream call sees one form.
-    const phone = normalizeIsraeliPhone(body.phone);
+    // Re-normalize + validate at the boundary (the SPA can be bypassed, and the E.164 regex alone still
+    // accepts a doubled country code Cognito would reject) so every downstream call sees one form.
+    const phone = normalizePhone(body.phone);
+    if (!phone) return c.json({ error: "invalid_request" }, 400);
 
     if (!(await smsEnabled(ctx.config))) return c.json({ error: "sms_disabled" }, 503);
     const gate = await withinVelocity(ctx.config, ctx.velocity, phone, nowEpoch());
