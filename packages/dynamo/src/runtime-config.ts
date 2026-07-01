@@ -66,6 +66,13 @@ export class RuntimeConfigRepo {
   }
 }
 
+/**
+ * Read-only view of the runtime config. The table is single-writer (admin-api holds the sole IAM
+ * write grant); every other service depends on this type, so a stray `put` from a non-admin
+ * service does not even compile. IAM is the enforcement; this is documentation that cannot drift.
+ */
+export type RuntimeConfigReader = Pick<RuntimeConfigRepo, "get">;
+
 /** Narrow an arbitrary stored partition-key value to a known `ConfigKey`, or undefined. */
 function ConfigKeyOf(value: unknown): ConfigKey | undefined {
   return typeof value === "string" && value in CONFIG_DEFAULTS ? (value as ConfigKey) : undefined;
