@@ -23,7 +23,7 @@ A hard platform constraint shapes the design: Cognito's **raw** `USER_AUTH` / `W
 only userless/discoverable path is **Managed Login** (hosted UI). And WebAuthn binds each passkey to a
 single RP-ID (origin), so passkeys do not work on `localhost` and do not migrate between environments.
 
-## Decision (MVP scope)
+## Decision
 
 1. **"FaceID" = platform WebAuthn passkey, user-verification required.** Options request
    `authenticatorAttachment: "platform"`, `userVerification: "required"`, `residentKey: "required"`
@@ -55,10 +55,6 @@ single RP-ID (origin), so passkeys do not work on `localhost` and do not migrate
 6. **Accepted platform constraints** (inherent, documented, not bugs): no passkeys on `localhost`
    (RP-ID mismatch); passkeys do **not** migrate dev (`dev.wanthat.app`) ↔ prod (`wanthat.app`);
    userless login is redirect-based (Flow C), never on-page.
-
-7. **Repurpose the existing (mislabeled) contracts.** `packages/contracts/src/identity/session.ts`
-   already declares passkey-login shapes commented "discoverable/userless" — which they cannot be (raw
-   API needs a username). They are re-scoped to **Flow B** (username-hinted) with corrected comments.
 
 ## Alternatives considered
 

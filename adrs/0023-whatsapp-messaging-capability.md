@@ -66,15 +66,3 @@ explicitly left the OTP send-channel abstractable for exactly this.
   `optin_welcome` template) approval, opt-in handling. `WHATSAPP_PHONE_NUMBER_ID` injected as an SSM
   param per env; dev can use a Meta test number.
 - Removes the SMS-sandbox / $1-cap / sender-ID friction from the primary auth path.
-
-## Execution — vertical use-case slices (each deployable to dev; see the "PRs = deployable use-case
-slices" convention)
-
-Prereq: ADR-0021 split is deployed (done). Build order:
-1. **"OTP can be delivered over WhatsApp"** — `@wanthat/whatsapp` pkg + `custom:otpChannel` + Custom SMS
-   Sender Lambda + KMS + IdentityStack trigger + the `channel` field on `/auth/start` + config keys.
-   Deploys **inert** (`auth.whatsappEnabled=false`) until the auth template is approved, then flip.
-2. **"New members get a WhatsApp welcome"** (`optin_welcome`) — `notification_outbox` table + Streams +
-   `whatsapp-dispatcher` + the utility template + app-core writing the outbox item on `/auth/register`.
-3. **Webhooks + opt-out + admin/observability** — delivery-status + inbound STOP handling, admin config
-   for the kill switches, alarms (WhatsApp failed-rate + spend), parallel to the SMS-spend alarm.
