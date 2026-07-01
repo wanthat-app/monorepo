@@ -240,5 +240,6 @@ config. Dev can use a Meta test number.
 ## Launch sequence
 
 Merge PR 1 → merge PR 2 → onboarding completes → set `whatsapp.phoneNumberId` → flip
-`auth.whatsappEnabled` (UI starts offering WhatsApp within the config cache window), then
+`auth.whatsappEnabled` (config reads are live — the UI offers WhatsApp on the next
+`/auth/config` fetch), then
 `notifications.whatsappEnabled`. Rollback = flip back; no redeploys in either direction.
