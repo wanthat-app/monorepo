@@ -75,6 +75,20 @@ export const AuthSmsMaxPerWindow = z.number().int().min(1).max(20);
  */
 export const AuthSmsLockoutMinutes = z.number().int().min(1).max(1440);
 
+/**
+ * WhatsApp-OTP kill switch (ADR-0023). Ships `false`; flipped on after Meta/WABA onboarding.
+ * Gates the `whatsapp` channel in app-auth's availability predicate + GET /auth/config.
+ */
+export const AuthWhatsappEnabled = z.boolean();
+/** Which channel GET /auth/config tells the UI to preselect (ADR-0023: whatsapp from day 1). */
+export const AuthDefaultOtpChannel = z.enum(["whatsapp", "sms"]);
+/**
+ * AWS End User Messaging Social origination identity ("phone-number-id-..."), unknown until
+ * onboarding. Empty string = WhatsApp inert regardless of the other switches. Runtime config
+ * (not SSM) so flipping it needs no redeploy — read by message-sender and whatsapp-dispatcher.
+ */
+export const WhatsappPhoneNumberId = z.string().max(120);
+
 /** Known config keys. Dotted namespaces group related settings. */
 export const CONFIG_KEYS = [
   "landing.countdownSeconds",
@@ -88,6 +102,9 @@ export const CONFIG_KEYS = [
   "auth.smsEnabled",
   "auth.smsMaxPerWindow",
   "auth.smsLockoutMinutes",
+  "auth.whatsappEnabled",
+  "auth.defaultOtpChannel",
+  "whatsapp.phoneNumberId",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -106,6 +123,9 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "auth.smsEnabled": AuthSmsEnabled,
   "auth.smsMaxPerWindow": AuthSmsMaxPerWindow,
   "auth.smsLockoutMinutes": AuthSmsLockoutMinutes,
+  "auth.whatsappEnabled": AuthWhatsappEnabled,
+  "auth.defaultOtpChannel": AuthDefaultOtpChannel,
+  "whatsapp.phoneNumberId": WhatsappPhoneNumberId,
 };
 
 /**
@@ -129,6 +149,10 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   // At most 5 OTP sends per phone per lockout window; tighten during an SMS-pumping spike.
   "auth.smsMaxPerWindow": 5,
   "auth.smsLockoutMinutes": 180, // 3h lockout once a phone trips the per-window cap
+  // WhatsApp ships kill-switched OFF until Meta/WABA onboarding completes (ADR-0023).
+  "auth.whatsappEnabled": false,
+  "auth.defaultOtpChannel": "whatsapp",
+  "whatsapp.phoneNumberId": "",
 };
 
 /** Validate a value against its key's schema — use in the config API handler before persisting. */

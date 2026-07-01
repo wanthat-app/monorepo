@@ -13,24 +13,53 @@ import { AuthTokens } from "./tokens";
 export const AuthSession = z.object({ tokens: AuthTokens, customer: CustomerProfile });
 export type AuthSession = z.infer<typeof AuthSession>;
 
-// POST /auth/start — phone-only entry (login-or-register, uniform/enumeration-safe).
-export const AuthStartBody = z.object({ phone: PhoneE164 });
+/**
+ * OTP delivery channel (ADR-0023). REQUIRED in requests — the UI picks it (from GET /auth/config)
+ * and states it explicitly; the server never defaults or silently switches a channel.
+ */
+export const OtpChannel = z.enum(["whatsapp", "sms"]);
+export type OtpChannel = z.infer<typeof OtpChannel>;
+
+/** Languages our Meta templates are approved in (ADR-0023). */
+export const MessageLanguage = z.enum(["he", "en"]);
+export type MessageLanguage = z.infer<typeof MessageLanguage>;
+
+// GET /auth/config — the public projection the SPA renders the channel choice from. Advisory
+// only: /auth/start re-checks the same availability predicate server-side.
+export const AuthConfigResponse = z.object({
+  channels: z.array(OtpChannel),
+  defaultChannel: OtpChannel.nullable(),
+});
+export type AuthConfigResponse = z.infer<typeof AuthConfigResponse>;
+
+// POST /auth/start — phone-only entry (login-or-register, uniform/enumeration-safe). `locale` is
+// the SPA's active UI language; app-auth writes it to the Cognito `locale` attribute so the
+// message-sender picks the template language (app-core is in-VPC and cannot, ADR-0021).
+export const AuthStartBody = z.object({
+  phone: PhoneE164,
+  channel: OtpChannel,
+  locale: MessageLanguage.optional(),
+});
 export type AuthStartBody = z.infer<typeof AuthStartBody>;
 
 export const AuthStartResponse = z.object({
   challengeId: z.string(),
   resendAfterSec: z.number().int().nonnegative(),
   expiresInSec: z.number().int().positive(),
+  /** The channel the OTP was submitted through (optimistic send — delivery is async). */
+  channel: OtpChannel,
 });
 export type AuthStartResponse = z.infer<typeof AuthStartResponse>;
 
-// POST /auth/resend — resend OTP under a server-enforced cooldown.
-export const AuthResendBody = z.object({ challengeId: z.string() });
+// POST /auth/resend — resend under a server-enforced cooldown. `channel` is required and MAY
+// differ from the original request: "didn't get it on WhatsApp? send via SMS" is this field.
+export const AuthResendBody = z.object({ challengeId: z.string(), channel: OtpChannel });
 export type AuthResendBody = z.infer<typeof AuthResendBody>;
 
 export const AuthResendResponse = z.object({
   resendAfterSec: z.number().int().nonnegative(),
   expiresInSec: z.number().int().positive(),
+  channel: OtpChannel,
 });
 export type AuthResendResponse = z.infer<typeof AuthResendResponse>;
 
