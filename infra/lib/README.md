@@ -10,8 +10,11 @@ Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices 
 > and a one-shot in-VPC migration runner; `app-api`/`admin` move in-VPC with their auth backends.
 > `ObservabilityStack` is now wired (starter scope; see its row). Still deferred: **Firehose/Athena +
 > cross-region backup** in `DataStack`.
-> The custom domain (ACM + Route 53 alias) is wired only in prod (`wanthat.app`); dev runs on the
-> default `*.cloudfront.net` hostname. Service handlers return `501` until their feature slices land.
+> The custom domain (ACM + Route 53 alias) is wired in both environments — the apex in prod
+> (`wanthat.app`) and a subdomain in dev (`dev.wanthat.app`), both in the same `wanthat.app` zone. The
+> SPA learns its backend URLs + Cognito client ids from a runtime `/config.json` the EdgeStack writes
+> into the S3 bucket (no build-time env needed on the hosted site). Service handlers return `501` until
+> their feature slices land.
 
 | Stack | Owns | ADR |
 |---|---|---|
@@ -21,7 +24,7 @@ Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices 
 | `ApiStack` | HTTP API + JWT authorizer; app-api Lambdalith (**in-VPC**, IAM DB auth, reserved-concurrency cap); regional WAF + per-phone/IP rate limits; SMS kill-switch flag | 0002, 0006 |
 | `AdminStack` | admin Lambda (**in-VPC**, own role/exposure) | 0002 |
 | `EdgeServicesStack` | landing Lambda (**non-VPC** → DynamoDB); conversion poller as a **non-VPC fetcher + in-VPC writer**; retailer fetcher(s) (non-VPC, secret-scoped); EventBridge Scheduler (configurable period) | 0007, 0009, 0008, 0004 |
-| `EdgeStack` (**us-east-1**) | One CloudFront distribution: **default → S3 SPA** (OAC, private), **`/p/*` → landing HTTP API** (cross-region origin); CloudFront WAF web ACL; ACM cert + Route 53 apex alias (prod); **edge CloudWatch dashboard** (`wanthat-{env}-edge`: CloudFront requests/error-rate + WAF allowed/blocked, us-east-1). app-api/admin reached directly via Bearer, not fronted | 0019, 0016, 0007 |
+| `EdgeStack` (**us-east-1**) | One CloudFront distribution: **default → S3 SPA** (OAC, private), **`/p/*` → landing HTTP API** (cross-region origin); CloudFront WAF web ACL; ACM cert + Route 53 alias (apex in prod, `dev.` subdomain in dev); runtime **`/config.json`** written into the SPA bucket (backend URLs + Cognito client ids, cross-region from il-central-1); **edge CloudWatch dashboard** (`wanthat-{env}-edge`: CloudFront requests/error-rate + WAF allowed/blocked, us-east-1). app-api/admin reached directly via Bearer, not fronted | 0019, 0016, 0007 |
 | `ObservabilityStack` (**deploys last**) | SNS alarm topic (`wanthat-{env}-alarms`, optional email sub); alarms for SMS month-to-date spend (80% of the IdentityStack cap), per-Lambda errors, per-HTTP-API 5xx, Aurora connections (80% of the 50 cap); per-surface CloudWatch dashboard (API count/5xx/p95, Lambda errors/throttles/p95, Aurora ACU+connections, SMS spend vs cap). Also sets **X-Ray tracing + retention-bounded log groups** on every application Lambda (via `config.serviceLogGroup`). Follow-ups: CloudTrail alarm on retailer-secret reads (own issue — needs a single account-level trail, since dev/prod share one account), business/funnel metrics (needs the deferred Firehose/Athena). The CloudFront/WAF dashboard is on the `EdgeStack` (us-east-1) | 0006, 0002 |
 
 Notes:

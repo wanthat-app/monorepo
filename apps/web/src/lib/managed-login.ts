@@ -1,5 +1,6 @@
 import type { AuthSession } from "@wanthat/contracts";
 import { meApi } from "./api";
+import { getConfig } from "./config";
 
 /**
  * Discoverable (userless) passkey login via Cognito Managed Login (ADR-0020). The raw Cognito API
@@ -7,8 +8,6 @@ import { meApi } from "./api";
  * authorization-code + PKCE exchange **in the browser** (the in-VPC API can't reach the hosted token
  * endpoint). The resulting tokens are then used as a normal Bearer session.
  */
-const MANAGED_LOGIN_URL: string = import.meta.env.VITE_MANAGED_LOGIN_URL ?? "";
-const CLIENT_ID: string = import.meta.env.VITE_USER_POOL_CLIENT_ID ?? "";
 const VERIFIER_KEY = "wanthat.pkceVerifier";
 const STATE_KEY = "wanthat.oauthState";
 
@@ -37,9 +36,10 @@ export async function beginPasskeyLogin(): Promise<void> {
   sessionStorage.setItem(VERIFIER_KEY, verifier);
   sessionStorage.setItem(STATE_KEY, state);
   const challenge = base64url(await sha256(verifier));
-  const url = new URL(`${MANAGED_LOGIN_URL}/oauth2/authorize`);
+  const { managedLoginUrl, userPoolClientId } = getConfig();
+  const url = new URL(`${managedLoginUrl}/oauth2/authorize`);
   url.search = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: userPoolClientId,
     response_type: "code",
     scope: "openid phone profile",
     redirect_uri: redirectUri(),
@@ -71,12 +71,13 @@ export async function completePasskeyLogin(code: string): Promise<AuthSession | 
   sessionStorage.removeItem(VERIFIER_KEY);
   if (!verifier) throw new Error("missing PKCE verifier");
 
-  const res = await fetch(`${MANAGED_LOGIN_URL}/oauth2/token`, {
+  const { managedLoginUrl, userPoolClientId } = getConfig();
+  const res = await fetch(`${managedLoginUrl}/oauth2/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code",
-      client_id: CLIENT_ID,
+      client_id: userPoolClientId,
       code,
       redirect_uri: redirectUri(),
       code_verifier: verifier,

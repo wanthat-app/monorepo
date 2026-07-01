@@ -1,3 +1,4 @@
+import { getConfig } from "./config";
 import { isAdminToken } from "./jwt";
 
 /**
@@ -10,8 +11,6 @@ import { isAdminToken } from "./jwt";
  * The resulting tokens are kept in sessionStorage (cleared on tab close); the access token is sent as
  * a Bearer to admin-api, the id token's `cognito:groups` gates the console UI (server re-enforces it).
  */
-const MANAGED_LOGIN_URL: string = import.meta.env.VITE_ADMIN_MANAGED_LOGIN_URL ?? "";
-const CLIENT_ID: string = import.meta.env.VITE_ADMIN_POOL_CLIENT_ID ?? "";
 const VERIFIER_KEY = "wanthat.admin.pkceVerifier";
 const STATE_KEY = "wanthat.admin.oauthState";
 const TOKENS_KEY = "wanthat.admin.tokens";
@@ -48,9 +47,10 @@ export async function beginAdminLogin(): Promise<void> {
   sessionStorage.setItem(VERIFIER_KEY, verifier);
   sessionStorage.setItem(STATE_KEY, state);
   const challenge = base64url(await sha256(verifier));
-  const url = new URL(`${MANAGED_LOGIN_URL}/oauth2/authorize`);
+  const { adminManagedLoginUrl, adminPoolClientId } = getConfig();
+  const url = new URL(`${adminManagedLoginUrl}/oauth2/authorize`);
   url.search = new URLSearchParams({
-    client_id: CLIENT_ID,
+    client_id: adminPoolClientId,
     response_type: "code",
     scope: "openid email profile",
     redirect_uri: redirectUri(),
@@ -81,12 +81,13 @@ export async function completeAdminLogin(code: string): Promise<AdminTokens> {
   sessionStorage.removeItem(VERIFIER_KEY);
   if (!verifier) throw new Error("missing PKCE verifier");
 
-  const res = await fetch(`${MANAGED_LOGIN_URL}/oauth2/token`, {
+  const { adminManagedLoginUrl, adminPoolClientId } = getConfig();
+  const res = await fetch(`${adminManagedLoginUrl}/oauth2/token`, {
     method: "POST",
     headers: { "content-type": "application/x-www-form-urlencoded" },
     body: new URLSearchParams({
       grant_type: "authorization_code",
-      client_id: CLIENT_ID,
+      client_id: adminPoolClientId,
       code,
       redirect_uri: redirectUri(),
       code_verifier: verifier,
