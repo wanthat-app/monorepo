@@ -37,7 +37,8 @@ export type AuthResendResponse = z.infer<typeof AuthResendResponse>;
 // POST /auth/verify — verify OTP; branches on whether the phone is new.
 export const AuthVerifyBody = z.object({
   challengeId: z.string(),
-  code: z.string().regex(/^\d{6}$/, "6-digit OTP"),
+  // Cognito USER_AUTH sign-in OTP (SMS_OTP/EMAIL_OTP) codes are 8 digits (sign-up verification is 6).
+  code: z.string().regex(/^\d{8}$/, "8-digit OTP"),
 });
 export type AuthVerifyBody = z.infer<typeof AuthVerifyBody>;
 
