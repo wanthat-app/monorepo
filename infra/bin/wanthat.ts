@@ -50,9 +50,15 @@ const data = new DataStack(app, stackName(wanthatEnv, "data"), {
   auroraSg: network.auroraSg,
   lambdaSg: network.lambdaSg,
 });
-const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), common);
+// identity/api/admin feed public config (client ids, api hosts) to the us-east-1 EdgeStack's
+// config.json, so they set crossRegionReferences like edge-services (which exports the landing apiId).
+const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), {
+  ...common,
+  crossRegionReferences: true,
+});
 const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   ...common,
+  crossRegionReferences: true,
   userPool: identity.userPool,
   userPoolClient: identity.userPoolClient,
   recommendationTable: data.recommendationTable,
@@ -67,6 +73,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
 
 const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   ...common,
+  crossRegionReferences: true,
   // Admin API authorizes against the employee pool (ADR-0020 §two-pool); app-api keeps the customer
   // pool above. A customer token therefore can't reach /admin.
   employeePool: identity.employeePool,
@@ -94,6 +101,15 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
   wanthatEnv,
   crossRegionReferences: true,
   landingApiId: edgeServices.landingApi.apiId,
+  // Public runtime config written to /config.json in the SPA bucket (cross-region from il-central-1).
+  spaConfig: {
+    apiUrl: api.httpApi.apiEndpoint,
+    adminApiUrl: admin.httpApi.apiEndpoint,
+    managedLoginUrl: identity.userPoolDomain.baseUrl(),
+    userPoolClientId: identity.userPoolClient.userPoolClientId,
+    adminManagedLoginUrl: identity.employeePoolDomain.baseUrl(),
+    adminPoolClientId: identity.employeePoolClient.userPoolClientId,
+  },
 });
 
 // ObservabilityStack deploys LAST — it only references resources the other il-central-1 stacks
@@ -119,9 +135,9 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
   smsSpendLimitUsd: SMS_MONTHLY_SPEND_LIMIT_USD[wanthatEnv.name],
 });
 
-// DnsStack — domain verification / mail records (Zoho) in the existing Route 53 zone. Only where a
-// custom domain is configured (prod); dev has no domain to manage.
-if (wanthatEnv.domainName && wanthatEnv.hostedZoneId) {
+// DnsStack — apex mail records (Zoho MX/SPF/DKIM/DMARC) for wanthat.app. Prod only: these belong to
+// the apex domain, not the dev subdomain (dev has a domainName now, but no mail of its own).
+if (wanthatEnv.name === "prod" && wanthatEnv.domainName && wanthatEnv.hostedZoneId) {
   new DnsStack(app, stackName(wanthatEnv, "dns"), {
     ...common,
     hostedZoneId: wanthatEnv.hostedZoneId,

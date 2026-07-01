@@ -69,7 +69,10 @@ export class IdentityStack extends Stack {
       // id must match the SPA origin: prod = the apex domain; dev defers to PR4 (Cognito defaults to
       // the managed-login domain until the CloudFront origin is wired).
       passkeyUserVerification: cognito.PasskeyUserVerification.REQUIRED,
-      ...(isProd && wanthatEnv.domainName ? { passkeyRelyingPartyId: wanthatEnv.domainName } : {}),
+      // WebAuthn binds a passkey to a single relying-party id (one origin), so we point it at the
+      // deployed site domain (prod apex / dev subdomain). Passkeys therefore work on that hosted
+      // origin, not on localhost — but localhost keeps SMS-OTP login (a first-auth factor) working.
+      ...(wanthatEnv.domainName ? { passkeyRelyingPartyId: wanthatEnv.domainName } : {}),
       // Let CDK create the SNS publish role Cognito uses to send OTP SMS.
       enableSmsRole: true,
       removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
@@ -87,11 +90,19 @@ export class IdentityStack extends Stack {
       precedence: 10,
     });
 
+    // Browser origins allowed to complete the hosted-UI OAuth redirect. The deployed site (prod apex
+    // or dev subdomain) plus localhost:5173 in non-prod, so a developer can run the SPA locally
+    // against this environment AND use the hosted URL. Callback paths differ per client (below).
+    const webOrigins = isProd
+      ? [`https://${wanthatEnv.domainName}`]
+      : [
+          "http://localhost:5173",
+          ...(wanthatEnv.domainName ? [`https://${wanthatEnv.domainName}`] : []),
+        ];
+
     // Public SPA client: no secret; only the choice-based USER_AUTH flow (ADR-0006) — never
     // userSrp/userPassword/custom. Token revocation on so /auth/signout can revoke refresh tokens.
-    const callbackUrls = isProd
-      ? [`https://${wanthatEnv.domainName}/auth/callback`]
-      : ["http://localhost:5173/auth/callback"];
+    const callbackUrls = webOrigins.map((o) => `${o}/auth/callback`);
     this.userPoolClient = this.userPool.addClient("Spa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-spa`,
       generateSecret: false,
@@ -185,9 +196,7 @@ export class IdentityStack extends Stack {
 
     // Admin SPA client: public (no secret), OAuth code+PKCE via the hosted UI; shorter refresh TTL
     // than customers (privileged). The admin SPA serves its callback at /admin/callback.
-    const adminCallbackUrls = isProd
-      ? [`https://${wanthatEnv.domainName}/admin/callback`]
-      : ["http://localhost:5173/admin/callback"];
+    const adminCallbackUrls = webOrigins.map((o) => `${o}/admin/callback`);
     this.employeePoolClient = this.employeePool.addClient("AdminSpa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-admin-spa`,
       generateSecret: false,

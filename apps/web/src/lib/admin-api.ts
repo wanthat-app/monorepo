@@ -6,12 +6,12 @@ import type {
   PutConfigResponse,
 } from "@wanthat/contracts";
 import { ApiError } from "./api";
+import { getConfig } from "./config";
 
 /**
  * Client for the admin-api surface (a separate HTTP API from app-api). Bearer per call; the server
- * re-enforces the admin group, so this is for the operator console only.
+ * re-enforces the admin group, so this is for the operator console only. Base URL from runtime config.
  */
-const ADMIN_URL: string = import.meta.env.VITE_ADMIN_API_URL ?? "";
 
 export interface StatsOverview {
   usersCount: number;
@@ -25,7 +25,7 @@ async function adminRequest<T>(
   token: string,
   opts: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  const res = await fetch(`${ADMIN_URL}${path}`, {
+  const res = await fetch(`${getConfig().adminApiUrl}${path}`, {
     method: opts.method ?? "GET",
     headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,

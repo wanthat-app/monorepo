@@ -27,10 +27,17 @@ export interface WanthatEnv {
    */
   readonly domainName?: string;
   /**
-   * Route 53 **public** hosted zone id for {@link domainName}. Lets the EdgeStack DNS-validate the
-   * ACM cert and alias the apex at CloudFront. Set only where {@link domainName} is (prod).
+   * Route 53 **public** hosted zone id that {@link domainName} lives in. Lets the EdgeStack
+   * DNS-validate the ACM cert and alias the record at CloudFront. Set wherever {@link domainName} is.
    */
   readonly hostedZoneId?: string;
+  /**
+   * Apex name of {@link hostedZoneId} (e.g. `wanthat.app`). Only differs from {@link domainName} when
+   * the site runs on a **subdomain** (dev → `dev.wanthat.app` in the `wanthat.app` zone): the zone is
+   * still the apex, but the CloudFront alias record is the subdomain. Defaults to {@link domainName}
+   * (apex site, e.g. prod).
+   */
+  readonly hostedZoneName?: string;
   /**
    * Addresses subscribed to the ObservabilityStack alarm SNS topic. Each gets an email subscription
    * (every recipient must confirm once via the AWS link before they receive alarms). Empty/unset
@@ -43,13 +50,24 @@ const REGION = "il-central-1";
 
 const ALARM_EMAILS = ["dennis@wanthat.app", "jonatan@wanthat.app"] as const;
 
+const HOSTED_ZONE_ID = "Z01833842M5XCPIIPFXKG"; // the wanthat.app public zone (dev + prod share it)
+
 export const ENVIRONMENTS: Record<EnvName, WanthatEnv> = {
-  dev: { name: "dev", region: REGION, alarmEmails: ALARM_EMAILS },
+  dev: {
+    name: "dev",
+    region: REGION,
+    // Dev runs on a subdomain of the same zone; the CloudFront alias is dev.wanthat.app.
+    domainName: "dev.wanthat.app",
+    hostedZoneId: HOSTED_ZONE_ID,
+    hostedZoneName: "wanthat.app",
+    alarmEmails: ALARM_EMAILS,
+  },
   prod: {
     name: "prod",
     region: REGION,
     domainName: "wanthat.app",
-    hostedZoneId: "Z01833842M5XCPIIPFXKG",
+    hostedZoneId: HOSTED_ZONE_ID,
+    hostedZoneName: "wanthat.app",
     alarmEmails: ALARM_EMAILS,
   },
 };

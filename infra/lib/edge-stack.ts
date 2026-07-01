@@ -19,6 +19,20 @@ export interface EdgeStackProps extends StackProps {
    * regions — this stack is us-east-1 — so the app sets `crossRegionReferences: true` on both ends.
    */
   readonly landingApiId: string;
+  /**
+   * Public runtime config baked into `/config.json` in the SPA bucket, so the deployed SPA learns its
+   * backend URLs + Cognito client ids **at load time** (it can't read build-time `VITE_*` — the bundle
+   * is built before these stacks' outputs exist). All values are public (client ids, endpoint hosts).
+   * These come from il-central-1 stacks, so they cross regions (crossRegionReferences on both ends).
+   */
+  readonly spaConfig: {
+    readonly apiUrl: string;
+    readonly adminApiUrl: string;
+    readonly managedLoginUrl: string;
+    readonly userPoolClientId: string;
+    readonly adminManagedLoginUrl: string;
+    readonly adminPoolClientId: string;
+  };
 }
 
 /**
@@ -35,8 +49,10 @@ export interface EdgeStackProps extends StackProps {
  * The app-api and admin APIs are **not** fronted here: the SPA is cookieless and calls them directly
  * with a Bearer JWT (ADR-0008/0016), so cross-origin is fine and there is no proxy hop (ADR-0019).
  *
- * Custom domain (apex) + Route 53 alias + DNS-validated cert are wired only where the env carries a
- * `domainName`/`hostedZoneId` (prod → wanthat.app); dev runs on the default `*.cloudfront.net` name.
+ * Custom domain + Route 53 alias + DNS-validated cert are wired wherever the env carries a
+ * `domainName`/`hostedZoneId` — the apex in prod (`wanthat.app`) or a subdomain in dev
+ * (`dev.wanthat.app`), both in the same `wanthat.app` zone (`hostedZoneName`). An env with no domain
+ * would fall back to the default `*.cloudfront.net` name.
  */
 export class EdgeStack extends Stack {
   readonly distribution: cloudfront.Distribution;
@@ -45,6 +61,9 @@ export class EdgeStack extends Stack {
     super(scope, id, props);
     const { wanthatEnv } = props;
     const { domainName, hostedZoneId } = wanthatEnv;
+    // The zone is the apex (wanthat.app); the alias record may be a subdomain of it (dev.wanthat.app).
+    const zoneName = wanthatEnv.hostedZoneName ?? domainName;
+    const isSubdomain = !!domainName && domainName !== zoneName;
 
     // --- SPA bucket: private, reached only through CloudFront's Origin Access Control ---
     // Contents are reproducible build output (apps/web/dist), so destroying with the stack is safe.
@@ -98,10 +117,10 @@ export class EdgeStack extends Stack {
 
     // --- custom domain (prod only) — DNS-validated cert + apex alias against the public zone ---
     const zone =
-      domainName && hostedZoneId
+      domainName && hostedZoneId && zoneName
         ? route53.HostedZone.fromHostedZoneAttributes(this, "Zone", {
             hostedZoneId,
-            zoneName: domainName,
+            zoneName,
           })
         : undefined;
     const certificate =
@@ -160,12 +179,18 @@ export class EdgeStack extends Stack {
       ],
     });
 
-    // Upload the SPA build and invalidate the edge cache on each deploy. The asset dir must exist at
-    // synth time; infra build-depends on `@wanthat/web` (its `package.json`), so Turborepo's `^build`
-    // produces `apps/web/dist` before any infra synth/diff/deploy.
+    // Upload the SPA build + a runtime `/config.json`, and invalidate the edge cache on each deploy.
+    // The asset dir must exist at synth time; infra build-depends on `@wanthat/web` (its
+    // `package.json`), so Turborepo's `^build` produces `apps/web/dist` before any infra synth/diff/
+    // deploy. `config.json` is a second source in the SAME deployment (not a separate BucketDeployment,
+    // which would prune the other's files); the SPA fetches it at load so it needs no build-time env.
+    // Token values are substituted at deploy time by the BucketDeployment custom resource.
     new s3deploy.BucketDeployment(this, "SpaDeployment", {
       destinationBucket: siteBucket,
-      sources: [s3deploy.Source.asset(path.join(REPO_ROOT, "apps", "web", "dist"))],
+      sources: [
+        s3deploy.Source.asset(path.join(REPO_ROOT, "apps", "web", "dist")),
+        s3deploy.Source.jsonData("config.json", props.spaConfig),
+      ],
       distribution: this.distribution,
       distributionPaths: ["/*"],
     });
@@ -174,9 +199,11 @@ export class EdgeStack extends Stack {
       const aliasTarget = route53.RecordTarget.fromAlias(
         new targets.CloudFrontTarget(this.distribution),
       );
-      // recordName omitted → the zone apex (wanthat.app).
-      new route53.ARecord(this, "AliasA", { zone, target: aliasTarget });
-      new route53.AaaaRecord(this, "AliasAaaa", { zone, target: aliasTarget });
+      // Apex site → recordName omitted (zone apex, e.g. wanthat.app). Subdomain site → the full
+      // subdomain (e.g. dev.wanthat.app); CDK keeps it within the zone.
+      const recordName = isSubdomain ? domainName : undefined;
+      new route53.ARecord(this, "AliasA", { zone, recordName, target: aliasTarget });
+      new route53.AaaaRecord(this, "AliasAaaa", { zone, recordName, target: aliasTarget });
     }
 
     // --- Edge observability dashboard (us-east-1) ---

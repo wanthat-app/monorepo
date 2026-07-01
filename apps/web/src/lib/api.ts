@@ -8,14 +8,13 @@ import type {
   CustomerProfile,
   PasskeyRegisterVerifyResponse,
 } from "@wanthat/contracts";
+import { getConfig } from "./config";
 
 /**
  * Typed client for the app-api `/auth` + `/me` surface. Cookieless (ADR-0007): the access token is
- * passed as a Bearer header per call; nothing is stored in a cookie. `VITE_API_URL` points at the
- * app-api HTTP API (injected at build time per environment).
+ * passed as a Bearer header per call; nothing is stored in a cookie. The base URL comes from the
+ * runtime config (`/config.json` on the deployed site; `.env.local` in local dev).
  */
-const API_URL: string = import.meta.env.VITE_API_URL ?? "";
-
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -31,7 +30,7 @@ async function request<T>(
 ): Promise<T> {
   const headers: Record<string, string> = { "content-type": "application/json" };
   if (opts.token) headers.authorization = `Bearer ${opts.token}`;
-  const res = await fetch(`${API_URL}${path}`, {
+  const res = await fetch(`${getConfig().apiUrl}${path}`, {
     method: opts.method ?? "GET",
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
