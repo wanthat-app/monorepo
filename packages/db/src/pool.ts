@@ -56,10 +56,11 @@ export function createDb(cfg: DbConfig): Kysely<Database> {
     // In-VPC, reserved-concurrency-capped functions (ADR-0002): keep pools tiny.
     max: 2,
     idleTimeoutMillis: 30_000,
-    // Fail fast instead of hanging the whole Lambda if Aurora is unreachable / the IAM connect stalls
-    // (a scale-to-zero resume is far quicker than this). Surfaces a clear error rather than a silent
-    // Lambda timeout.
-    connectionTimeoutMillis: 10_000,
+    // Bound the connect so a genuinely unreachable DB errors instead of silently hanging the Lambda,
+    // but keep it long enough to ride out an Aurora scale-to-zero resume (kept at min ACU 0, ADR-0003;
+    // a cold resume can take ~20-30s+). The one-shot migrator has a matching 60s Lambda timeout; the
+    // API-fronted functions are still capped at the 30s HTTP API integration limit.
+    connectionTimeoutMillis: 60_000,
   });
   return new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
 }
