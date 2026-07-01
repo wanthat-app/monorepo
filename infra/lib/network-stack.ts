@@ -42,8 +42,12 @@ export class NetworkStack extends Stack {
 
     this.lambdaSg = new ec2.SecurityGroup(this, "LambdaSg", {
       vpc: this.vpc,
+      // DO NOT edit this string: an EC2 SG description is immutable, so any change forces a REPLACEMENT
+      // of the SG, which changes its exported GroupId - and that export is imported by the api/admin/
+      // data stacks, so CloudFormation blocks the update ("Cannot update export ... as it is in use").
+      // It still reads "app-api" (now the split app-auth/app-core) deliberately; the name is cosmetic.
       description:
-        "In-VPC Lambdas (app-core, admin, poller-writer, migrator) - egress to Aurora + endpoints",
+        "In-VPC Lambdas (app-api, admin, poller-writer, migrator) - egress to Aurora + endpoints",
       allowAllOutbound: true,
     });
 
