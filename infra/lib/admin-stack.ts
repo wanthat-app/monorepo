@@ -105,9 +105,17 @@ export class AdminStack extends Stack {
 
     // Unauthenticated liveness probe; everything else behind the JWT authorizer (+ in-handler group).
     this.httpApi.addRoutes({ path: "/healthz", methods: [HttpMethod.GET], integration });
+    // Explicit methods (NOT ANY) so `OPTIONS` has no matching route and falls through to API
+    // Gateway's built-in CORS preflight handler instead of being 401'd by the authorizer.
     this.httpApi.addRoutes({
       path: "/{proxy+}",
-      methods: [HttpMethod.ANY],
+      methods: [
+        HttpMethod.GET,
+        HttpMethod.POST,
+        HttpMethod.PUT,
+        HttpMethod.PATCH,
+        HttpMethod.DELETE,
+      ],
       integration,
       authorizer,
     });

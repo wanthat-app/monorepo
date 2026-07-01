@@ -157,10 +157,18 @@ export class ApiStack extends Stack {
       methods: [HttpMethod.POST],
       integration,
     });
-    // Everything else behind the JWT authorizer.
+    // Everything else behind the JWT authorizer. Explicit methods (NOT ANY) so `OPTIONS` has no
+    // matching route and falls through to API Gateway's built-in CORS preflight handler — an ANY
+    // route would swallow the preflight into the authorizer and 401 it (breaking browser CORS).
     this.httpApi.addRoutes({
       path: "/{proxy+}",
-      methods: [HttpMethod.ANY],
+      methods: [
+        HttpMethod.GET,
+        HttpMethod.POST,
+        HttpMethod.PUT,
+        HttpMethod.PATCH,
+        HttpMethod.DELETE,
+      ],
       integration,
       authorizer,
     });
