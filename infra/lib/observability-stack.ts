@@ -39,8 +39,10 @@ export interface ObservabilityStackProps extends StackProps {
  * per-surface dashboard. X-Ray tracing + log retention on the Lambdas themselves are set at each
  * function's call site via config.serviceLogGroup, not here.
  *
- * Out of scope for the starter (follow-ups): CloudFront/WAF dashboards (us-east-1), a CloudTrail alarm
- * on reads of the retailer secret, and business/funnel metrics.
+ * The CloudFront/WAF edge dashboard lives on the EdgeStack (us-east-1, same region as those metrics),
+ * not here. Still out of scope: business/funnel metrics (needs the deferred Firehose to S3 to Athena
+ * pipeline), and a CloudTrail alarm on retailer-secret reads (tracked as its own issue - it needs a
+ * single account-level trail, since dev and prod currently share one account).
  */
 export class ObservabilityStack extends Stack {
   readonly alarmTopic: sns.Topic;
