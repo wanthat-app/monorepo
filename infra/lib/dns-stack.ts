@@ -65,5 +65,15 @@ export class DnsStack extends Stack {
         "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCdAJOVs0n44nZtCBDhOYncfFll29DLgBR1XIveunYEoTZBu6tCk67yhYlrmFP4DPjBCDsZ6CbLy1lv4ziQa6RNWbgeNnQEfAKGIWEm+q/uw/8mmzrDgwoAf4uGwPEsA42qX3DN/HfgbSMj5CaiXWh+SlvCDCY1FWWmPLRDwhWS3QIDAQAB",
       ],
     });
+
+    // DMARC — a TXT at the `_dmarc` name. Starts in monitor mode (`p=none`): nothing is blocked or
+    // quarantined; aggregate reports (rua) go to dennis@wanthat.app so alignment can be confirmed
+    // before tightening to quarantine/reject. Relaxed alignment (the default) suits Zoho SPF+DKIM.
+    new route53.TxtRecord(this, "Dmarc", {
+      zone,
+      recordName: "_dmarc",
+      ttl: Duration.minutes(5),
+      values: ["v=DMARC1; p=none; rua=mailto:dennis@wanthat.app"],
+    });
   }
 }
