@@ -24,9 +24,12 @@ export function buildTemplateMessage(args: {
   variables: unknown;
   to: string;
 }): TemplateMessage {
-  const spec: MessageTypeSpec | undefined = MESSAGE_TYPES[args.type];
+  // parse() output matches this spec's V by construction; TS cannot correlate the union member
+  // with its own variable schema, so this is the one audited cast in the library.
+  const spec = (MESSAGE_TYPES as Record<string, MessageTypeSpec<unknown>>)[args.type];
   if (!spec) throw new Error(`unknown message type: ${String(args.type)}`);
-  const vars = spec.variables.parse(args.variables) as Record<string, string>;
+  const vars = spec.variables.parse(args.variables);
+  const components = spec.components(vars);
   return {
     messaging_product: "whatsapp",
     recipient_type: "individual",
@@ -35,7 +38,7 @@ export function buildTemplateMessage(args: {
     template: {
       name: spec.metaTemplateName,
       language: { code: args.language },
-      components: spec.components(vars),
+      components,
     },
   };
 }

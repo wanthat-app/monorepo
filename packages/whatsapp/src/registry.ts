@@ -15,13 +15,18 @@ export interface TemplateComponent {
   parameters: Array<{ type: "text"; text: string }>;
 }
 
-export interface MessageTypeSpec {
+export interface MessageTypeSpec<V = unknown> {
   /** Template name as registered with Meta (per-language variants share the name). */
   metaTemplateName: string;
   category: "authentication" | "utility";
   /** Variables the caller must supply — parsed strictly; a mismatch throws (no fallback). */
-  variables: z.ZodTypeAny;
-  components: (vars: Record<string, string>) => TemplateComponent[];
+  variables: z.ZodType<V>;
+  components: (vars: V) => TemplateComponent[];
+}
+
+/** Identity helper that pins V per entry, so components() is fully typed at the definition site. */
+function defineMessageType<V>(spec: MessageTypeSpec<V>): MessageTypeSpec<V> {
+  return spec;
 }
 
 export const OtpCodeVariables = z.object({ code: z.string().min(4).max(12) }).strict();
@@ -29,15 +34,15 @@ export const OtpCodeVariables = z.object({ code: z.string().min(4).max(12) }).st
 export const MESSAGE_TYPES = {
   // Meta authentication templates have a fixed shape: the code as the body parameter AND as the
   // copy-code (url sub_type) button parameter.
-  otp_code: {
+  otp_code: defineMessageType({
     metaTemplateName: "otp_code",
     category: "authentication",
     variables: OtpCodeVariables,
     components: (v) => [
-      { type: "body", parameters: [{ type: "text", text: v.code! }] },
-      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: v.code! }] },
+      { type: "body", parameters: [{ type: "text", text: v.code }] },
+      { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: v.code }] },
     ],
-  },
-} satisfies Record<string, MessageTypeSpec>;
+  }),
+};
 
 export type MessageType = keyof typeof MESSAGE_TYPES;
