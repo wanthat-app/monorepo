@@ -138,7 +138,7 @@ export class ApiStack extends Stack {
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
       memorySize: 256,
-      timeout: Duration.seconds(15), // first connect may resume a scale-to-zero cluster
+      timeout: Duration.seconds(30), // first connect may resume a scale-to-zero cluster (up to ~30s)
       tracing: lambda.Tracing.ACTIVE,
       logGroup: serviceLogGroup(this, "AppCoreLogs", wanthatEnv),
       vpc: props.vpc,
