@@ -62,10 +62,15 @@ export function authRouter(): Hono {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
+    // TEMP diagnostic (remove after): pinpoint whether a hang is the Secrets Manager (ticket key)
+    // fetch or the first Aurora connect — both are in-VPC and both showed a silent 15s Lambda timeout.
+    console.log("session: verifying ticket (secrets manager fetch on first call)");
     const ticket = await ctx.tickets.verify(body.registrationTicket);
     if (!ticket) return c.json({ error: "invalid_ticket" }, 401);
 
+    console.log("session: ticket ok; querying customer (first Aurora connect)");
     const existing = await findByCognitoSub(ctx.db, ticket.sub);
+    console.log("session: aurora query returned");
     if (existing) {
       return c.json(
         AuthSessionResponse.parse({

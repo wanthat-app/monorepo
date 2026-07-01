@@ -25,6 +25,13 @@ app.get("/healthz", (c) => c.json({ ok: true, service: SERVICE }));
 app.route("/auth", authRouter());
 app.route("/me", meRouter());
 
+// Log any uncaught handler error (otherwise Hono returns 500 with no trace) so an in-VPC connection
+// failure surfaces instead of a silent Lambda timeout.
+app.onError((err, c) => {
+  console.error(`${SERVICE} error on ${c.req.method} ${c.req.path}:`, err);
+  return c.json({ error: "internal_error", service: SERVICE }, 500);
+});
+
 // Links + wallet not yet implemented — a clean 501 rather than a 404.
 app.all("*", (c) => c.json({ error: "not_implemented", service: SERVICE, path: c.req.path }, 501));
 
