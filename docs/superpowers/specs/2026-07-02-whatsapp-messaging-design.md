@@ -40,6 +40,12 @@ ADR's original layered 7-PR sequence is superseded by this):
 - `AuthStartBody` and `AuthResendBody` gain **required** `channel: OtpChannel`. No server-side
   default: the UI picks the channel (from `/auth/config`) and states it explicitly. The resend
   screen's "send via SMS instead" is the same field on resend.
+- `AuthStartBody` also gains **optional** `locale: MessageLanguage` — the SPA's active UI
+  language. app-auth writes it to the standard Cognito `locale` attribute together with
+  `custom:otpChannel`, so the sender can pick the template language. (app-core cannot do this
+  sync — it is in-VPC/NAT-free and calls no Cognito API, ADR-0021.) Pre-login callers can set it
+  for any phone; it affects message language only — same exposure class as triggering the OTP
+  itself, which the velocity gate already caps.
 - **New `GET /auth/config`** → `AuthConfigResponse { channels: OtpChannel[], defaultChannel:
   OtpChannel }` — the enabled channels and the preselect, computed from runtime config. This is
   how the UI controls the flow without hardcoding availability (pre-onboarding it returns
@@ -172,10 +178,9 @@ In `/auth/register`, after `insertCustomer` succeeds: write one outbox item — 
 the customer's profile locale (`en` when absent), variables: first name + app URL — over the
 DynamoDB gateway endpoint. The producer decides *what* to send and in which language; the
 dispatcher and library do not re-derive it. Outbox write failure is logged but does **not**
-fail registration (welcome message is best-effort). Registration also syncs the customer's
-locale to the Cognito `locale` attribute, so subsequent OTP messages use the profile language.
-Context gains the repo; ApiStack passes `NOTIFICATION_OUTBOX_TABLE` + grants write to the
-app-core role.
+fail registration (welcome message is best-effort). Context gains the repo; ApiStack passes
+`NOTIFICATION_OUTBOX_TABLE` + grants write to the app-core role. (No Cognito call here —
+app-core is in-VPC/NAT-free, ADR-0021; the OTP language attribute is app-auth's job.)
 
 ### `WhatsAppStack` (new, instantiated after Data; no VPC dependency)
 
@@ -214,13 +219,13 @@ enforcement; the type is documentation that can't drift.
 
 ## Kill-switch matrix (launch state → flipped)
 
-| Key                             | Ships as                            | Post-onboarding                | Consumed by                                       |
-| ------------------------------- | ----------------------------------- | ------------------------------ | ------------------------------------------------- |
-| `auth.smsEnabled`               | `true` (existing)                   | `true`                         | app-auth gate + `/auth/config`                    |
-| `auth.whatsappEnabled`          | `false`                             | `true`                         | app-auth gate + `/auth/config`                    |
-| `auth.defaultOtpChannel`        | `"whatsapp"` (inert while disabled) | `"whatsapp"`                   | `/auth/config` -> UI preselect                    |
-| `notifications.whatsappEnabled` | `false`                             | `true`                         | dispatcher                                        |
-| `whatsapp.phoneNumberId`        | `""`                                | the EUM Social phone-number ID | availability predicate, message-sender, dispatcher |
+| Key                             | Ships as                            | Post-onboarding                | Consumed by                                    |
+| ------------------------------- | ----------------------------------- | ------------------------------ | ---------------------------------------------- |
+| `auth.smsEnabled`               | `true` (existing)                   | `true`                         | app-auth gate + `/auth/config`                 |
+| `auth.whatsappEnabled`          | `false`                             | `true`                         | app-auth gate + `/auth/config`                 |
+| `auth.defaultOtpChannel`        | `"whatsapp"` (inert while disabled) | `"whatsapp"`                   | `/auth/config` -> UI preselect                 |
+| `notifications.whatsappEnabled` | `false`                             | `true`                         | dispatcher                                     |
+| `whatsapp.phoneNumberId`        | `""`                                | the EUM Social phone-number ID | availability check, message-sender, dispatcher |
 
 ## Testing
 
