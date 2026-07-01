@@ -29,11 +29,41 @@ export class DnsStack extends Stack {
       zoneName: props.domainName,
     });
 
-    // Zoho domain-ownership verification — an apex ("@") TXT. CDK handles the TXT quoting/chunking.
+    // Apex ("@") TXT — one record set carrying every apex TXT string (Route 53 can hold only ONE
+    // TXT record set per name, so Zoho's ownership-verification value and the SPF policy coexist as
+    // separate values here). Resolvers return all strings; each consumer picks its own (Zoho matches
+    // the verification token; SPF validators match the `v=spf1` string). CDK handles TXT quoting.
+    // NOTE: construct id stays `ZohoVerification` so the CFN logical id is unchanged — adding SPF is
+    // an in-place update of the deployed record, not a delete/recreate.
     new route53.TxtRecord(this, "ZohoVerification", {
       zone,
       ttl: Duration.minutes(5),
-      values: ["zoho-verification=zb60222279.zmverify.zoho.com"],
+      values: [
+        "zoho-verification=zb60222279.zmverify.zoho.com",
+        "v=spf1 include:zohomail.com ~all",
+      ],
+    });
+
+    // Zoho mail exchangers (apex) — lower priority is preferred; Zoho publishes 10/20/50.
+    new route53.MxRecord(this, "ZohoMx", {
+      zone,
+      ttl: Duration.minutes(5),
+      values: [
+        { priority: 10, hostName: "mx.zoho.com" },
+        { priority: 20, hostName: "mx2.zoho.com" },
+        { priority: 50, hostName: "mx3.zoho.com" },
+      ],
+    });
+
+    // Zoho DKIM public key — a TXT at the `zmail._domainkey` selector. Single string (234 chars, under
+    // the 255-char TXT limit). Mail receivers fetch this to verify Zoho's DKIM signatures.
+    new route53.TxtRecord(this, "ZohoDkim", {
+      zone,
+      recordName: "zmail._domainkey",
+      ttl: Duration.minutes(5),
+      values: [
+        "v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEBAQUAA4GNADCBiQKBgQCdAJOVs0n44nZtCBDhOYncfFll29DLgBR1XIveunYEoTZBu6tCk67yhYlrmFP4DPjBCDsZ6CbLy1lv4ziQa6RNWbgeNnQEfAKGIWEm+q/uw/8mmzrDgwoAf4uGwPEsA42qX3DN/HfgbSMj5CaiXWh+SlvCDCY1FWWmPLRDwhWS3QIDAQAB",
+      ],
     });
   }
 }
