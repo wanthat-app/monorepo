@@ -124,7 +124,8 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
     { label: "landing", api: edgeServices.landingApi },
   ],
   functions: [
-    { label: "app-api", fn: api.appApiFn },
+    { label: "app-auth", fn: api.appAuthFn },
+    { label: "app-core", fn: api.appCoreFn },
     { label: "admin-api", fn: admin.adminApiFn },
     { label: "landing", fn: edgeServices.landingFn },
     { label: "retailer-proxy", fn: edgeServices.retailerProxyFn },

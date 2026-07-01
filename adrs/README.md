@@ -30,7 +30,8 @@ DynamoDB-backed SMS kill switch) for UC1/UC2.
 | [0017](0017-currency-model-and-fx-rate-sourcing.md) | Currency model & FX rate sourcing (hold settlement currency, convert at withdrawal, Bank of Israel rate) |
 | [0018](0018-landing-front-door-http-api.md) | Landing front door: API Gateway HTTP API (supersedes ADR-0007's Function URL — unavailable in il-central-1) |
 | [0019](0019-edge-front-door-cloudfront.md) | Edge front door: one CloudFront distribution (SPA default + landing `/p/*`), us-east-1 cert + WAF |
-| [0020](0020-auth-foundation.md) | Auth foundation: provision `customer` in `/auth/register` (no Post-Confirmation trigger), in-VPC `cognito-idp` endpoint, DynamoDB kill switch, unified flow SMSes new numbers (refines [0004](0004-network-topology-nat-free-egress.md)/[0006](0006-identity-sms-otp-and-passkeys.md)) |
+| [0020](0020-auth-foundation.md) | Auth foundation: provision `customer` in `/auth/register` (no Post-Confirmation trigger), in-VPC `cognito-idp` endpoint *(decision 2 superseded by [0021](0021-auth-split-vpc-edge-and-core.md))*, DynamoDB kill switch, unified flow SMSes new numbers (refines [0004](0004-network-topology-nat-free-egress.md)/[0006](0006-identity-sms-otp-and-passkeys.md)) |
+| [0021](0021-auth-split-vpc-edge-and-core.md) | app-api split: non-VPC auth edge (Cognito+DynamoDB) + in-VPC core (Aurora), bridged by the HMAC ticket — resolves Managed Login vs PrivateLink so discoverable passkeys + OTP coexist (supersedes [0020](0020-auth-foundation.md) decision 2) |
 
 ## Status & change policy
 

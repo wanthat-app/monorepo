@@ -1,4 +1,4 @@
-import { createDb } from "@wanthat/db";
+import { TicketSigner } from "@wanthat/auth";
 import {
   AuthChallengeRepo,
   GuestAttributionRepo,
@@ -7,10 +7,6 @@ import {
   RuntimeConfigRepo,
 } from "@wanthat/dynamo";
 import { Cognito } from "./auth/cognito";
-import { TicketSigner } from "./auth/tickets";
-
-/** The Kysely handle type, derived from createDb so app-api needs no direct kysely dependency. */
-type Db = ReturnType<typeof createDb>;
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -18,9 +14,8 @@ function requireEnv(name: string): string {
   return value;
 }
 
-export interface AppContext {
+export interface AuthContext {
   region: string;
-  db: Db;
   config: RuntimeConfigRepo;
   challenges: AuthChallengeRepo;
   velocity: PhoneVelocityRepo;
@@ -29,27 +24,19 @@ export interface AppContext {
   tickets: TicketSigner;
 }
 
-let cached: AppContext | undefined;
+let cached: AuthContext | undefined;
 
 /**
- * Build the per-container dependency graph once and reuse it across warm invocations (mirrors the
- * fx-rates handler). Aurora is reached as `app_rw` via IAM auth; DynamoDB repos share one document
- * client; the ticket signing key + Cognito client are lazy/cached internally.
+ * Build the per-container dependency graph once and reuse it across warm invocations. The non-VPC
+ * auth edge (ADR-0021) reaches Cognito + DynamoDB over public AWS endpoints; the ticket signing key
+ * is lazy/cached inside {@link TicketSigner}. No Aurora — that seam belongs to `app-core`.
  */
-export function getContext(): AppContext {
+export function getContext(): AuthContext {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
   const doc = getDocClient(region);
   cached = {
     region,
-    db: createDb({
-      host: requireEnv("DB_HOST"),
-      port: 5432,
-      database: requireEnv("DB_NAME"),
-      user: requireEnv("DB_USER"),
-      region,
-      caCerts: process.env.DB_CA_CERT,
-    }),
     config: new RuntimeConfigRepo(doc, requireEnv("RUNTIME_CONFIG_TABLE")),
     challenges: new AuthChallengeRepo(doc, requireEnv("AUTH_CHALLENGE_TABLE")),
     velocity: new PhoneVelocityRepo(doc, requireEnv("PHONE_VELOCITY_TABLE")),

@@ -2,10 +2,9 @@ import { Hono } from "hono";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // Hoisted fakes so the vi.mock factories can close over them (vitest hoists vi.mock above imports).
-const { fake, dbMock } = vi.hoisted(() => ({
+const { fake } = vi.hoisted(() => ({
   fake: {
     region: "il-central-1",
-    db: {},
     config: { get: vi.fn() },
     velocity: { hit: vi.fn() },
     cognito: {
@@ -22,18 +21,13 @@ const { fake, dbMock } = vi.hoisted(() => ({
       putChallenge: vi.fn(),
       getChallenge: vi.fn(),
       deleteChallenge: vi.fn(),
-      putTicket: vi.fn(),
-      getTicket: vi.fn(),
-      deleteTicket: vi.fn(),
     },
     guests: { claim: vi.fn() },
     tickets: { sign: vi.fn(), verify: vi.fn() },
   },
-  dbMock: { findByCognitoSub: vi.fn(), insertCustomer: vi.fn() },
 }));
 
 vi.mock("../context", () => ({ getContext: () => fake }));
-vi.mock("@wanthat/db", () => dbMock);
 
 import { authRouter } from "./router";
 
@@ -42,18 +36,6 @@ app.route("/auth", authRouter());
 
 const PHONE = "+972541234567";
 const SUB = "11111111-1111-1111-1111-111111111111";
-
-const customer = {
-  id: "22222222-2222-2222-2222-222222222222",
-  phone: PHONE,
-  email: null,
-  firstName: "Dana",
-  lastName: "Levi",
-  locale: "he-IL",
-  status: "active",
-  createdAt: "2026-06-29T00:00:00.000Z",
-  updatedAt: "2026-06-29T00:00:00.000Z",
-};
 
 const cognitoResult = { AccessToken: "a", IdToken: "i", RefreshToken: "r", ExpiresIn: 3600 };
 
@@ -130,30 +112,20 @@ describe("POST /auth/verify", () => {
     ttl: 0,
   };
 
-  it("returns authenticated when a customer exists", async () => {
+  it("issues a signed self-contained ticket on OTP success (no Aurora on the edge)", async () => {
     fake.challenges.getChallenge.mockResolvedValue(challenge);
     fake.cognito.respondSmsOtp.mockResolvedValue({ kind: "tokens", result: cognitoResult });
-    dbMock.findByCognitoSub.mockResolvedValue(customer);
-
-    const res = await post("/auth/verify", { challengeId: "c1", code: "123456" });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { status: string; tokens: { accessToken: string } };
-    expect(body.status).toBe("authenticated");
-    expect(body.tokens.accessToken).toBe("a");
-    expect(fake.challenges.deleteChallenge).toHaveBeenCalledWith("c1");
-  });
-
-  it("returns registration_required and parks tokens when no customer exists", async () => {
-    fake.challenges.getChallenge.mockResolvedValue(challenge);
-    fake.cognito.respondSmsOtp.mockResolvedValue({ kind: "tokens", result: cognitoResult });
-    dbMock.findByCognitoSub.mockResolvedValue(undefined);
     fake.tickets.sign.mockResolvedValue("signed-ticket");
 
     const res = await post("/auth/verify", { challengeId: "c1", code: "123456" });
     expect(res.status).toBe(200);
-    const body = await res.json();
-    expect(body).toEqual({ status: "registration_required", registrationTicket: "signed-ticket" });
-    expect(fake.challenges.putTicket).toHaveBeenCalledOnce();
+    // Edge only hands off the ticket; /auth/session (app-core) resolves login vs register.
+    expect(await res.json()).toEqual({ registrationTicket: "signed-ticket" });
+    // The ticket carries the identity + tokens, so nothing is parked server-side.
+    expect(fake.tickets.sign).toHaveBeenCalledWith(
+      expect.objectContaining({ sub: SUB, phone: PHONE, accessToken: "a", refreshToken: "r" }),
+    );
+    expect(fake.challenges.deleteChallenge).toHaveBeenCalledWith("c1");
   });
 
   it("401s on a wrong code and counts the attempt", async () => {
@@ -184,11 +156,11 @@ describe("POST /auth/verify", () => {
 
     // Second answer is correct on the same challengeId.
     fake.cognito.respondSmsOtp.mockResolvedValueOnce({ kind: "tokens", result: cognitoResult });
-    dbMock.findByCognitoSub.mockResolvedValue(customer);
+    fake.tickets.sign.mockResolvedValue("signed-ticket");
 
     const ok = await post("/auth/verify", { challengeId: "c1", code: "123456" });
     expect(ok.status).toBe(200);
-    expect(((await ok.json()) as { status: string }).status).toBe("authenticated");
+    expect(((await ok.json()) as { registrationTicket: string }).registrationTicket).toBeTruthy();
     expect(fake.challenges.deleteChallenge).toHaveBeenCalledWith("c1");
   });
 });
@@ -226,47 +198,6 @@ describe("POST /auth/resend", () => {
     expect(body.error).toBe("rate_limited");
     expect(body.retryAfterSec).toBeGreaterThan(0);
     expect(fake.cognito.startSmsOtp).not.toHaveBeenCalled();
-  });
-});
-
-describe("POST /auth/register", () => {
-  it("provisions the customer and returns a session", async () => {
-    fake.tickets.verify.mockResolvedValue("tkt1");
-    fake.challenges.getTicket.mockResolvedValue({
-      ticketId: "tkt1",
-      sub: SUB,
-      phone: PHONE,
-      accessToken: "a",
-      idToken: "i",
-      refreshToken: "r",
-      expiresIn: 3600,
-      ttl: 0,
-    });
-    dbMock.insertCustomer.mockResolvedValue(customer);
-
-    const res = await post("/auth/register", {
-      registrationTicket: "tkt1.mac",
-      firstName: "Dana",
-      lastName: "Levi",
-    });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { customer: { firstName: string } };
-    expect(body.customer.firstName).toBe("Dana");
-    expect(dbMock.insertCustomer).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({ cognitoSub: SUB, phone: PHONE, locale: "he-IL" }),
-    );
-    expect(fake.challenges.deleteTicket).toHaveBeenCalledWith("tkt1");
-  });
-
-  it("401s on a forged ticket", async () => {
-    fake.tickets.verify.mockResolvedValue(null);
-    const res = await post("/auth/register", {
-      registrationTicket: "bad",
-      firstName: "A",
-      lastName: "B",
-    });
-    expect(res.status).toBe(401);
   });
 });
 

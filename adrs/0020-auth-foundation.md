@@ -1,6 +1,6 @@
 # ADR 0020 — Auth foundation: registration provisioning, in-VPC Cognito egress, kill switch, unified flow
 
-- **Status:** Accepted
+- **Status:** Accepted *(decision 2 superseded in part by [ADR-0021](0021-auth-split-vpc-edge-and-core.md))*
 - **Date:** 2026-06-29
 - **Refines (in part):** [ADR-0004](0004-network-topology-nat-free-egress.md) (adds one in-VPC
   interface endpoint), [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (kill-switch substrate +
@@ -27,7 +27,13 @@ and ADR-0006 stay **Accepted** rather than fully superseded.
    a `customer` row exist for this Cognito `sub`?"**, removing the trigger→Aurora coupling and the
    VPC-attached-trigger cold-path entirely.
 
-2. **The in-VPC Lambdalith calls Cognito over a `cognito-idp` interface VPC endpoint.** ADR-0004
+2. **The in-VPC Lambdalith calls Cognito over a `cognito-idp` interface VPC endpoint.**
+   > **Superseded by [ADR-0021](0021-auth-split-vpc-edge-and-core.md).** The customer pool's Managed
+   > Login disables PrivateLink, so the in-VPC function cannot reach Cognito this way. `app-api` is
+   > split into a non-VPC auth edge (calls Cognito publicly) + an in-VPC core (Aurora); the
+   > `cognito-idp` endpoint is removed.
+
+   ADR-0004
    reasoned that nothing in-VPC needs egress; it did not anticipate `app-api` (in-VPC for Aurora)
    calling the Cognito control plane. This adds **one** interface endpoint (`com.amazonaws.
    il-central-1.cognito-idp`, already present in-region) — the only new paid endpoint. Aurora and

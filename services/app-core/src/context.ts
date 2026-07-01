@@ -1,0 +1,46 @@
+import { TicketSigner } from "@wanthat/auth";
+import { createDb } from "@wanthat/db";
+import { GuestAttributionRepo, getDocClient } from "@wanthat/dynamo";
+
+/** The Kysely handle type, derived from createDb so app-core needs no direct kysely dependency. */
+type Db = ReturnType<typeof createDb>;
+
+function requireEnv(name: string): string {
+  const value = process.env[name];
+  if (!value) throw new Error(`missing required env var: ${name}`);
+  return value;
+}
+
+export interface CoreContext {
+  region: string;
+  db: Db;
+  guests: GuestAttributionRepo;
+  tickets: TicketSigner;
+}
+
+let cached: CoreContext | undefined;
+
+/**
+ * Build the per-container dependency graph once and reuse it across warm invocations. The in-VPC core
+ * (ADR-0021) reaches Aurora as `app_rw` via IAM auth (no RDS Proxy) and DynamoDB over the gateway
+ * endpoint; it verifies the registration ticket but calls NO Cognito control-plane API.
+ */
+export function getContext(): CoreContext {
+  if (cached) return cached;
+  const region = process.env.AWS_REGION ?? "il-central-1";
+  const doc = getDocClient(region);
+  cached = {
+    region,
+    db: createDb({
+      host: requireEnv("DB_HOST"),
+      port: 5432,
+      database: requireEnv("DB_NAME"),
+      user: requireEnv("DB_USER"),
+      region,
+      caCerts: process.env.DB_CA_CERT,
+    }),
+    guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
+    tickets: new TicketSigner(requireEnv("AUTH_TICKET_SECRET_ARN"), region),
+  };
+  return cached;
+}

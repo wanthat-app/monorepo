@@ -49,9 +49,10 @@ export function toAuthTokens(
 }
 
 /**
- * Thin wrapper over the Cognito admin APIs (ADR-0006/0020). All server-side (no app-client secret);
- * the in-VPC Lambdalith reaches Cognito over the `cognito-idp` interface endpoint. The unified flow
- * creates a user on the fly for an unseen phone, then drives the choice-based USER_AUTH SMS-OTP flow.
+ * Thin wrapper over the Cognito admin APIs (ADR-0006/0020/0021). All server-side (no app-client
+ * secret); the non-VPC `app-auth` edge reaches Cognito over the public AWS endpoint (Managed Login
+ * disables PrivateLink, ADR-0021). The unified flow creates a user on the fly for an unseen phone,
+ * then drives the choice-based USER_AUTH SMS-OTP flow.
  */
 export class Cognito {
   private readonly client: CognitoIdentityProviderClient;
