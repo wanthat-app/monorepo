@@ -1,4 +1,4 @@
-import { randomBytes, randomUUID } from "node:crypto";
+import { randomBytes } from "node:crypto";
 import {
   AdminCreateUserCommand,
   AdminGetUserCommand,
@@ -82,15 +82,18 @@ export class Cognito {
 
   /**
    * Create a CONFIRMED user for a new phone (ADR-0020): suppressed invite + a random permanent
-   * password the member never uses (auth is passwordless OTP/passkey). Username is a UUID because
-   * phone is a sign-in alias and cannot itself be the username.
+   * password the member never uses (auth is passwordless OTP/passkey).
+   *
+   * The pool uses `UsernameAttributes: [email, phone_number]` (ADR-0006), so the phone IS the sign-in
+   * username at create time — a UUID is rejected ("Username should be either an email or a phone
+   * number"). Cognito then assigns an immutable internal username (returned as `User.Username`) which
+   * we use for all subsequent admin calls; the phone lives on as the `phone_number` attribute.
    */
   async createUser(phone: string): Promise<CognitoUser> {
-    const username = randomUUID();
     const created = await this.client.send(
       new AdminCreateUserCommand({
         UserPoolId: this.userPoolId,
-        Username: username,
+        Username: phone,
         MessageAction: "SUPPRESS",
         UserAttributes: [
           { Name: "phone_number", Value: phone },
@@ -98,6 +101,9 @@ export class Cognito {
         ],
       }),
     );
+    const username = created.User?.Username;
+    const sub = created.User?.Attributes?.find((a) => a.Name === "sub")?.Value;
+    if (!username || !sub) throw new Error("AdminCreateUser returned no username/sub");
     await this.client.send(
       new AdminSetUserPasswordCommand({
         UserPoolId: this.userPoolId,
@@ -106,8 +112,6 @@ export class Cognito {
         Permanent: true,
       }),
     );
-    const sub = created.User?.Attributes?.find((a) => a.Name === "sub")?.Value;
-    if (!sub) throw new Error("AdminCreateUser returned no sub");
     return { username, sub };
   }
 

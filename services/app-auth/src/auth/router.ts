@@ -7,6 +7,7 @@ import {
   AuthStartResponse,
   AuthVerifyBody,
   AuthVerifyResponse,
+  normalizePhone,
   PasskeyRegisterOptionsBody,
   PasskeyRegisterVerifyBody,
   PasskeyRegisterVerifyResponse,
@@ -60,13 +61,18 @@ export function authRouter(): Hono {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
+    // Re-normalize + validate at the boundary (the SPA can be bypassed, and the E.164 regex alone still
+    // accepts a doubled country code Cognito would reject) so every downstream call sees one form.
+    const phone = normalizePhone(body.phone);
+    if (!phone) return c.json({ error: "invalid_request" }, 400);
+
     if (!(await smsEnabled(ctx.config))) return c.json({ error: "sms_disabled" }, 503);
-    const gate = await withinVelocity(ctx.config, ctx.velocity, body.phone, nowEpoch());
+    const gate = await withinVelocity(ctx.config, ctx.velocity, phone, nowEpoch());
     if (!gate.allowed)
       return c.json({ error: "rate_limited", retryAfterSec: gate.retryAfterSec }, 429);
 
-    const existing = await ctx.cognito.getUserByPhone(body.phone);
-    const user = existing ?? (await ctx.cognito.createUser(body.phone));
+    const existing = await ctx.cognito.getUserByPhone(phone);
+    const user = existing ?? (await ctx.cognito.createUser(phone));
     const { session } = await ctx.cognito.startSmsOtp(user.username);
 
     const challengeId = randomUUID();
@@ -75,7 +81,7 @@ export function authRouter(): Hono {
       challengeId,
       username: user.username,
       sub: user.sub,
-      phone: body.phone,
+      phone,
       cognitoSession: session,
       isNewUser: existing === null,
       resendAfterEpoch: now + RESEND_COOLDOWN_SEC,
