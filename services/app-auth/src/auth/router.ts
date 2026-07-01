@@ -1,7 +1,9 @@
 import { randomUUID } from "node:crypto";
 import {
+  AuthConfigResponse,
   AuthRefreshBody,
   AuthResendBody,
+  AuthResendResponse,
   AuthSignoutBody,
   AuthStartBody,
   AuthStartResponse,
@@ -15,7 +17,7 @@ import {
 import { Hono } from "hono";
 import { getContext } from "../context";
 import { OTP_REJECTION_ERRORS, toAuthTokens } from "./cognito";
-import { smsEnabled } from "./killswitch";
+import { otpChannelAvailability } from "./killswitch";
 import { withinVelocity } from "./velocity";
 
 const RESEND_COOLDOWN_SEC = 30;
@@ -47,6 +49,17 @@ async function parseBody<T>(
 }
 
 /**
+ * Cognito surfaces a custom-sender (message-sender) throw on AdminInitiateAuth as these error
+ * names. app-auth maps them to `send_failed` so the UI can offer the other channel (spec rev 2).
+ */
+const SENDER_FAILURE_ERRORS = new Set([
+  "UnexpectedLambdaException",
+  "UserLambdaValidationException",
+]);
+const isSenderFailure = (err: unknown): boolean =>
+  err instanceof Error && SENDER_FAILURE_ERRORS.has(err.name);
+
+/**
  * The `app-auth` router (ADR-0021): the Cognito + DynamoDB endpoints of the auth flow, served from
  * the non-VPC edge. It never touches Aurora — the customer row (and the login-or-register decision)
  * lives behind `/auth/register` on `app-core`, so `/auth/verify` here always hands off a signed,
@@ -54,6 +67,14 @@ async function parseBody<T>(
  */
 export function authRouter(): Hono {
   const auth = new Hono();
+
+  // GET /auth/config — public projection of the channel availability (ADR-0023). Advisory only:
+  // start/resend re-check the same predicate. no-store so no intermediary caches a stale list.
+  auth.get("/config", async (c) => {
+    const avail = await otpChannelAvailability(getContext().config);
+    c.header("cache-control", "no-store");
+    return c.json(AuthConfigResponse.parse(avail));
+  });
 
   // POST /auth/start — phone entry (login-or-register), uniform for new and existing numbers.
   auth.post("/start", async (c) => {
@@ -66,14 +87,33 @@ export function authRouter(): Hono {
     const phone = normalizePhone(body.phone);
     if (!phone) return c.json({ error: "invalid_request" }, 400);
 
-    if (!(await smsEnabled(ctx.config))) return c.json({ error: "sms_disabled" }, 503);
+    // Per-channel gate (ADR-0023): the requested channel must be available. Explicit 503 — the UI
+    // decides what to offer instead; the server never silently switches.
+    const avail = await otpChannelAvailability(ctx.config);
+    if (!avail.channels.includes(body.channel))
+      return c.json({ error: "channel_disabled", channel: body.channel }, 503);
+
     const gate = await withinVelocity(ctx.config, ctx.velocity, phone, nowEpoch());
     if (!gate.allowed)
       return c.json({ error: "rate_limited", retryAfterSec: gate.retryAfterSec }, 429);
 
     const existing = await ctx.cognito.getUserByPhone(phone);
     const user = existing ?? (await ctx.cognito.createUser(phone));
-    const { session } = await ctx.cognito.startSmsOtp(user.username);
+
+    // Channel (+ template language) ride user attributes: Cognito forwards NO ClientMetadata from
+    // AdminInitiateAuth to custom sender triggers, so this write IS the request's channel.
+    await ctx.cognito.updateAttributes(user.username, [
+      { Name: "custom:otpChannel", Value: body.channel },
+      ...(body.locale ? [{ Name: "locale", Value: body.locale }] : []),
+    ]);
+
+    let session: string;
+    try {
+      ({ session } = await ctx.cognito.startSmsOtp(user.username));
+    } catch (err) {
+      if (isSenderFailure(err)) return c.json({ error: "send_failed", channel: body.channel }, 502);
+      throw err;
+    }
 
     const challengeId = randomUUID();
     const now = nowEpoch();
@@ -84,6 +124,7 @@ export function authRouter(): Hono {
       phone,
       cognitoSession: session,
       isNewUser: existing === null,
+      requestedChannel: body.channel,
       resendAfterEpoch: now + RESEND_COOLDOWN_SEC,
       attempts: 0,
       ttl: now + CHALLENGE_TTL_SEC,
@@ -94,11 +135,14 @@ export function authRouter(): Hono {
         challengeId,
         resendAfterSec: RESEND_COOLDOWN_SEC,
         expiresInSec: OTP_EXPIRES_SEC,
+        channel: body.channel,
       }),
     );
   });
 
-  // POST /auth/resend — re-issue the OTP under a server-enforced cooldown.
+  // POST /auth/resend — re-issue the OTP under a server-enforced cooldown. `channel` is required
+  // and may switch (the UI's "didn't get it on WhatsApp? send via SMS" — an explicit user
+  // decision, not a server fallback).
   auth.post("/resend", async (c) => {
     const body = await parseBody(c, AuthResendBody);
     if (!body) return c.json({ error: "invalid_request" }, 400);
@@ -109,20 +153,42 @@ export function authRouter(): Hono {
 
     const now = nowEpoch();
     if (now < challenge.resendAfterEpoch) return c.json({ error: "rate_limited" }, 429);
-    if (!(await smsEnabled(ctx.config))) return c.json({ error: "sms_disabled" }, 503);
+
+    const avail = await otpChannelAvailability(ctx.config);
+    if (!avail.channels.includes(body.channel))
+      return c.json({ error: "channel_disabled", channel: body.channel }, 503);
+
     // The 30s cooldown caps burst; the velocity gate caps total sends per phone (ADR-0006).
     const gate = await withinVelocity(ctx.config, ctx.velocity, challenge.phone, now);
     if (!gate.allowed)
       return c.json({ error: "rate_limited", retryAfterSec: gate.retryAfterSec }, 429);
 
-    const { session } = await ctx.cognito.startSmsOtp(challenge.username);
+    await ctx.cognito.updateAttributes(challenge.username, [
+      { Name: "custom:otpChannel", Value: body.channel },
+    ]);
+
+    let session: string;
+    try {
+      ({ session } = await ctx.cognito.startSmsOtp(challenge.username));
+    } catch (err) {
+      if (isSenderFailure(err)) return c.json({ error: "send_failed", channel: body.channel }, 502);
+      throw err;
+    }
+
     await ctx.challenges.putChallenge({
       ...challenge,
       cognitoSession: session,
+      requestedChannel: body.channel,
       resendAfterEpoch: now + RESEND_COOLDOWN_SEC,
       ttl: now + CHALLENGE_TTL_SEC,
     });
-    return c.json({ resendAfterSec: RESEND_COOLDOWN_SEC, expiresInSec: OTP_EXPIRES_SEC });
+    return c.json(
+      AuthResendResponse.parse({
+        resendAfterSec: RESEND_COOLDOWN_SEC,
+        expiresInSec: OTP_EXPIRES_SEC,
+        channel: body.channel,
+      }),
+    );
   });
 
   // POST /auth/verify — verify the OTP, then hand off a signed self-contained ticket. Being
