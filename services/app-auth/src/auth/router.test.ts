@@ -117,7 +117,7 @@ describe("POST /auth/verify", () => {
     fake.cognito.respondSmsOtp.mockResolvedValue({ kind: "tokens", result: cognitoResult });
     fake.tickets.sign.mockResolvedValue("signed-ticket");
 
-    const res = await post("/auth/verify", { challengeId: "c1", code: "123456" });
+    const res = await post("/auth/verify", { challengeId: "c1", code: "12345678" });
     expect(res.status).toBe(200);
     // Edge only hands off the ticket; /auth/session (app-core) resolves login vs register.
     expect(await res.json()).toEqual({ registrationTicket: "signed-ticket" });
@@ -133,7 +133,7 @@ describe("POST /auth/verify", () => {
     fake.cognito.respondSmsOtp.mockRejectedValue(
       Object.assign(new Error("bad"), { name: "CodeMismatchException" }),
     );
-    const res = await post("/auth/verify", { challengeId: "c1", code: "000000" });
+    const res = await post("/auth/verify", { challengeId: "c1", code: "00000000" });
     expect(res.status).toBe(401);
     expect(fake.challenges.putChallenge).toHaveBeenCalledWith(
       expect.objectContaining({ attempts: 1 }),
@@ -145,7 +145,7 @@ describe("POST /auth/verify", () => {
     // First answer is wrong: Cognito re-issues the challenge with a fresh session.
     fake.cognito.respondSmsOtp.mockResolvedValueOnce({ kind: "retry", session: "sess2" });
 
-    const bad = await post("/auth/verify", { challengeId: "c1", code: "000000" });
+    const bad = await post("/auth/verify", { challengeId: "c1", code: "00000000" });
     expect(bad.status).toBe(401);
     expect(await bad.json()).toEqual({ error: "invalid_code" });
     // The new session is persisted under the SAME challengeId; it is not deleted.
@@ -158,7 +158,7 @@ describe("POST /auth/verify", () => {
     fake.cognito.respondSmsOtp.mockResolvedValueOnce({ kind: "tokens", result: cognitoResult });
     fake.tickets.sign.mockResolvedValue("signed-ticket");
 
-    const ok = await post("/auth/verify", { challengeId: "c1", code: "123456" });
+    const ok = await post("/auth/verify", { challengeId: "c1", code: "12345678" });
     expect(ok.status).toBe(200);
     expect(((await ok.json()) as { registrationTicket: string }).registrationTicket).toBeTruthy();
     expect(fake.challenges.deleteChallenge).toHaveBeenCalledWith("c1");

@@ -172,8 +172,9 @@ export function AuthPage() {
               value={code}
               onChange={setCode}
               error={error}
+              maxLength={8}
             />
-            <Button onClick={onVerify} loading={busy} disabled={code.length !== 6}>
+            <Button onClick={onVerify} loading={busy} disabled={code.length !== 8}>
               {t("auth.verify")}
             </Button>
             <Button
