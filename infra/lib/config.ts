@@ -32,22 +32,25 @@ export interface WanthatEnv {
    */
   readonly hostedZoneId?: string;
   /**
-   * Optional address subscribed to the ObservabilityStack alarm SNS topic. When set, the topic gets
-   * an email subscription (confirm once via the AWS link). Unset (dev) leaves the topic without a
-   * subscriber so the alarms still fire and are visible in the console, just without a notification.
+   * Addresses subscribed to the ObservabilityStack alarm SNS topic. Each gets an email subscription
+   * (every recipient must confirm once via the AWS link before they receive alarms). Empty/unset
+   * leaves the topic without a subscriber so alarms still fire and are visible in the console.
    */
-  readonly alarmEmail?: string;
+  readonly alarmEmails?: readonly string[];
 }
 
 const REGION = "il-central-1";
 
+const ALARM_EMAILS = ["dennis@wanthat.app", "jonatan@wanthat.app"] as const;
+
 export const ENVIRONMENTS: Record<EnvName, WanthatEnv> = {
-  dev: { name: "dev", region: REGION },
+  dev: { name: "dev", region: REGION, alarmEmails: ALARM_EMAILS },
   prod: {
     name: "prod",
     region: REGION,
     domainName: "wanthat.app",
     hostedZoneId: "Z01833842M5XCPIIPFXKG",
+    alarmEmails: ALARM_EMAILS,
   },
 };
 
