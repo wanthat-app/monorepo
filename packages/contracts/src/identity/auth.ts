@@ -41,7 +41,20 @@ export const AuthVerifyBody = z.object({
 });
 export type AuthVerifyBody = z.infer<typeof AuthVerifyBody>;
 
-export const AuthVerifyResponse = z.discriminatedUnion("status", [
+// `/auth/verify` runs on the non-VPC `app-auth` edge (Cognito-only, ADR-0021), which cannot read
+// Aurora — so it cannot decide login-vs-register. On success it just hands off a signed, self-contained
+// ticket; the client then calls `/auth/session` to resolve it. (The login-vs-register decision moved
+// there from `/auth/verify`.)
+export const AuthVerifyResponse = z.object({ registrationTicket: z.string() });
+export type AuthVerifyResponse = z.infer<typeof AuthVerifyResponse>;
+
+// POST /auth/session — resolve a verify ticket to a session. Served in-VPC by `app-core`, which reads
+// Aurora: an existing customer for the ticket's Cognito `sub` logs in (`authenticated`); otherwise the
+// caller must complete onboarding via `/auth/register` (`registration_required`, ticket echoed back).
+export const AuthSessionBody = z.object({ registrationTicket: z.string() });
+export type AuthSessionBody = z.infer<typeof AuthSessionBody>;
+
+export const AuthSessionResponse = z.discriminatedUnion("status", [
   z.object({
     status: z.literal("authenticated"),
     tokens: AuthTokens,
@@ -52,7 +65,7 @@ export const AuthVerifyResponse = z.discriminatedUnion("status", [
     registrationTicket: z.string(),
   }),
 ]);
-export type AuthVerifyResponse = z.infer<typeof AuthVerifyResponse>;
+export type AuthSessionResponse = z.infer<typeof AuthSessionResponse>;
 
 // POST /auth/register — complete profile (new users); locale defaults by country.
 export const AuthRegisterBody = z.object({

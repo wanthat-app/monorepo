@@ -1,9 +1,7 @@
 import { randomUUID } from "node:crypto";
 import {
   AuthRefreshBody,
-  AuthRegisterBody,
   AuthResendBody,
-  AuthSession,
   AuthSignoutBody,
   AuthStartBody,
   AuthStartResponse,
@@ -13,7 +11,6 @@ import {
   PasskeyRegisterVerifyBody,
   PasskeyRegisterVerifyResponse,
 } from "@wanthat/contracts";
-import { findByCognitoSub, insertCustomer } from "@wanthat/db";
 import { Hono } from "hono";
 import { getContext } from "../context";
 import { OTP_REJECTION_ERRORS, toAuthTokens } from "./cognito";
@@ -27,11 +24,6 @@ const TICKET_TTL_SEC = 600;
 const MAX_OTP_ATTEMPTS = 5;
 
 const nowEpoch = (): number => Math.floor(Date.now() / 1000);
-
-/** Map a CloudFront viewer country to a default BCP-47 locale (Israeli-first app). */
-function countryToLocale(country: string | undefined): string {
-  return country === "IL" || !country ? "he-IL" : "en-US";
-}
 
 /** Extract the Bearer access token from the Authorization header, or null. */
 function bearerToken(c: { req: { header: (n: string) => string | undefined } }): string | null {
@@ -53,6 +45,12 @@ async function parseBody<T>(
   }
 }
 
+/**
+ * The `app-auth` router (ADR-0021): the Cognito + DynamoDB endpoints of the auth flow, served from
+ * the non-VPC edge. It never touches Aurora — the customer row (and the login-or-register decision)
+ * lives behind `/auth/register` on `app-core`, so `/auth/verify` here always hands off a signed,
+ * self-contained ticket rather than resolving customer existence itself.
+ */
 export function authRouter(): Hono {
   const auth = new Hono();
 
@@ -121,7 +119,10 @@ export function authRouter(): Hono {
     return c.json({ resendAfterSec: RESEND_COOLDOWN_SEC, expiresInSec: OTP_EXPIRES_SEC });
   });
 
-  // POST /auth/verify — verify the OTP; branch on whether a customer row exists for the sub.
+  // POST /auth/verify — verify the OTP, then hand off a signed self-contained ticket. Being
+  // Cognito-only (no Aurora, ADR-0021), this edge cannot resolve whether a customer row exists, so it
+  // just returns the ticket; the client calls `app-core`'s `/auth/session` to resolve login vs
+  // register. The ticket carries the freshly minted tokens, so nothing is parked.
   auth.post("/verify", async (c) => {
     const body = await parseBody(c, AuthVerifyBody);
     if (!body) return c.json({ error: "invalid_request" }, 400);
@@ -161,64 +162,19 @@ export function authRouter(): Hono {
 
     await ctx.challenges.deleteChallenge(challenge.challengeId);
     const tokens = toAuthTokens(result.result);
-    const customer = await findByCognitoSub(ctx.db, challenge.sub);
 
-    if (customer) {
-      return c.json(AuthVerifyResponse.parse({ status: "authenticated", tokens, customer }));
-    }
-
-    // Not registered yet: park the tokens server-side, hand back only a signed ticket id.
-    const ticketId = randomUUID();
-    await ctx.challenges.putTicket({
-      ticketId,
+    // Sign a self-contained ticket carrying the tokens + identity; `/auth/register` (app-core)
+    // verifies it independently and either logs the member in or provisions the customer row.
+    const registrationTicket = await ctx.tickets.sign({
       sub: challenge.sub,
       phone: challenge.phone,
       accessToken: tokens.accessToken,
       idToken: tokens.idToken,
       refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
-      ttl: nowEpoch() + TICKET_TTL_SEC,
+      exp: nowEpoch() + TICKET_TTL_SEC,
     });
-    const registrationTicket = await ctx.tickets.sign(ticketId);
-    return c.json(
-      AuthVerifyResponse.parse({ status: "registration_required", registrationTicket }),
-    );
-  });
-
-  // POST /auth/register — complete the profile for a new user; provisions the customer row (ADR-0020).
-  auth.post("/register", async (c) => {
-    const body = await parseBody(c, AuthRegisterBody);
-    if (!body) return c.json({ error: "invalid_request" }, 400);
-    const ctx = getContext();
-
-    const ticketId = await ctx.tickets.verify(body.registrationTicket);
-    if (!ticketId) return c.json({ error: "invalid_ticket" }, 401);
-    const ticket = await ctx.challenges.getTicket(ticketId);
-    if (!ticket) return c.json({ error: "ticket_expired" }, 401);
-
-    const locale = body.locale ?? countryToLocale(c.req.header("CloudFront-Viewer-Country"));
-    const customer = await insertCustomer(ctx.db, {
-      cognitoSub: ticket.sub,
-      phone: ticket.phone,
-      firstName: body.firstName,
-      lastName: body.lastName,
-      email: body.email ?? null,
-      locale,
-    });
-    await ctx.challenges.deleteTicket(ticketId);
-
-    return c.json(
-      AuthSession.parse({
-        tokens: {
-          accessToken: ticket.accessToken,
-          idToken: ticket.idToken,
-          refreshToken: ticket.refreshToken,
-          tokenType: "Bearer",
-          expiresIn: ticket.expiresIn,
-        },
-        customer,
-      }),
-    );
+    return c.json(AuthVerifyResponse.parse({ registrationTicket }));
   });
 
   // POST /auth/refresh — exchange a refresh token for fresh tokens.

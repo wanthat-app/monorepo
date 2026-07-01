@@ -1,5 +1,5 @@
 {
-  "name": "@wanthat/app-api",
+  "name": "@wanthat/app-auth",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,14 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aws-lambda-powertools/logger": "^2.8.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
-    "@aws-sdk/client-lambda": "^3.600.0",
-    "@aws-sdk/client-secrets-manager": "^3.600.0",
-    "@wanthat/config": "workspace:*",
+    "@wanthat/auth": "workspace:*",
     "@wanthat/contracts": "workspace:*",
-    "@wanthat/db": "workspace:*",
-    "@wanthat/domain": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
     "hono": "^4.6.0"
   }

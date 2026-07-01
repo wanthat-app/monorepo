@@ -75,7 +75,10 @@ export function AuthPage() {
 
   const onVerify = () =>
     run(async () => {
-      const res = await authApi.verify(challengeId, code);
+      // /auth/verify (app-auth) only hands back a ticket; /auth/session (app-core) resolves it to a
+      // login or a registration prompt, since that decision needs Aurora (ADR-0021).
+      const { registrationTicket } = await authApi.verify(challengeId, code);
+      const res = await authApi.session(registrationTicket);
       if (res.status === "authenticated") {
         signIn(res);
         navigate("/home");

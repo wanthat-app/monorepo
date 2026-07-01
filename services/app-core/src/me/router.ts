@@ -45,7 +45,7 @@ export function meRouter(): Hono<{ Bindings: Bindings }> {
     return c.json(GetMeResponse.parse({ profile }));
   });
 
-  // PATCH /me — update mutable profile fields (UC6); email also mirrored to Cognito.
+  // PATCH /me — update mutable profile fields (UC6).
   me.patch("/", async (c) => {
     const sub = subFromClaims(c);
     if (!sub) return c.json({ error: "unauthorized" }, 401);
@@ -53,6 +53,8 @@ export function meRouter(): Hono<{ Bindings: Bindings }> {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
+    // TODO(app-auth): cognito attribute sync. app-core is Cognito-free (ADR-0021), so an email change
+    // that must propagate to the Cognito attribute is delegated to app-auth; dropped here for now.
     const profile = await updateProfile(ctx.db, sub, body);
     if (!profile) return c.json({ error: "not_found" }, 404);
     return c.json(UpdateProfileResponse.parse({ profile }));

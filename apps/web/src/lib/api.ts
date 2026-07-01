@@ -3,6 +3,7 @@ import type {
   AuthRefreshResponse,
   AuthResendResponse,
   AuthSession,
+  AuthSessionResponse,
   AuthStartResponse,
   AuthVerifyResponse,
   CustomerProfile,
@@ -47,6 +48,9 @@ export const authApi = {
     request<AuthResendResponse>("/auth/resend", { method: "POST", body: { challengeId } }),
   verify: (challengeId: string, code: string) =>
     request<AuthVerifyResponse>("/auth/verify", { method: "POST", body: { challengeId, code } }),
+  // Resolve a verify ticket to a session: `authenticated` (login) or `registration_required` (new).
+  session: (registrationTicket: string) =>
+    request<AuthSessionResponse>("/auth/session", { method: "POST", body: { registrationTicket } }),
   register: (body: {
     registrationTicket: string;
     firstName: string;

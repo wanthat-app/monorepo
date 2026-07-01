@@ -41,18 +41,22 @@ Cognito-vs-Aurora seam:
    conflict), and DynamoDB (auth challenges, phone-velocity, guest attribution, runtime config) over
    the public endpoint. Holds the scoped `cognito-idp` permissions; holds **no** Aurora access.
 
-2. **`app-core` — the in-VPC "core."** Serves the endpoints that touch **Aurora**: `/auth/register`,
-   `/me`, `/me/*`, and (later) wallet. Stays **in-VPC** with IAM DB auth (ADR-0003) and reserved
+2. **`app-core` — the in-VPC "core."** Serves the endpoints that touch **Aurora**: `/auth/session`,
+   `/auth/register`, `/me`, `/me/*`, and (later) wallet. Stays **in-VPC** with IAM DB auth (ADR-0003) and reserved
    concurrency. It calls **no** Cognito control-plane API, so it needs no Cognito egress — the
    `cognito-idp` interface VPC endpoint is **removed**. DynamoDB (e.g. `/me/attribution/claim`) is
    reached over the existing free gateway endpoint. Profile edits that must propagate to a Cognito
    attribute (e.g. email change) are delegated to `app-auth`, keeping `app-core` Cognito-free.
 
-3. **The two are bridged statelessly by the HMAC registration ticket.** `/auth/verify` (`app-auth`)
-   issues the existing self-contained HMAC ticket `{sub, phone, tokens, exp}`; `/auth/register`
-   (`app-core`) **validates it independently** and inserts `customer`. **No inter-Lambda invoke, no
-   shared session store** — the HTTP API routes each path to the correct function and the signed
-   ticket is the only handoff. Both functions `grantRead` the `AUTH_TICKET_SECRET`.
+3. **The two are bridged statelessly by the HMAC ticket.** `/auth/verify` (`app-auth`) issues a
+   self-contained HMAC ticket `{sub, phone, tokens, exp}` on OTP success — it does **not** decide
+   login-vs-register, because that check ("does a `customer` row exist for this `sub`?", ADR-0020
+   decision 1) needs an Aurora read the non-VPC edge cannot do. The client then calls **`/auth/session`
+   (`app-core`)**, which validates the ticket independently and returns either `authenticated`
+   (existing customer -> login) or `registration_required`; new users complete **`/auth/register`
+   (`app-core`)**, which inserts `customer`. **No inter-Lambda invoke, no shared session store** — the
+   HTTP API routes each path to the correct function and the signed ticket is the only handoff. Both
+   functions `grantRead` the `AUTH_TICKET_SECRET`.
 
 4. **Managed Login is retained on the customer pool.** Discoverable passkey login stays browser →
    hosted UI → Cognito (public), exactly as ADR-0020 described. The split is precisely what lets

@@ -17,6 +17,7 @@
     "constructs": "^10.3.0"
   },
   "devDependencies": {
+    "@wanthat/auth": "workspace:*",
     "@wanthat/contracts": "workspace:*",
     "@wanthat/db": "workspace:*",
     "@wanthat/domain": "workspace:*",

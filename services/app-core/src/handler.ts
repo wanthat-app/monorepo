@@ -1,0 +1,32 @@
+/**
+ * app-core — the in-VPC "core" (ADR-0021), behind the shared app HTTP API.
+ *
+ * Serves the endpoints that touch Aurora: `/auth/register`, `/me`, `/me/*` (and later wallet). Stays
+ * IN-VPC with IAM DB auth (ADR-0003) and reserved concurrency; DynamoDB over the free gateway
+ * endpoint. It verifies the registration ticket minted by `app-auth` but calls NO Cognito
+ * control-plane API, so it needs no Cognito egress (the `cognito-idp` interface endpoint is removed).
+ * HTTP routing via Hono (ADR-0011); request bodies validated with the shared Zod contracts.
+ */
+
+import { Hono } from "hono";
+import type { LambdaEvent } from "hono/aws-lambda";
+import { handle } from "hono/aws-lambda";
+import { authRouter } from "./auth/register";
+import { meRouter } from "./me/router";
+
+const SERVICE = "app-core";
+const app = new Hono<{ Bindings: { event: LambdaEvent } }>();
+
+// Unauthenticated liveness probe — the one positive signal for the pipeline smoke test.
+app.get("/healthz", (c) => c.json({ ok: true, service: SERVICE }));
+
+// `/auth/session` + `/auth/register` are unauthenticated by design (a valid ticket is the credential);
+// `/me` sits behind the JWT authorizer at the gateway and reads the verified claims.
+app.route("/auth", authRouter());
+app.route("/me", meRouter());
+
+// Links + wallet not yet implemented — a clean 501 rather than a 404.
+app.all("*", (c) => c.json({ error: "not_implemented", service: SERVICE, path: c.req.path }, 501));
+
+export const handler = handle(app);
+export { app };

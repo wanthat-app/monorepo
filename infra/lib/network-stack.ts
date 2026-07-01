@@ -16,9 +16,10 @@ export interface NetworkStackProps extends StackProps {
  * SG — not EC2 instances.)
  *
  * NAT-free (ADR-0004): `natGateways: 0`, a single PRIVATE_ISOLATED subnet group. DynamoDB is reached
- * through a free gateway endpoint. Per ADR-0020 the in-VPC Lambdalith also calls Cognito, and the
- * one-shot migrator reads the master secret, so we add the two interface endpoints those need
- * (`cognito-idp`, `secretsmanager`) — the only paid endpoints. Everything else stays out of the VPC.
+ * through a free gateway endpoint. Per ADR-0021 the in-VPC `app-core` no longer calls Cognito (the
+ * `/auth/*` flow moved to the non-VPC `app-auth` edge), so the `cognito-idp` interface endpoint is
+ * removed; only `secretsmanager` remains (the in-VPC functions + one-shot migrator read secrets over
+ * it) — the sole paid endpoint. Everything else stays out of the VPC.
  *
  * Two SGs split the trust boundary: `lambdaSg` (in-VPC functions) is allowed to reach `auroraSg`
  * (the cluster) on 5432; nothing else can.
@@ -42,7 +43,7 @@ export class NetworkStack extends Stack {
     this.lambdaSg = new ec2.SecurityGroup(this, "LambdaSg", {
       vpc: this.vpc,
       description:
-        "In-VPC Lambdas (app-api, admin, poller-writer, migrator) - egress to Aurora + endpoints",
+        "In-VPC Lambdas (app-core, admin, poller-writer, migrator) - egress to Aurora + endpoints",
       allowAllOutbound: true,
     });
 
@@ -67,12 +68,9 @@ export class NetworkStack extends Stack {
     });
     endpointSg.addIngressRule(this.lambdaSg, ec2.Port.tcp(443), "HTTPS from in-VPC Lambdas");
 
-    // Paid interface endpoints (ADR-0020): the Lambdalith calls Cognito; the migrator reads the
-    // master secret. Both terminate in the isolated subnets; reachable from the in-VPC Lambdas.
-    this.vpc.addInterfaceEndpoint("CognitoIdpEndpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.COGNITO_IDP,
-      securityGroups: [endpointSg],
-    });
+    // Paid interface endpoint (ADR-0021): in-VPC functions + the migrator read secrets over it (the
+    // Aurora master + the auth ticket HMAC). Terminates in the isolated subnets; reachable from the
+    // in-VPC Lambdas. The `cognito-idp` endpoint was removed - app-core no longer calls Cognito.
     this.vpc.addInterfaceEndpoint("SecretsManagerEndpoint", {
       service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
       securityGroups: [endpointSg],
