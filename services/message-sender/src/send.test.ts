@@ -23,7 +23,10 @@ beforeEach(() => {
 
 describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)", () => {
   it("delivers via WhatsApp with the profile language", async () => {
-    await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254", locale: "he" }));
+    await deliverOtp(
+      deps,
+      event({ "custom:otpChannel": "whatsapp", phone_number: "+97254", locale: "he" }),
+    );
     expect(deps.whatsapp.sendTemplate).toHaveBeenCalledWith({
       phoneNumberId: "phone-number-id-test",
       type: "otp_code",
@@ -43,7 +46,10 @@ describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)"
 
   it("delivers via SNS SMS with Cognito's native wording", async () => {
     await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
-    expect(deps.sms.publish).toHaveBeenCalledWith("+97254", "Your authentication code is 12345678.");
+    expect(deps.sms.publish).toHaveBeenCalledWith(
+      "+97254",
+      "Your authentication code is 12345678.",
+    );
     expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
     expect(deps.config.get).not.toHaveBeenCalled(); // sms needs no config at all
   });

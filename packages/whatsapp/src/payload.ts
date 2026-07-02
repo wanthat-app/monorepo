@@ -1,5 +1,10 @@
 import type { MessageLanguage } from "@wanthat/contracts";
-import { MESSAGE_TYPES, type MessageType, type MessageTypeSpec, type TemplateComponent } from "./registry";
+import {
+  MESSAGE_TYPES,
+  type MessageType,
+  type MessageTypeSpec,
+  type TemplateComponent,
+} from "./registry";
 
 /** The Meta Cloud API `messages` object submitted through SendWhatsAppMessage. */
 export interface TemplateMessage {

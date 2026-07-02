@@ -16,7 +16,11 @@ describe("WhatsAppSender", () => {
     });
 
     expect(res).toEqual({ messageId: "wamid.X" });
-    const input = send.mock.calls[0]![0]!.input;
+    const call = send.mock.calls[0];
+    if (!call) throw new Error("expected send to have been called");
+    const [request] = call;
+    if (!request) throw new Error("expected send to have been called with an argument");
+    const input = request.input;
     expect(input.originationPhoneNumberId).toBe("phone-number-id-test");
     expect(input.metaApiVersion).toBe(META_API_VERSION);
     const body = JSON.parse(new TextDecoder().decode(input.message));

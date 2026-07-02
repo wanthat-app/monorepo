@@ -1,4 +1,7 @@
-import { SendWhatsAppMessageCommand, type SocialMessagingClient } from "@aws-sdk/client-socialmessaging";
+import {
+  SendWhatsAppMessageCommand,
+  type SocialMessagingClient,
+} from "@aws-sdk/client-socialmessaging";
 import type { MessageLanguage } from "@wanthat/contracts";
 import { buildTemplateMessage } from "./payload";
 import type { MessageType } from "./registry";
