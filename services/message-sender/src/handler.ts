@@ -48,6 +48,7 @@ function getDeps(): SendDeps {
         );
       },
     },
+    log: (msg, ctx) => logger.info(msg, ctx ?? {}),
   };
   return deps;
 }
@@ -61,6 +62,7 @@ export const handler = async (event: CustomSmsSenderEvent): Promise<void> => {
     logger.error("otp_delivery_failed", {
       triggerSource: event.triggerSource,
       channel: event.request.userAttributes["custom:otpChannel"],
+      sub: event.request.userAttributes.sub,
       error: err instanceof Error ? err.message : String(err),
     });
     throw err;

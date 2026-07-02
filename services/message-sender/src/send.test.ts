@@ -6,6 +6,7 @@ const deps = {
   decryptCode: vi.fn().mockResolvedValue("12345678"),
   whatsapp: { sendTemplate: vi.fn().mockResolvedValue({ messageId: "wamid.X" }) },
   sms: { publish: vi.fn().mockResolvedValue(undefined) },
+  log: vi.fn(),
 } satisfies SendDeps;
 
 function event(attrs: Record<string, string | undefined>): CustomSmsSenderEvent {
@@ -35,6 +36,12 @@ describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)"
       to: "+97254",
     });
     expect(deps.sms.publish).not.toHaveBeenCalled();
+    // The success line is the chain link app-auth's `sub` correlates on (log-chain PR).
+    expect(deps.log).toHaveBeenCalledWith("otp_delivered", {
+      channel: "whatsapp",
+      triggerSource: "CustomSMSSender_Authentication",
+      sub: undefined,
+    });
   });
 
   it("defaults the template language to en when the profile has none", async () => {
@@ -52,6 +59,19 @@ describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)"
     );
     expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
     expect(deps.config.get).not.toHaveBeenCalled(); // sms needs no config at all
+    expect(deps.log).toHaveBeenCalledWith("otp_delivered", {
+      channel: "sms",
+      triggerSource: "CustomSMSSender_Authentication",
+      sub: undefined,
+    });
+  });
+
+  it("logs NO success line when the send throws (failure logging lives in the handler)", async () => {
+    deps.sms.publish.mockRejectedValue(new Error("sns down"));
+    await expect(
+      deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" })),
+    ).rejects.toThrow("sns down");
+    expect(deps.log).not.toHaveBeenCalled();
   });
 
   it("THROWS on a missing/invalid channel attribute — never assumes a default", async () => {

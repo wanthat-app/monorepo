@@ -17,6 +17,12 @@ const { fake, dbMock } = vi.hoisted(() => ({
 vi.mock("../context", () => ({ getContext: () => fake }));
 vi.mock("@wanthat/db", () => dbMock);
 
+// Chain-logging assertions (optin_welcome_enqueued / _enqueue_failed) — one shared instance.
+const { logMock } = vi.hoisted(() => ({
+  logMock: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+vi.mock("@aws-lambda-powertools/logger", () => ({ Logger: vi.fn(() => logMock) }));
+
 import { authRouter } from "./register";
 
 const app = new Hono();
@@ -163,6 +169,11 @@ describe("POST /auth/register", () => {
         status: "pending",
       }),
     );
+    // Chain log: outboxId is the field the dispatcher's notification_* lines share.
+    expect(logMock.info).toHaveBeenCalledWith("optin_welcome_enqueued", {
+      outboxId: expect.any(String),
+      customerId: SUB,
+    });
   });
 
   it("registration still succeeds when the outbox write fails (best-effort)", async () => {
@@ -177,6 +188,10 @@ describe("POST /auth/register", () => {
       lastName: "Levi",
     });
     expect(res.status).toBe(200);
+    expect(logMock.error).toHaveBeenCalledWith("optin_welcome_enqueue_failed", {
+      customerId: SUB,
+      error: "dynamo down",
+    });
   });
 
   it("does NOT enqueue on an idempotent re-register of an existing customer", async () => {

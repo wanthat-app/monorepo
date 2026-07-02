@@ -51,6 +51,11 @@ describe("dispatchRecord", () => {
       to: item.phone,
     });
     expect(deps.outbox.markSent).toHaveBeenCalledWith("ob-1");
+    // Chain link: outboxId ties this to app-core's optin_welcome_enqueued; messageId to Meta.
+    expect(deps.log).toHaveBeenCalledWith("notification_sent", {
+      outboxId: "ob-1",
+      messageId: "wamid.X",
+    });
   });
 
   it("skips non-INSERT events and non-pending items (idempotent at-least-once)", async () => {

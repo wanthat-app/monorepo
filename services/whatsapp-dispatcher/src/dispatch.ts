@@ -24,7 +24,7 @@ export interface DispatchDeps {
       language: MessageLanguage;
       variables: unknown;
       to: string;
-    }): Promise<unknown>;
+    }): Promise<{ messageId?: string } | undefined>;
   };
   log: (msg: string, ctx?: Record<string, unknown>) => void;
 }
@@ -67,18 +67,22 @@ export async function dispatchRecord(
     return;
   }
 
+  let messageId: string | undefined;
   try {
-    await deps.whatsapp.sendTemplate({
+    const res = await deps.whatsapp.sendTemplate({
       phoneNumberId,
       type: item.messageType,
       language: item.language,
       variables: item.variables,
       to: item.phone,
     });
+    messageId = res?.messageId;
   } catch (err) {
     await deps.outbox.markFailed(item.outboxId, err instanceof Error ? err.message : String(err));
     deps.log("notification_send_failed", { outboxId: item.outboxId });
     return;
   }
   await deps.outbox.markSent(item.outboxId);
+  // messageId is Meta's wamid — the handle for correlating delivery-status webhooks later.
+  deps.log("notification_sent", { outboxId: item.outboxId, messageId });
 }

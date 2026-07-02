@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Logger } from "@aws-lambda-powertools/logger";
 import {
   AuthRegisterBody,
   AuthSession,
@@ -8,6 +9,10 @@ import {
 import { findByCognitoSub, insertCustomer } from "@wanthat/db";
 import { Hono } from "hono";
 import { getContext } from "../context";
+
+// Notification chain logging (no PII): `outboxId` is the field the whatsapp-dispatcher's
+// notification_* lines share, so one Logs Insights query follows a welcome message end to end.
+const logger = new Logger({ serviceName: "app-core" });
 
 /** Map a CloudFront viewer country to a default BCP-47 locale (Israeli-first app). */
 function countryToLocale(country: string | undefined): string {
@@ -63,15 +68,10 @@ export function authRouter(): Hono {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
-    // TEMP diagnostic (remove after): pinpoint whether a hang is the Secrets Manager (ticket key)
-    // fetch or the first Aurora connect — both are in-VPC and both showed a silent 15s Lambda timeout.
-    console.log("session: verifying ticket (secrets manager fetch on first call)");
     const ticket = await ctx.tickets.verify(body.registrationTicket);
     if (!ticket) return c.json({ error: "invalid_ticket" }, 401);
 
-    console.log("session: ticket ok; querying customer (first Aurora connect)");
     const existing = await findByCognitoSub(ctx.db, ticket.sub);
-    console.log("session: aurora query returned");
     if (existing) {
       return c.json(
         AuthSessionResponse.parse({
@@ -118,9 +118,10 @@ export function authRouter(): Hono {
     // DynamoDB write over the gateway endpoint; the NON-VPC dispatcher does the egress). The
     // producer owns WHAT to send and in which language; best-effort — a failed enqueue is logged,
     // never fails registration. No Cognito call here (in-VPC, ADR-0021).
+    const outboxId = randomUUID();
     try {
       await ctx.outbox.put({
-        outboxId: randomUUID(),
+        outboxId,
         customerId: ticket.sub,
         phone: ticket.phone,
         messageType: "optin_welcome",
@@ -130,8 +131,13 @@ export function authRouter(): Hono {
         createdAt: new Date().toISOString(),
         ttl: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
       });
+      // Chain log: outboxId correlates with the dispatcher's notification_sent/skipped/failed lines.
+      logger.info("optin_welcome_enqueued", { outboxId, customerId: ticket.sub });
     } catch (err) {
-      console.error("optin_welcome enqueue failed", err);
+      logger.error("optin_welcome_enqueue_failed", {
+        customerId: ticket.sub,
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
 
     return c.json(AuthSession.parse({ tokens, customer }));

@@ -30,6 +30,12 @@ const { fake } = vi.hoisted(() => ({
 
 vi.mock("../context", () => ({ getContext: () => fake }));
 
+// Chain-logging assertions (otp_start / otp_resend / otp_send_failed) — one shared instance.
+const { logMock } = vi.hoisted(() => ({
+  logMock: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+vi.mock("@aws-lambda-powertools/logger", () => ({ Logger: vi.fn(() => logMock) }));
+
 import { authRouter } from "./router";
 
 const app = new Hono();
@@ -164,6 +170,12 @@ describe("POST /auth/start — channel handling (ADR-0023)", () => {
     expect(fake.challenges.putChallenge).toHaveBeenCalledWith(
       expect.objectContaining({ requestedChannel: "whatsapp" }),
     );
+    // Chain log: sub correlates with message-sender's otp_delivered line.
+    expect(logMock.info).toHaveBeenCalledWith("otp_start", {
+      challengeId: expect.any(String),
+      channel: "whatsapp",
+      sub: SUB,
+    });
   });
 
   it("503s channel_disabled for a requested-but-unavailable channel — no silent switch", async () => {
@@ -211,6 +223,11 @@ describe("POST /auth/start — channel handling (ADR-0023)", () => {
     expect(res.status).toBe(502);
     expect(await res.json()).toEqual({ error: "send_failed", channel: "whatsapp" });
     expect(fake.challenges.putChallenge).not.toHaveBeenCalled(); // no half-created challenge
+    expect(logMock.warn).toHaveBeenCalledWith("otp_send_failed", {
+      channel: "whatsapp",
+      sub: SUB,
+      error: "UnexpectedLambdaException",
+    });
   });
 });
 
@@ -342,6 +359,11 @@ describe("POST /auth/resend — channel switch (ADR-0023)", () => {
     expect(fake.challenges.putChallenge).toHaveBeenCalledWith(
       expect.objectContaining({ requestedChannel: "sms", cognitoSession: "sess2" }),
     );
+    expect(logMock.info).toHaveBeenCalledWith("otp_resend", {
+      challengeId: "c1",
+      channel: "sms",
+      sub: SUB,
+    });
   });
 
   it("503s channel_disabled on resend too", async () => {

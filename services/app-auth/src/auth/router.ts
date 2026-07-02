@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { Logger } from "@aws-lambda-powertools/logger";
 import {
   AuthConfigResponse,
   AuthRefreshBody,
@@ -27,6 +28,11 @@ const TICKET_TTL_SEC = 600;
 const MAX_OTP_ATTEMPTS = 5;
 
 const nowEpoch = (): number => Math.floor(Date.now() / 1000);
+
+// OTP chain logging (no PII, never the code): `sub` correlates with message-sender's
+// otp_delivered/otp_delivery_failed lines; `challengeId` with the client session. One
+// Logs Insights query across the app-auth + message-sender groups follows a send end to end.
+const logger = new Logger({ serviceName: "app-auth" });
 
 /** Extract the Bearer access token from the Authorization header, or null. */
 function bearerToken(c: { req: { header: (n: string) => string | undefined } }): string | null {
@@ -111,7 +117,14 @@ export function authRouter(): Hono {
     try {
       ({ session } = await ctx.cognito.startSmsOtp(user.username));
     } catch (err) {
-      if (isSenderFailure(err)) return c.json({ error: "send_failed", channel: body.channel }, 502);
+      if (isSenderFailure(err)) {
+        logger.warn("otp_send_failed", {
+          channel: body.channel,
+          sub: user.sub,
+          error: err instanceof Error ? err.name : "unknown",
+        });
+        return c.json({ error: "send_failed", channel: body.channel }, 502);
+      }
       throw err;
     }
 
@@ -130,6 +143,7 @@ export function authRouter(): Hono {
       ttl: now + CHALLENGE_TTL_SEC,
     });
 
+    logger.info("otp_start", { challengeId, channel: body.channel, sub: user.sub });
     return c.json(
       AuthStartResponse.parse({
         challengeId,
@@ -171,7 +185,14 @@ export function authRouter(): Hono {
     try {
       ({ session } = await ctx.cognito.startSmsOtp(challenge.username));
     } catch (err) {
-      if (isSenderFailure(err)) return c.json({ error: "send_failed", channel: body.channel }, 502);
+      if (isSenderFailure(err)) {
+        logger.warn("otp_send_failed", {
+          channel: body.channel,
+          sub: challenge.sub,
+          error: err instanceof Error ? err.name : "unknown",
+        });
+        return c.json({ error: "send_failed", channel: body.channel }, 502);
+      }
       throw err;
     }
 
@@ -181,6 +202,11 @@ export function authRouter(): Hono {
       requestedChannel: body.channel,
       resendAfterEpoch: now + RESEND_COOLDOWN_SEC,
       ttl: now + CHALLENGE_TTL_SEC,
+    });
+    logger.info("otp_resend", {
+      challengeId: challenge.challengeId,
+      channel: body.channel,
+      sub: challenge.sub,
     });
     return c.json(
       AuthResendResponse.parse({
