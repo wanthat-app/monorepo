@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.8.0",
     "@wanthat/auth": "workspace:*",
     "@wanthat/contracts": "workspace:*",
     "@wanthat/db": "workspace:*",

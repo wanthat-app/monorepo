@@ -10,6 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-lambda-powertools/logger": "^2.8.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
     "@wanthat/auth": "workspace:*",
     "@wanthat/contracts": "workspace:*",

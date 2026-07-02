@@ -218,6 +218,9 @@ importers:
 
   services/app-auth:
     dependencies:
+      '@aws-lambda-powertools/logger':
+        specifier: ^2.8.0
+        version: 2.33.1
       '@aws-sdk/client-cognito-identity-provider':
         specifier: ^3.600.0
         version: 3.1076.0
@@ -236,6 +239,9 @@ importers:
 
   services/app-core:
     dependencies:
+      '@aws-lambda-powertools/logger':
+        specifier: ^2.8.0
+        version: 2.33.1
       '@wanthat/auth':
         specifier: workspace:*
         version: link:../../packages/auth

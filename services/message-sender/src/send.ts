@@ -25,6 +25,8 @@ export interface SendDeps {
     }): Promise<unknown>;
   };
   sms: { publish(toE164: string, message: string): Promise<void> };
+  /** Structured log sink. The success line carries `sub` — the field app-auth's otp_start log shares, so one Logs Insights query follows the chain. */
+  log: (msg: string, ctx?: Record<string, unknown>) => void;
 }
 
 /**
@@ -59,10 +61,18 @@ export async function deliverOtp(deps: SendDeps, event: CustomSmsSenderEvent): P
       variables: { code },
       to,
     });
+    deps.log("otp_delivered", {
+      channel: "whatsapp",
+      triggerSource: event.triggerSource,
+      sub: attrs.sub,
+    });
     return;
   }
 
   // sms — replicate Cognito's native wording: once the trigger is attached, Cognito sends nothing
   // itself and this function owns ALL OTP delivery (including plain SMS).
   await deps.sms.publish(to, `Your authentication code is ${code}.`);
+  // "Delivered" = submitted downstream. SNS can still drop silently (e.g. the sandbox monthly
+  // spend cap accepts the publish and never delivers) — this line proves OUR side completed.
+  deps.log("otp_delivered", { channel: "sms", triggerSource: event.triggerSource, sub: attrs.sub });
 }
