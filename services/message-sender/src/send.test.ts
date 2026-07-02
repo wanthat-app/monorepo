@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type CustomSmsSenderEvent, deliverOtp, type SendDeps } from "./send";
 
 const deps = {
@@ -116,6 +116,11 @@ describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)"
 });
 
 describe("dev OTP sink (auth.otpSink = devSink, never in prod)", () => {
+  // Structural reset: a failing assertion mid-test must not leak `allowed = true` into later tests.
+  afterEach(() => {
+    deps.devSink.allowed = false;
+  });
+
   it("parks the code instead of delivering when allowed AND configured", async () => {
     deps.devSink.allowed = true;
     deps.config.get.mockImplementation((key: string) =>
@@ -131,7 +136,6 @@ describe("dev OTP sink (auth.otpSink = devSink, never in prod)", () => {
     expect(deps.sms.publish).not.toHaveBeenCalled();
     expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
     expect(deps.log).toHaveBeenCalledWith("otp_sunk_dev", { channel: "sms", sub: undefined });
-    deps.devSink.allowed = false;
   });
 
   it("sinks the whatsapp channel too, before any phoneNumberId read", async () => {
@@ -144,7 +148,6 @@ describe("dev OTP sink (auth.otpSink = devSink, never in prod)", () => {
       expect.objectContaining({ channel: "whatsapp", code: "12345678" }),
     );
     expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
-    deps.devSink.allowed = false;
   });
 
   it("ignores the config entirely when not allowed (the prod guard)", async () => {
