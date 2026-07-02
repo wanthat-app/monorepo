@@ -24,6 +24,12 @@ import {
   webOrigins,
 } from "./config";
 
+/** The deployed SPA origin for links we send out (ADR-0023). Synth fails loudly on an env without a domain. */
+function appUrl(wanthatEnv: WanthatEnv): string {
+  if (!wanthatEnv.domainName) throw new Error(`appUrl: env ${wanthatEnv.name} has no domainName`);
+  return `https://${wanthatEnv.domainName}`;
+}
+
 export interface ApiStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
   readonly userPool: cognito.IUserPool;
@@ -159,9 +165,9 @@ export class ApiStack extends Stack {
         DB_USER: "app_rw",
         ...RDS_CA_ENV,
         NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
-        // Canonical SPA origin for links in outbound messages (first CORS origin = the site). Both
-        // envs set `domainName` (config.ts ENVIRONMENTS), so webOrigins() is never empty in practice.
-        APP_URL: webOrigins(wanthatEnv)[0] ?? `https://${wanthatEnv.domainName}`,
+        // Link target for outbound messages (ADR-0023): the DEPLOYED site, never webOrigins()[0]
+        // (which is the localhost dev origin for non-prod envs).
+        APP_URL: appUrl(wanthatEnv),
       },
       bundling: rdsCaBundling,
     });
