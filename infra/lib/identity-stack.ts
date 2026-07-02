@@ -235,6 +235,44 @@ export class IdentityStack extends Stack {
       installLatestAwsSdk: false,
     });
 
+    // WebAuthn relying-party ID (ADR-0006 passkeys). The L2 `passkeyRelyingPartyId` prop above maps
+    // to CfnUserPool.WebAuthnRelyingPartyID, but that does NOT apply to an already-created pool:
+    // CloudFormation carries the value yet the live pool's WebAuthnConfiguration stays null, so
+    // Cognito hands out rp.id = the managed-login domain (e.g. wanthat-dev.auth...amazoncognito.com),
+    // which is not a registrable suffix of the SPA origin (dev.wanthat.app) - so the browser rejects
+    // navigator.credentials.create() with a SecurityError before the Face ID sheet appears, and no
+    // passkey can ever enrol. SetUserPoolMfaConfig is the API that actually writes the RP ID onto an
+    // existing pool (per the WebAuthnConfigurationType docs), so we enforce it here. MFA stays OFF
+    // (SMS is a first-factor OTP via SignInPolicy, not an MFA factor), so clearing the MFA-side SMS
+    // config is a no-op for the OTP login path. Only where the env has a real site domain to bind to.
+    if (wanthatEnv.domainName) {
+      const rpId = wanthatEnv.domainName;
+      new cr.AwsCustomResource(this, "WebAuthnRelyingParty", {
+        onUpdate: {
+          service: "CognitoIdentityServiceProvider",
+          action: "setUserPoolMfaConfig",
+          parameters: {
+            UserPoolId: this.userPool.userPoolId,
+            MfaConfiguration: "OFF",
+            WebAuthnConfiguration: { RelyingPartyId: rpId, UserVerification: "required" },
+          },
+          // RP id in the physical id so a domain change re-applies the config on the next deploy.
+          physicalResourceId: cr.PhysicalResourceId.of(
+            `wanthat-${wanthatEnv.name}-webauthn-rp-${rpId}`,
+          ),
+        },
+        policy: cr.AwsCustomResourcePolicy.fromStatements([
+          new iam.PolicyStatement({
+            actions: ["cognito-idp:SetUserPoolMfaConfig"],
+            resources: [this.userPool.userPoolArn],
+          }),
+        ]),
+        // WebAuthnConfiguration on SetUserPoolMfaConfig is a recent API param; fetch a current SDK at
+        // deploy so it is not silently dropped by an older bundled SDK (which would leave rp.id wrong).
+        installLatestAwsSdk: true,
+      });
+    }
+
     // The SPA needs these to build the Managed Login authorize URL for discoverable passkey login.
     new CfnOutput(this, "ManagedLoginBaseUrl", { value: this.userPoolDomain.baseUrl() });
     new CfnOutput(this, "UserPoolClientIdOut", { value: this.userPoolClient.userPoolClientId });
