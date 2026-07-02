@@ -15,4 +15,4 @@ export { getDocClient } from "./client";
 export { FxRateRepo, fxPairKey } from "./fx-rate";
 export { type GuestAttribution, GuestAttributionRepo } from "./guest-attribution";
 export { PhoneVelocityRepo } from "./phone-velocity";
-export { RuntimeConfigRepo } from "./runtime-config";
+export { type RuntimeConfigReader, RuntimeConfigRepo } from "./runtime-config";

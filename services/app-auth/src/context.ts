@@ -4,6 +4,7 @@ import {
   GuestAttributionRepo,
   getDocClient,
   PhoneVelocityRepo,
+  type RuntimeConfigReader,
   RuntimeConfigRepo,
 } from "@wanthat/dynamo";
 import { Cognito } from "./auth/cognito";
@@ -16,7 +17,8 @@ function requireEnv(name: string): string {
 
 export interface AuthContext {
   region: string;
-  config: RuntimeConfigRepo;
+  /** Read-only by design: the config table is single-writer (admin-api) — ADR-0023 spec. */
+  config: RuntimeConfigReader;
   challenges: AuthChallengeRepo;
   velocity: PhoneVelocityRepo;
   guests: GuestAttributionRepo;

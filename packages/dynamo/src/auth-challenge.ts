@@ -4,6 +4,7 @@ import {
   GetCommand,
   PutCommand,
 } from "@aws-sdk/lib-dynamodb";
+import type { OtpChannel } from "@wanthat/contracts";
 
 /**
  * Repository over the `auth_challenge` table (ADR-0020) — short-lived server state for the OTP flow.
@@ -30,6 +31,8 @@ export interface ChallengeRecord {
   phone: string;
   cognitoSession: string;
   isNewUser: boolean;
+  /** OTP channel of the LAST send for this challenge (start or resend) — ADR-0023. Optional: records written before the channel feature lack it. */
+  requestedChannel?: OtpChannel;
   resendAfterEpoch: number;
   attempts: number;
   ttl: number;

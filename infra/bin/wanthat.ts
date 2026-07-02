@@ -55,6 +55,7 @@ const data = new DataStack(app, stackName(wanthatEnv, "data"), {
 const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), {
   ...common,
   crossRegionReferences: true,
+  runtimeConfigTable: data.runtimeConfigTable,
 });
 const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   ...common,
@@ -131,6 +132,7 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
     { label: "retailer-proxy", fn: edgeServices.retailerProxyFn },
     { label: "conversion-poller", fn: edgeServices.conversionPollerFn },
     { label: "fx-rates", fn: edgeServices.fxRatesFn },
+    { label: "message-sender", fn: identity.messageSenderFn },
   ],
   cluster: data.cluster,
   smsSpendLimitUsd: SMS_MONTHLY_SPEND_LIMIT_USD[wanthatEnv.name],

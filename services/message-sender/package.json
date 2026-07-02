@@ -1,0 +1,21 @@
+{
+  "name": "@wanthat/message-sender",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "dist/handler.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aws-crypto/client-node": "^5.0.0",
+    "@aws-lambda-powertools/logger": "^2.8.0",
+    "@aws-sdk/client-sns": "^3.600.0",
+    "@aws-sdk/client-socialmessaging": "^3.600.0",
+    "@wanthat/contracts": "workspace:*",
+    "@wanthat/dynamo": "workspace:*",
+    "@wanthat/whatsapp": "workspace:*"
+  }
+}

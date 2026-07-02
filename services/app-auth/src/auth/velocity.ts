@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import type { PhoneVelocityRepo, RuntimeConfigRepo } from "@wanthat/dynamo";
+import type { PhoneVelocityRepo, RuntimeConfigReader } from "@wanthat/dynamo";
 
 /** Hash the phone so the velocity table holds no PII (ADR-0003). */
 export function hashPhone(phone: string): string {
@@ -14,7 +14,7 @@ export function hashPhone(phone: string): string {
  * `retryAfterSec: 0`. `nowEpoch` is Unix seconds.
  */
 export async function withinVelocity(
-  config: RuntimeConfigRepo,
+  config: RuntimeConfigReader,
   repo: PhoneVelocityRepo,
   phone: string,
   nowEpoch: number,

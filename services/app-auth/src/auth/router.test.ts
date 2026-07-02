@@ -10,6 +10,7 @@ const { fake } = vi.hoisted(() => ({
     cognito: {
       getUserByPhone: vi.fn(),
       createUser: vi.fn(),
+      updateAttributes: vi.fn(),
       startSmsOtp: vi.fn(),
       respondSmsOtp: vi.fn(),
       refresh: vi.fn(),
@@ -47,13 +48,25 @@ function post(path: string, body: unknown) {
   });
 }
 
+/** The order of a mock's first invocation — throws if it was never called (test bug, not a real case). */
+function firstCallOrder(mock: { mock: { invocationCallOrder: number[] } }): number {
+  const order = mock.mock.invocationCallOrder[0];
+  if (order === undefined) throw new Error("mock was never called");
+  return order;
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
-  // Per-key runtime config: SMS enabled, cap 5 sends per 180-minute window.
   fake.config.get.mockImplementation((key: string) => {
     switch (key) {
       case "auth.smsEnabled":
         return Promise.resolve(true);
+      case "auth.whatsappEnabled":
+        return Promise.resolve(true);
+      case "auth.defaultOtpChannel":
+        return Promise.resolve("whatsapp");
+      case "whatsapp.phoneNumberId":
+        return Promise.resolve("phone-number-id-test");
       case "auth.smsMaxPerWindow":
         return Promise.resolve(5);
       case "auth.smsLockoutMinutes":
@@ -71,31 +84,133 @@ describe("POST /auth/start", () => {
     fake.cognito.createUser.mockResolvedValue({ username: "u", sub: SUB });
     fake.cognito.startSmsOtp.mockResolvedValue({ session: "sess" });
 
-    const res = await post("/auth/start", { phone: PHONE });
+    const res = await post("/auth/start", { phone: PHONE, channel: "sms" });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ resendAfterSec: 30, expiresInSec: 180 });
     expect(fake.cognito.createUser).toHaveBeenCalledWith(PHONE);
     expect(fake.challenges.putChallenge).toHaveBeenCalledOnce();
   });
 
-  it("503s when the SMS kill switch is off", async () => {
-    fake.config.get.mockResolvedValue(false);
-    const res = await post("/auth/start", { phone: PHONE });
-    expect(res.status).toBe(503);
-    expect(fake.cognito.startSmsOtp).not.toHaveBeenCalled();
-  });
-
   it("429s when over the velocity limit", async () => {
     fake.velocity.hit.mockResolvedValue({ count: 99, ttl: 1000 });
-    const res = await post("/auth/start", { phone: PHONE });
+    const res = await post("/auth/start", { phone: PHONE, channel: "sms" });
     expect(res.status).toBe(429);
     expect(await res.json()).toMatchObject({ error: "rate_limited" });
     expect(fake.cognito.getUserByPhone).not.toHaveBeenCalled();
   });
 
   it("400s on an invalid phone", async () => {
-    const res = await post("/auth/start", { phone: "not-a-phone" });
+    const res = await post("/auth/start", { phone: "not-a-phone", channel: "sms" });
     expect(res.status).toBe(400);
+  });
+});
+
+describe("GET /auth/config", () => {
+  it("projects the enabled channels and the preselect", async () => {
+    const res = await app.request("/auth/config");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({ channels: ["whatsapp", "sms"], defaultChannel: "whatsapp" });
+  });
+
+  it("omits whatsapp when the switch is on but the phoneNumberId is unset", async () => {
+    fake.config.get.mockImplementation((key: string) =>
+      Promise.resolve(
+        {
+          "auth.smsEnabled": true,
+          "auth.whatsappEnabled": true,
+          "whatsapp.phoneNumberId": "",
+          "auth.defaultOtpChannel": "whatsapp",
+        }[key],
+      ),
+    );
+    expect(await (await app.request("/auth/config")).json()).toEqual({
+      channels: ["sms"],
+      defaultChannel: "sms",
+    });
+  });
+
+  it("returns an empty projection when everything is off", async () => {
+    fake.config.get.mockResolvedValue(false);
+    expect(await (await app.request("/auth/config")).json()).toEqual({
+      channels: [],
+      defaultChannel: null,
+    });
+  });
+});
+
+describe("POST /auth/start — channel handling (ADR-0023)", () => {
+  beforeEach(() => {
+    fake.cognito.getUserByPhone.mockResolvedValue({ username: "u", sub: SUB });
+    fake.cognito.startSmsOtp.mockResolvedValue({ session: "sess" });
+  });
+
+  it("400s when channel is missing — no server-side default", async () => {
+    expect((await post("/auth/start", { phone: PHONE })).status).toBe(400);
+  });
+
+  it("writes custom:otpChannel (+ locale) BEFORE initiating, stores requestedChannel, echoes channel", async () => {
+    const res = await post("/auth/start", { phone: PHONE, channel: "whatsapp", locale: "he" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ channel: "whatsapp" });
+    expect(fake.cognito.updateAttributes).toHaveBeenCalledWith("u", [
+      { Name: "custom:otpChannel", Value: "whatsapp" },
+      { Name: "locale", Value: "he" },
+    ]);
+    // Attribute write happens before the initiate that triggers the sender.
+    expect(firstCallOrder(fake.cognito.updateAttributes)).toBeLessThan(
+      firstCallOrder(fake.cognito.startSmsOtp),
+    );
+    expect(fake.challenges.putChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedChannel: "whatsapp" }),
+    );
+  });
+
+  it("503s channel_disabled for a requested-but-unavailable channel — no silent switch", async () => {
+    fake.config.get.mockImplementation((key: string) =>
+      Promise.resolve(
+        {
+          "auth.smsEnabled": true,
+          "auth.whatsappEnabled": false,
+          "whatsapp.phoneNumberId": "",
+          "auth.defaultOtpChannel": "whatsapp",
+          "auth.smsMaxPerWindow": 5,
+          "auth.smsLockoutMinutes": 180,
+        }[key],
+      ),
+    );
+    const res = await post("/auth/start", { phone: PHONE, channel: "whatsapp" });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "channel_disabled", channel: "whatsapp" });
+    expect(fake.cognito.startSmsOtp).not.toHaveBeenCalled();
+  });
+
+  it("503s channel_disabled for sms when the SMS switch is off", async () => {
+    fake.config.get.mockImplementation((key: string) =>
+      Promise.resolve(
+        {
+          "auth.smsEnabled": false,
+          "auth.whatsappEnabled": true,
+          "whatsapp.phoneNumberId": "phone-number-id-test",
+          "auth.defaultOtpChannel": "whatsapp",
+          "auth.smsMaxPerWindow": 5,
+          "auth.smsLockoutMinutes": 180,
+        }[key],
+      ),
+    );
+    const res = await post("/auth/start", { phone: PHONE, channel: "sms" });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toEqual({ error: "channel_disabled", channel: "sms" });
+  });
+
+  it("502s send_failed when the custom sender throws inside AdminInitiateAuth", async () => {
+    fake.cognito.startSmsOtp.mockRejectedValue(
+      Object.assign(new Error("sender blew up"), { name: "UnexpectedLambdaException" }),
+    );
+    const res = await post("/auth/start", { phone: PHONE, channel: "whatsapp" });
+    expect(res.status).toBe(502);
+    expect(await res.json()).toEqual({ error: "send_failed", channel: "whatsapp" });
+    expect(fake.challenges.putChallenge).not.toHaveBeenCalled(); // no half-created challenge
   });
 });
 
@@ -182,7 +297,7 @@ describe("POST /auth/resend", () => {
     fake.challenges.getChallenge.mockResolvedValue(challenge);
     fake.cognito.startSmsOtp.mockResolvedValue({ session: "sess2" });
 
-    const res = await post("/auth/resend", { challengeId: "c1" });
+    const res = await post("/auth/resend", { challengeId: "c1", channel: "sms" });
     expect(res.status).toBe(200);
     expect(await res.json()).toMatchObject({ resendAfterSec: 30, expiresInSec: 180 });
     expect(fake.cognito.startSmsOtp).toHaveBeenCalledOnce();
@@ -192,12 +307,59 @@ describe("POST /auth/resend", () => {
     fake.challenges.getChallenge.mockResolvedValue(challenge);
     fake.velocity.hit.mockResolvedValue({ count: 6, ttl: 9999999999 });
 
-    const res = await post("/auth/resend", { challengeId: "c1" });
+    const res = await post("/auth/resend", { challengeId: "c1", channel: "sms" });
     expect(res.status).toBe(429);
     const body = (await res.json()) as { error: string; retryAfterSec: number };
     expect(body.error).toBe("rate_limited");
     expect(body.retryAfterSec).toBeGreaterThan(0);
     expect(fake.cognito.startSmsOtp).not.toHaveBeenCalled();
+  });
+});
+
+describe("POST /auth/resend — channel switch (ADR-0023)", () => {
+  const challenge = {
+    challengeId: "c1",
+    username: "u",
+    sub: SUB,
+    phone: PHONE,
+    cognitoSession: "sess",
+    isNewUser: false,
+    requestedChannel: "whatsapp",
+    resendAfterEpoch: 0,
+    attempts: 0,
+    ttl: 0,
+  };
+
+  it("re-sends via the explicitly requested channel (the UI's send-via-SMS path)", async () => {
+    fake.challenges.getChallenge.mockResolvedValue(challenge);
+    fake.cognito.startSmsOtp.mockResolvedValue({ session: "sess2" });
+    const res = await post("/auth/resend", { challengeId: "c1", channel: "sms" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ channel: "sms" });
+    expect(fake.cognito.updateAttributes).toHaveBeenCalledWith("u", [
+      { Name: "custom:otpChannel", Value: "sms" },
+    ]);
+    expect(fake.challenges.putChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ requestedChannel: "sms", cognitoSession: "sess2" }),
+    );
+  });
+
+  it("503s channel_disabled on resend too", async () => {
+    fake.challenges.getChallenge.mockResolvedValue(challenge);
+    fake.config.get.mockImplementation((key: string) =>
+      Promise.resolve(
+        {
+          "auth.smsEnabled": false,
+          "auth.whatsappEnabled": true,
+          "whatsapp.phoneNumberId": "phone-number-id-test",
+          "auth.defaultOtpChannel": "whatsapp",
+          "auth.smsMaxPerWindow": 5,
+          "auth.smsLockoutMinutes": 180,
+        }[key],
+      ),
+    );
+    const res = await post("/auth/resend", { challengeId: "c1", channel: "sms" });
+    expect(res.status).toBe(503);
   });
 });
 

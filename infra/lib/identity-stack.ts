@@ -1,12 +1,24 @@
 import { CfnOutput, Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as cognito from "aws-cdk-lib/aws-cognito";
+import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
+import * as kms from "aws-cdk-lib/aws-kms";
+import * as lambda from "aws-cdk-lib/aws-lambda";
+import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
-import { type WanthatEnv, webOrigins } from "./config";
+import {
+  LAMBDA_RUNTIME,
+  serviceEntry,
+  serviceLogGroup,
+  type WanthatEnv,
+  webOrigins,
+} from "./config";
 
 export interface IdentityStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
+  /** From DataStack — message-sender reads whatsapp.phoneNumberId at send time (ADR-0023). */
+  readonly runtimeConfigTable: dynamodb.ITable;
 }
 
 /** Per-env SNS monthly SMS spend hard cap (USD), the kill-switch fail-safe (ADR-0006 layer 4). */
@@ -45,11 +57,20 @@ export class IdentityStack extends Stack {
   readonly employeePool: cognito.UserPool;
   readonly employeePoolClient: cognito.UserPoolClient;
   readonly employeePoolDomain: cognito.UserPoolDomain;
+  /** ADR-0023: the Cognito custom-SMS-sender executor — observed by ObservabilityStack. */
+  readonly messageSenderFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: IdentityStackProps) {
     super(scope, id, props);
     const { wanthatEnv } = props;
     const isProd = wanthatEnv.name === "prod";
+
+    // ADR-0023: Cognito encrypts the OTP code for the custom sender trigger with this key (via
+    // the AWS Encryption SDK); message-sender holds the decrypt grant. Fixed cost ~1 USD/month.
+    const customSenderKey = new kms.Key(this, "CustomSenderKey", {
+      enableKeyRotation: true,
+      description: `wanthat-${wanthatEnv.name} Cognito custom-sender OTP code encryption (ADR-0023)`,
+    });
 
     this.userPool = new cognito.UserPool(this, "UserPool", {
       userPoolName: `wanthat-${wanthatEnv.name}`,
@@ -59,6 +80,12 @@ export class IdentityStack extends Stack {
         phoneNumber: { required: true, mutable: true },
         email: { required: false, mutable: true },
       },
+      // ADR-0023: the OTP delivery channel for the message-sender trigger. Written by app-auth on
+      // every /auth/start + /auth/resend; the sender FAILS if it is missing (never defaults).
+      customAttributes: {
+        otpChannel: new cognito.StringAttribute({ mutable: true, minLen: 3, maxLen: 8 }),
+      },
+      customSenderKmsKey: customSenderKey,
       // Choice-based first-auth factors (ADR-0006). `password` MUST be true even for a passwordless
       // pool (Cognito requirement); we simply never enable the userPassword flow on the client, so no
       // password is ever accepted at the API.
@@ -89,6 +116,51 @@ export class IdentityStack extends Stack {
       groupName: "user",
       precedence: 10,
     });
+
+    // ADR-0023: pure OTP executor. IMPORTANT: once this trigger is attached, Cognito sends NO SMS
+    // natively - this function owns ALL OTP delivery (WhatsApp via End User Messaging Social, SMS
+    // via SNS Publish), routed ONLY by the custom:otpChannel attribute. It reads no kill switches
+    // and never falls back across channels; a throw fails the callers AdminInitiateAuth, which
+    // app-auth maps to send_failed (spec rev 2).
+    const messageSenderFn = new NodejsFunction(this, "MessageSender", {
+      functionName: `wanthat-${wanthatEnv.name}-message-sender`,
+      entry: serviceEntry("message-sender"),
+      handler: "handler",
+      runtime: LAMBDA_RUNTIME,
+      memorySize: 256,
+      timeout: Duration.seconds(10),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "MessageSenderLogs", wanthatEnv),
+      // Non-VPC: Cognito-invoked; reaches KMS, DynamoDB, SNS and the End User Messaging Social
+      // endpoint over public AWS endpoints (ADR-0004 NAT-free).
+      environment: {
+        WANTHAT_ENV: wanthatEnv.name,
+        RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
+        KMS_KEY_ARN: customSenderKey.keyArn,
+        // End User Messaging Social is not available in il-central-1; Frankfurt is the closest
+        // supported endpoint. Deploy-time by design (moving regions is a redeploy either way).
+        WHATSAPP_SOCIAL_REGION: "eu-central-1",
+      },
+      bundling: { minify: true, sourceMap: true },
+    });
+    this.messageSenderFn = messageSenderFn;
+    customSenderKey.grantDecrypt(messageSenderFn);
+    props.runtimeConfigTable.grantReadData(messageSenderFn);
+    // sns:Publish scoped away from every topic ARN = direct-to-phone SMS only.
+    messageSenderFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["sns:Publish"],
+        notResources: ["arn:aws:sns:*:*:*"],
+      }),
+    );
+    // The phone-number-id resource exists only after onboarding, hence "*".
+    messageSenderFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["social-messaging:SendWhatsAppMessage"],
+        resources: ["*"],
+      }),
+    );
+    this.userPool.addTrigger(cognito.UserPoolOperation.CUSTOM_SMS_SENDER, messageSenderFn);
 
     // Browser origins allowed to complete the hosted-UI OAuth redirect — the same list the app/admin
     // HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).
