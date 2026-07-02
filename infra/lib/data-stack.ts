@@ -44,6 +44,8 @@ export class DataStack extends Stack {
   readonly authChallengeTable: dynamodb.Table;
   readonly phoneVelocityTable: dynamodb.Table;
   readonly notificationOutboxTable: dynamodb.Table;
+  /** Absent in prod by design (fail-closed) — see the DevOtpSink construct below. */
+  readonly devOtpSinkTable?: dynamodb.Table;
   readonly retailerSecret: secretsmanager.Secret;
   readonly cluster: rds.DatabaseCluster;
 
@@ -114,6 +116,18 @@ export class DataStack extends Stack {
       stream: dynamodb.StreamViewType.NEW_IMAGE,
       ...common,
     });
+
+    // Dev OTP sink (auth.otpSink = "devSink", docs/dev-otp-sink.md): message-sender parks codes
+    // here for CLI pickup while both delivery channels are blocked. NOT provisioned in prod at
+    // all (fail-closed: no table, no env var, no grant - a sink write there fails loudly), so
+    // codes cannot land in a prod table under any code path. 5-minute TTL.
+    if (wanthatEnv.name !== "prod") {
+      this.devOtpSinkTable = new dynamodb.Table(this, "DevOtpSink", {
+        partitionKey: { name: "phone", type: dynamodb.AttributeType.STRING },
+        timeToLiveAttribute: "ttl",
+        ...common,
+      });
+    }
 
     // Secret-scoped retailer (AliExpress) credential — created empty, populated out-of-band.
     this.retailerSecret = new secretsmanager.Secret(this, "RetailerCredential", {
