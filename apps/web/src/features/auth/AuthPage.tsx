@@ -1,12 +1,11 @@
 import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ApiError, authApi } from "../../lib/api";
 import { forgetDevicePhone, rememberedDevicePhone } from "../../lib/device";
 import {
   biometricLabelKey,
-  browserSupportsWebAuthnAutofill,
   enrollPasskey,
   loginWithPasskey,
   passkeysSupported,
@@ -62,34 +61,6 @@ export function AuthPage() {
   const [knownPhone, setKnownPhone] = useState<string | null>(null);
   useEffect(() => setKnownPhone(rememberedDevicePhone()), []);
   const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
-
-  // Conditional UI (ADR-0022 "auto-on-load"): if the device remembers the phone and the browser
-  // supports passkey autofill, prime a WebAuthn assertion so the passkey surfaces on its own in the
-  // phone field's autofill. Resolves only when the user picks it; every other outcome (no support,
-  // abort when the explicit button starts a ceremony, cancel) is swallowed — the button + OTP remain.
-  const autofillStarted = useRef(false);
-  useEffect(() => {
-    if (step !== "phone" || !knownPhone || !passkeysSupported() || autofillStarted.current) return;
-    autofillStarted.current = true;
-    // A conditional WebAuthn request can stay pending indefinitely; if the user navigates away (or
-    // this step changes) before picking the passkey, don't sign them in / force-navigate on a late
-    // resolve. The cleanup flips `cancelled`; the explicit button/OTP paths are unaffected.
-    let cancelled = false;
-    (async () => {
-      if (!(await browserSupportsWebAuthnAutofill())) return;
-      try {
-        const session = await loginWithPasskey(knownPhone, { useBrowserAutofill: true });
-        if (cancelled) return;
-        signIn(session);
-        navigate("/home", { replace: true });
-      } catch {
-        // no-op: user chose another method / cancelled / ceremony aborted.
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [step, knownPhone, signIn, navigate]);
 
   useEffect(() => {
     void authApi
@@ -224,7 +195,6 @@ export function AuthPage() {
                   name="phone"
                   type="tel"
                   inputMode="tel"
-                  autoComplete="tel webauthn"
                   placeholder="50 123 4567"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}

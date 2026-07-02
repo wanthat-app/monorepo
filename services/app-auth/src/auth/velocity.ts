@@ -25,22 +25,3 @@ export async function withinVelocity(
   if (count <= limit) return { allowed: true, retryAfterSec: 0 };
   return { allowed: false, retryAfterSec: Math.max(0, ttl - nowEpoch) };
 }
-
-/**
- * Passkey-login velocity (ADR-0022): a per-phone cap on /auth/passkey/login/options, on its OWN
- * counter (a "pk:" key prefix) and its own generous limits (auth.passkeyMaxPerWindow /
- * auth.passkeyWindowMinutes) so it never shares budget with SMS OTP. Same allow/retryAfter shape as
- * withinVelocity.
- */
-export async function withinPasskeyVelocity(
-  config: RuntimeConfigReader,
-  repo: PhoneVelocityRepo,
-  phone: string,
-  nowEpoch: number,
-): Promise<{ allowed: boolean; retryAfterSec: number }> {
-  const limit = (await config.get("auth.passkeyMaxPerWindow")) as number;
-  const windowSeconds = ((await config.get("auth.passkeyWindowMinutes")) as number) * 60;
-  const { count, ttl } = await repo.hit(hashPhone(`pk:${phone}`), windowSeconds, nowEpoch);
-  if (count <= limit) return { allowed: true, retryAfterSec: 0 };
-  return { allowed: false, retryAfterSec: Math.max(0, ttl - nowEpoch) };
-}
