@@ -3,8 +3,13 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ApiError, authApi } from "../../lib/api";
-import { beginPasskeyLogin } from "../../lib/managed-login";
-import { enrollPasskey, passkeysSupported } from "../../lib/passkey";
+import { forgetDevicePhone, rememberedDevicePhone } from "../../lib/device";
+import {
+  biometricLabelKey,
+  enrollPasskey,
+  loginWithPasskey,
+  passkeysSupported,
+} from "../../lib/passkey";
 import { useSession } from "../../lib/session";
 import {
   BackButton,
@@ -25,7 +30,8 @@ const LOCALE_BY_LANG: Record<string, string> = { he: "he-IL", en: "en-US" };
 /**
  * UC1 Onboard + UC2 Sign-in. One unified phone-OTP flow: a phone that has no profile yet branches to
  * the registration step (name + email + language + Terms), then a Face ID enrolment step; a known
- * phone signs straight in. A discoverable passkey login is offered up front (Managed Login redirect).
+ * phone signs straight in. On a returning device (ADR-0022 Flow B), the remembered phone drives a
+ * username-hinted passkey login offered up front, above the phone form; OTP is always the fallback.
  */
 export function AuthPage() {
   const { t, i18n } = useTranslation();
@@ -49,6 +55,12 @@ export function AuthPage() {
   const [channels, setChannels] = useState<OtpChannel[]>(["sms"]);
   const [channel, setChannel] = useState<OtpChannel>("sms");
   const [errorCode, setErrorCode] = useState<string | undefined>();
+
+  // Device-remembered phone (ADR-0022 Flow B): a returning device offers passkey login up front
+  // instead of the phone form.
+  const [knownPhone, setKnownPhone] = useState<string | null>(null);
+  useEffect(() => setKnownPhone(rememberedDevicePhone()), []);
+  const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
 
   useEffect(() => {
     void authApi
@@ -93,6 +105,14 @@ export function AuthPage() {
       setChannel(res.channel);
       setChallengeId(res.challengeId);
       setStep("otp");
+    });
+
+  const onPasskeyLogin = () =>
+    run(async () => {
+      if (!knownPhone) return;
+      const session = await loginWithPasskey(knownPhone);
+      signIn(session);
+      navigate("/home", { replace: true });
     });
 
   const onVerify = () =>
@@ -146,6 +166,22 @@ export function AuthPage() {
               <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
               <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
             </div>
+            {knownPhone && passkeysSupported() && (
+              <div className="flex flex-col gap-2">
+                <Button onClick={onPasskeyLogin} loading={busy}>
+                  {t("auth.passkeyCta", { label: bioLabel })}
+                </Button>
+                <Button
+                  variant="ghost"
+                  onClick={() => {
+                    forgetDevicePhone();
+                    setKnownPhone(null);
+                  }}
+                >
+                  {t("auth.differentNumber")}
+                </Button>
+              </div>
+            )}
             <label htmlFor="phone" className="block">
               <span className="mb-1.5 block text-sm font-medium text-muted">
                 {t("auth.phoneLabel")}
@@ -192,11 +228,6 @@ export function AuthPage() {
                   {t("auth.trySms")}
                 </Button>
               )}
-            {passkeysSupported() && (
-              <Button variant="ghost" onClick={() => beginPasskeyLogin()}>
-                {t("auth.passkeyLogin")}
-              </Button>
-            )}
           </>
         )}
 

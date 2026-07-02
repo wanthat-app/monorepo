@@ -10,6 +10,7 @@ import type {
   CustomerProfile,
   MessageLanguage,
   OtpChannel,
+  PasskeyLoginOptionsResponse,
   PasskeyRegisterVerifyResponse,
 } from "@wanthat/contracts";
 import { getConfig } from "./config";
@@ -81,6 +82,16 @@ export const authApi = {
       method: "POST",
       body: { credential },
       token,
+    }),
+  passkeyLoginOptions: (phone: string) =>
+    request<PasskeyLoginOptionsResponse>("/auth/passkey/login/options", {
+      method: "POST",
+      body: { phone },
+    }),
+  passkeyLoginVerify: (challengeId: string, credential: unknown) =>
+    request<AuthVerifyResponse>("/auth/passkey/login/verify", {
+      method: "POST",
+      body: { challengeId, credential },
     }),
 };
 

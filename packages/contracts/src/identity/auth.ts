@@ -2,9 +2,11 @@ import { z } from "zod";
 import { PhoneE164 } from "../common";
 import { CustomerProfile } from "./customer";
 import {
+  AuthenticationResponseJSON,
   Passkey,
   PasskeyAuthenticator,
   PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
   RegistrationResponseJSON,
 } from "./passkey";
 import { AuthTokens } from "./tokens";
@@ -127,3 +129,25 @@ export type PasskeyRegisterVerifyBody = z.infer<typeof PasskeyRegisterVerifyBody
 
 export const PasskeyRegisterVerifyResponse = z.object({ passkey: Passkey });
 export type PasskeyRegisterVerifyResponse = z.infer<typeof PasskeyRegisterVerifyResponse>;
+
+// POST /auth/passkey/login/options — begin username-hinted passkey login (ADR-0022 Flow B). The
+// phone is the Cognito username; on a returning device it is remembered client-side, not prompted.
+export const PasskeyLoginOptionsBody = z.object({ phone: PhoneE164 });
+export type PasskeyLoginOptionsBody = z.infer<typeof PasskeyLoginOptionsBody>;
+
+export const PasskeyLoginOptionsResponse = z.object({
+  challengeId: z.string(),
+  options: PublicKeyCredentialRequestOptionsJSON,
+});
+export type PasskeyLoginOptionsResponse = z.infer<typeof PasskeyLoginOptionsResponse>;
+
+// POST /auth/passkey/login/verify — finish the assertion; hands off the SAME signed ticket as
+// /auth/verify, so /auth/session resolves the member exactly like the OTP path (ADR-0021).
+export const PasskeyLoginVerifyBody = z.object({
+  challengeId: z.string(),
+  credential: AuthenticationResponseJSON,
+});
+export type PasskeyLoginVerifyBody = z.infer<typeof PasskeyLoginVerifyBody>;
+
+export const PasskeyLoginVerifyResponse = AuthVerifyResponse;
+export type PasskeyLoginVerifyResponse = AuthVerifyResponse;

@@ -9,6 +9,7 @@ import {
   useState,
 } from "react";
 import { authApi, meApi } from "./api";
+import { rememberDevicePhone } from "./device";
 import { isAdminToken } from "./jwt";
 
 /**
@@ -40,6 +41,7 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setTokens(session.tokens);
     setCustomer(session.customer);
     localStorage.setItem(REFRESH_KEY, session.tokens.refreshToken);
+    rememberDevicePhone(session.customer.phone); // ADR-0022 Flow B: enable next-visit Face ID login
   }, []);
 
   const signOut = useCallback(async () => {

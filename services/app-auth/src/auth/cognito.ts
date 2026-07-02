@@ -154,6 +154,46 @@ export class Cognito {
     throw new Error("respondSmsOtp: no AuthenticationResult");
   }
 
+  /**
+   * Begin a username-hinted passkey (WebAuthn) login (ADR-0022 Flow B): USER_AUTH with a preferred
+   * WEB_AUTHN challenge. Returns the Cognito Session to carry forward and the credential-request
+   * options JSON the browser feeds to navigator.credentials.get(). Throws if the pool did not issue a
+   * WEB_AUTHN challenge (e.g. the user has no passkey) — the router maps that to passkey_unavailable.
+   */
+  async startPasskeyAuth(username: string): Promise<{ session: string; options: unknown }> {
+    const res = await this.client.send(
+      new AdminInitiateAuthCommand({
+        UserPoolId: this.userPoolId,
+        ClientId: this.clientId,
+        AuthFlow: "USER_AUTH",
+        AuthParameters: { USERNAME: username, PREFERRED_CHALLENGE: "WEB_AUTHN" },
+      }),
+    );
+    const raw = res.ChallengeParameters?.CREDENTIAL_REQUEST_OPTIONS;
+    if (res.ChallengeName !== "WEB_AUTHN" || !res.Session || !raw)
+      throw new Error("startPasskeyAuth: pool did not issue a WEB_AUTHN challenge");
+    return { session: res.Session, options: JSON.parse(raw) };
+  }
+
+  /** Answer the WEB_AUTHN challenge with the browser assertion; tokens on success. */
+  async respondPasskeyAuth(
+    username: string,
+    session: string,
+    credential: unknown,
+  ): Promise<AuthenticationResultType> {
+    const res = await this.client.send(
+      new AdminRespondToAuthChallengeCommand({
+        UserPoolId: this.userPoolId,
+        ClientId: this.clientId,
+        ChallengeName: "WEB_AUTHN",
+        Session: session,
+        ChallengeResponses: { USERNAME: username, CREDENTIAL: JSON.stringify(credential) },
+      }),
+    );
+    if (!res.AuthenticationResult) throw new Error("respondPasskeyAuth: no AuthenticationResult");
+    return res.AuthenticationResult;
+  }
+
   /** Exchange a refresh token for fresh access/id tokens. */
   async refresh(refreshToken: string): Promise<AuthenticationResultType> {
     const res = await this.client.send(

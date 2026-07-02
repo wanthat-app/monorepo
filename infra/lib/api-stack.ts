@@ -230,6 +230,13 @@ export class ApiStack extends Stack {
       this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: authIntegration });
     }
 
+    // Passkey LOGIN (ADR-0022 Flow B) -> app-auth, PUBLIC (the assertion is the credential; the user
+    // is not signed in yet). Explicit static routes so they take precedence over the authorizer-
+    // protected /auth/passkey/{proxy+} enrolment route below.
+    for (const p of ["/auth/passkey/login/options", "/auth/passkey/login/verify"]) {
+      this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: authIntegration });
+    }
+
     // Public channel-availability projection (ADR-0023) -> app-auth. GET, no authorizer.
     this.httpApi.addRoutes({
       path: "/auth/config",
