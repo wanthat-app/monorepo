@@ -345,6 +345,30 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
+  services/whatsapp-dispatcher:
+    dependencies:
+      '@aws-lambda-powertools/logger':
+        specifier: ^2.8.0
+        version: 2.33.1
+      '@aws-sdk/client-dynamodb':
+        specifier: ^3.600.0
+        version: 3.1075.0
+      '@aws-sdk/client-socialmessaging':
+        specifier: ^3.600.0
+        version: 3.1078.0
+      '@aws-sdk/util-dynamodb':
+        specifier: ^3.600.0
+        version: 3.996.5(@aws-sdk/client-dynamodb@3.1075.0)
+      '@wanthat/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@wanthat/dynamo':
+        specifier: workspace:*
+        version: link:../../packages/dynamo
+      '@wanthat/whatsapp':
+        specifier: workspace:*
+        version: link:../../packages/whatsapp
+
 packages:
 
   '@alloc/quick-lru@5.2.0':
