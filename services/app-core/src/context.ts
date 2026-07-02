@@ -1,6 +1,6 @@
 import { TicketSigner } from "@wanthat/auth";
 import { createDb } from "@wanthat/db";
-import { GuestAttributionRepo, getDocClient } from "@wanthat/dynamo";
+import { GuestAttributionRepo, getDocClient, NotificationOutboxRepo } from "@wanthat/dynamo";
 
 /** The Kysely handle type, derived from createDb so app-core needs no direct kysely dependency. */
 type Db = ReturnType<typeof createDb>;
@@ -16,6 +16,9 @@ export interface CoreContext {
   db: Db;
   guests: GuestAttributionRepo;
   tickets: TicketSigner;
+  outbox: NotificationOutboxRepo;
+  /** Canonical SPA origin for links in outbound messages (env APP_URL). */
+  appUrl: string;
 }
 
 let cached: CoreContext | undefined;
@@ -41,6 +44,8 @@ export function getContext(): CoreContext {
     }),
     guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
     tickets: new TicketSigner(requireEnv("AUTH_TICKET_SECRET_ARN"), region),
+    outbox: new NotificationOutboxRepo(doc, requireEnv("NOTIFICATION_OUTBOX_TABLE")),
+    appUrl: requireEnv("APP_URL"),
   };
   return cached;
 }

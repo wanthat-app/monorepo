@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import {
   AuthRegisterBody,
   AuthSession,
@@ -112,6 +113,26 @@ export function authRouter(): Hono {
       email: body.email ?? null,
       locale,
     });
+
+    // ADR-0023: queue the optin_welcome WhatsApp message through the transactional outbox (a
+    // DynamoDB write over the gateway endpoint; the NON-VPC dispatcher does the egress). The
+    // producer owns WHAT to send and in which language; best-effort — a failed enqueue is logged,
+    // never fails registration. No Cognito call here (in-VPC, ADR-0021).
+    try {
+      await ctx.outbox.put({
+        outboxId: randomUUID(),
+        customerId: ticket.sub,
+        phone: ticket.phone,
+        messageType: "optin_welcome",
+        language: locale.startsWith("he") ? "he" : "en",
+        variables: { firstName: body.firstName, appUrl: ctx.appUrl },
+        status: "pending",
+        createdAt: new Date().toISOString(),
+        ttl: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+      });
+    } catch (err) {
+      console.error("optin_welcome enqueue failed", err);
+    }
 
     return c.json(AuthSession.parse({ tokens, customer }));
   });

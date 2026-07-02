@@ -8,6 +8,8 @@ const { fake, dbMock } = vi.hoisted(() => ({
     db: {},
     guests: { claim: vi.fn() },
     tickets: { sign: vi.fn(), verify: vi.fn() },
+    appUrl: "https://dev.wanthat.app",
+    outbox: { put: vi.fn() },
   },
   dbMock: { findByCognitoSub: vi.fn(), insertCustomer: vi.fn() },
 }));
@@ -137,5 +139,54 @@ describe("POST /auth/register", () => {
     });
     expect(res.status).toBe(401);
     expect(dbMock.insertCustomer).not.toHaveBeenCalled();
+  });
+
+  it("enqueues the optin_welcome outbox item after provisioning (ADR-0023)", async () => {
+    fake.tickets.verify.mockResolvedValue(ticket);
+    dbMock.findByCognitoSub.mockResolvedValue(undefined);
+    dbMock.insertCustomer.mockResolvedValue(customer);
+
+    const res = await post("/auth/register", {
+      registrationTicket: "payload.mac",
+      firstName: "Dana",
+      lastName: "Levi",
+      locale: "he-IL",
+    });
+    expect(res.status).toBe(200);
+    expect(fake.outbox.put).toHaveBeenCalledWith(
+      expect.objectContaining({
+        customerId: SUB,
+        phone: PHONE,
+        messageType: "optin_welcome",
+        language: "he",
+        variables: { firstName: "Dana", appUrl: "https://dev.wanthat.app" },
+        status: "pending",
+      }),
+    );
+  });
+
+  it("registration still succeeds when the outbox write fails (best-effort)", async () => {
+    fake.tickets.verify.mockResolvedValue(ticket);
+    dbMock.findByCognitoSub.mockResolvedValue(undefined);
+    dbMock.insertCustomer.mockResolvedValue(customer);
+    fake.outbox.put.mockRejectedValue(new Error("dynamo down"));
+
+    const res = await post("/auth/register", {
+      registrationTicket: "payload.mac",
+      firstName: "Dana",
+      lastName: "Levi",
+    });
+    expect(res.status).toBe(200);
+  });
+
+  it("does NOT enqueue on an idempotent re-register of an existing customer", async () => {
+    fake.tickets.verify.mockResolvedValue(ticket);
+    dbMock.findByCognitoSub.mockResolvedValue(customer);
+    await post("/auth/register", {
+      registrationTicket: "payload.mac",
+      firstName: "D",
+      lastName: "L",
+    });
+    expect(fake.outbox.put).not.toHaveBeenCalled();
   });
 });
