@@ -11,6 +11,9 @@ import {
   AuthVerifyBody,
   AuthVerifyResponse,
   normalizePhone,
+  PasskeyLoginOptionsBody,
+  PasskeyLoginOptionsResponse,
+  PasskeyLoginVerifyBody,
   PasskeyRegisterOptionsBody,
   PasskeyRegisterVerifyBody,
   PasskeyRegisterVerifyResponse,
@@ -303,10 +306,12 @@ export function authRouter(): Hono {
   // Enrolment is API-driven and authorised by the caller's access token (Cognito's WebAuthn
   // registration is access-token-scoped), so these sit under /auth but read the Bearer directly.
   //
-  // Discoverable (userless) passkey *login* is NOT served here: Cognito's raw API requires a username
-  // for the WEB_AUTHN challenge, so true discoverable login goes through Managed Login (provisioned
-  // in IdentityStack). The SPA opens the hosted UI and completes the OAuth code+PKCE exchange in the
-  // browser, then carries the resulting Bearer token like any other session (PR4 spike resolution).
+  // Passkey *login* (below, ADR-0022 Flow B) is username-hinted, not discoverable: Cognito's raw
+  // API requires a username for the WEB_AUTHN challenge. The phone (Cognito username) is remembered
+  // client-side after any sign-in and replayed silently, so a returning device still gets
+  // "visit -> biometric -> in" with no phone prompt. True discoverable (userless) login would go
+  // through Managed Login (Flow C) — currently non-functional (its origin can't consume a passkey
+  // bound to this site's RP-ID); see the plan's closing note.
 
   auth.post("/passkey/register/options", async (c) => {
     const token = bearerToken(c);
@@ -331,6 +336,84 @@ export function authRouter(): Hono {
         passkey: { credentialId: body.credential.id, createdAt: new Date().toISOString() },
       }),
     );
+  });
+
+  // POST /auth/passkey/login/options — begin username-hinted passkey login (ADR-0022 Flow B).
+  // Public (the assertion is the credential). The phone is the device-remembered Cognito username,
+  // never prompted on a known device. "no user" and "no passkey" collapse to one error (no oracle).
+  auth.post("/passkey/login/options", async (c) => {
+    const body = await parseBody(c, PasskeyLoginOptionsBody);
+    if (!body) return c.json({ error: "invalid_request" }, 400);
+    const ctx = getContext();
+    const phone = normalizePhone(body.phone);
+    if (!phone) return c.json({ error: "invalid_request" }, 400);
+
+    const user = await ctx.cognito.getUserByPhone(phone);
+    if (!user) return c.json({ error: "passkey_unavailable" }, 409);
+
+    let session: string;
+    let options: unknown;
+    try {
+      ({ session, options } = await ctx.cognito.startPasskeyAuth(user.username));
+    } catch {
+      return c.json({ error: "passkey_unavailable" }, 409);
+    }
+
+    const challengeId = randomUUID();
+    const now = nowEpoch();
+    await ctx.challenges.putChallenge({
+      challengeId,
+      username: user.username,
+      sub: user.sub,
+      phone,
+      cognitoSession: session,
+      isNewUser: false,
+      resendAfterEpoch: now + RESEND_COOLDOWN_SEC,
+      attempts: 0,
+      ttl: now + CHALLENGE_TTL_SEC,
+    });
+    logger.info("passkey_login_start", { challengeId, sub: user.sub });
+    return c.json(PasskeyLoginOptionsResponse.parse({ challengeId, options }));
+  });
+
+  // POST /auth/passkey/login/verify — finish; hand off the SAME signed ticket as /auth/verify so
+  // /auth/session (app-core) resolves the member. The passkey holder is always already registered.
+  auth.post("/passkey/login/verify", async (c) => {
+    const body = await parseBody(c, PasskeyLoginVerifyBody);
+    if (!body) return c.json({ error: "invalid_request" }, 400);
+    const ctx = getContext();
+
+    const challenge = await ctx.challenges.getChallenge(body.challengeId);
+    if (!challenge) return c.json({ error: "challenge_not_found" }, 404);
+
+    let result: Awaited<ReturnType<typeof ctx.cognito.respondPasskeyAuth>>;
+    try {
+      result = await ctx.cognito.respondPasskeyAuth(
+        challenge.username,
+        challenge.cognitoSession,
+        body.credential,
+      );
+    } catch (err) {
+      if (err instanceof Error && OTP_REJECTION_ERRORS.has(err.name)) {
+        await ctx.challenges.deleteChallenge(challenge.challengeId);
+        return c.json({ error: "invalid_passkey" }, 401);
+      }
+      throw err;
+    }
+
+    await ctx.challenges.deleteChallenge(challenge.challengeId);
+    const tokens = toAuthTokens(result);
+    const registrationTicket = await ctx.tickets.sign({
+      sub: challenge.sub,
+      phone: challenge.phone,
+      accessToken: tokens.accessToken,
+      idToken: tokens.idToken,
+      refreshToken: tokens.refreshToken,
+      expiresIn: tokens.expiresIn,
+      exp: nowEpoch() + TICKET_TTL_SEC,
+    });
+    logger.info("passkey_login_ok", { sub: challenge.sub });
+    return c.json(AuthVerifyResponse.parse({ registrationTicket }));
   });
 
   return auth;
