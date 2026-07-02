@@ -5,12 +5,12 @@ import { AuthConfigResponse, AuthResendBody, AuthStartBody, OtpChannel } from ".
 describe("OTP channel contracts (ADR-0023)", () => {
   it("requires an explicit channel on /auth/start — no server-side default", () => {
     expect(AuthStartBody.safeParse({ phone: "+972541234567" }).success).toBe(false);
-    expect(
-      AuthStartBody.safeParse({ phone: "+972541234567", channel: "whatsapp" }).success,
-    ).toBe(true);
-    expect(
-      AuthStartBody.safeParse({ phone: "+972541234567", channel: "email" }).success,
-    ).toBe(false);
+    expect(AuthStartBody.safeParse({ phone: "+972541234567", channel: "whatsapp" }).success).toBe(
+      true,
+    );
+    expect(AuthStartBody.safeParse({ phone: "+972541234567", channel: "email" }).success).toBe(
+      false,
+    );
   });
 
   it("accepts an optional template language on /auth/start", () => {
