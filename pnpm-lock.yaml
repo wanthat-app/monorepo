@@ -106,6 +106,9 @@ importers:
       '@wanthat/web':
         specifier: workspace:*
         version: link:../apps/web
+      '@wanthat/whatsapp':
+        specifier: workspace:*
+        version: link:../packages/whatsapp
       aws-cdk:
         specifier: ^2.150.0
         version: 2.1128.1
