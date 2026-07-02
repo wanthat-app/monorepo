@@ -45,7 +45,9 @@ export async function dispatchRecord(
   const image = record.dynamodb?.NewImage;
   if (!image) return;
   const item = unmarshall(image) as NotificationOutboxItem;
-  if (item.status !== "pending") return; // at-least-once: a replayed record is a no-op
+  // Cheap image-level guard only (an INSERT's image always says "pending"); the REAL replay
+  // protection is the table re-read below — the stream image is a frozen snapshot.
+  if (item.status !== "pending") return;
 
   const [enabled, phoneNumberId] = await Promise.all([
     deps.config.get("notifications.whatsappEnabled"),
