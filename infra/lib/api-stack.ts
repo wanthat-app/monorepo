@@ -24,6 +24,12 @@ import {
   webOrigins,
 } from "./config";
 
+/** The deployed SPA origin for links we send out (ADR-0023). Synth fails loudly on an env without a domain. */
+function appUrl(wanthatEnv: WanthatEnv): string {
+  if (!wanthatEnv.domainName) throw new Error(`appUrl: env ${wanthatEnv.name} has no domainName`);
+  return `https://${wanthatEnv.domainName}`;
+}
+
 export interface ApiStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
   readonly userPool: cognito.IUserPool;
@@ -33,6 +39,7 @@ export interface ApiStackProps extends StackProps {
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly authChallengeTable: dynamodb.ITable;
   readonly phoneVelocityTable: dynamodb.ITable;
+  readonly notificationOutboxTable: dynamodb.ITable;
   // In-VPC placement + Aurora (ADR-0004/0020/0021) — app-core only.
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
@@ -157,6 +164,10 @@ export class ApiStack extends Stack {
         DB_NAME: "wanthat",
         DB_USER: "app_rw",
         ...RDS_CA_ENV,
+        NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
+        // Link target for outbound messages (ADR-0023): the DEPLOYED site, never webOrigins()[0]
+        // (which is the localhost dev origin for non-prod envs).
+        APP_URL: appUrl(wanthatEnv),
       },
       bundling: rdsCaBundling,
     });
@@ -169,6 +180,8 @@ export class ApiStack extends Stack {
     props.guestAttributionTable.grantReadWriteData(appCoreFn);
     props.runtimeConfigTable.grantReadData(appCoreFn);
     ticketSecret.grantRead(appCoreFn);
+    // Outbox producer: write-only (no read grant) - the dispatcher owns status updates (ADR-0023).
+    props.notificationOutboxTable.grantWriteData(appCoreFn);
 
     // --- One HTTP API fronting both functions ---
     const authIntegration = new HttpLambdaIntegration("AppAuthIntegration", appAuthFn);

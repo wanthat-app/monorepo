@@ -10,6 +10,7 @@ import { EdgeStack } from "../lib/edge-stack";
 import { IdentityStack, SMS_MONTHLY_SPEND_LIMIT_USD } from "../lib/identity-stack";
 import { NetworkStack } from "../lib/network-stack";
 import { ObservabilityStack } from "../lib/observability-stack";
+import { WhatsAppStack } from "../lib/whatsapp-stack";
 
 /**
  * Wanthat infrastructure entrypoint (AWS CDK).
@@ -25,10 +26,11 @@ import { ObservabilityStack } from "../lib/observability-stack";
  * The us-east-1 **EdgeStack** (CloudFront + ACM + WAF) fronts the landing HTTP API (in il-central-1)
  * on `/p/*`, so EdgeServices (producer) and Edge (consumer) both set `crossRegionReferences: true`.
  *
- * Order: Network -> Data -> Identity -> Api / Admin / EdgeServices -> Edge -> Observability (last).
+ * Order: Network -> Data -> Identity -> Api / Admin / EdgeServices / WhatsApp -> Edge -> Observability
+ * (last).
  *
- * Wired: NetworkStack, DataStack, IdentityStack, ApiStack, AdminStack, EdgeServicesStack, EdgeStack,
- * DnsStack (prod), ObservabilityStack.
+ * Wired: NetworkStack, DataStack, IdentityStack, ApiStack, AdminStack, EdgeServicesStack,
+ * WhatsAppStack, EdgeStack, DnsStack (prod), ObservabilityStack.
  */
 const app = new cdk.App();
 const wanthatEnv = resolveEnv(process.env.WANTHAT_ENV ?? app.node.tryGetContext("env"));
@@ -67,6 +69,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   runtimeConfigTable: data.runtimeConfigTable,
   authChallengeTable: data.authChallengeTable,
   phoneVelocityTable: data.phoneVelocityTable,
+  notificationOutboxTable: data.notificationOutboxTable,
   vpc: network.vpc,
   lambdaSg: network.lambdaSg,
   cluster: data.cluster,
@@ -94,6 +97,14 @@ const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-serv
   runtimeConfigTable: data.runtimeConfigTable,
   fxRateTable: data.fxRateTable,
   retailerSecret: data.retailerSecret,
+});
+
+// WhatsAppStack (ADR-0023): the notification dispatcher. Depends only on DataStack; deploys
+// before Observability (which watches its Lambda).
+const whatsapp = new WhatsAppStack(app, stackName(wanthatEnv, "whatsapp"), {
+  ...common,
+  notificationOutboxTable: data.notificationOutboxTable,
+  runtimeConfigTable: data.runtimeConfigTable,
 });
 
 // EdgeStack lives in us-east-1 (CloudFront cert + WAF are control-plane there), not the app region.
@@ -133,6 +144,7 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
     { label: "conversion-poller", fn: edgeServices.conversionPollerFn },
     { label: "fx-rates", fn: edgeServices.fxRatesFn },
     { label: "message-sender", fn: identity.messageSenderFn },
+    { label: "whatsapp-dispatcher", fn: whatsapp.dispatcherFn },
   ],
   cluster: data.cluster,
   smsSpendLimitUsd: SMS_MONTHLY_SPEND_LIMIT_USD[wanthatEnv.name],

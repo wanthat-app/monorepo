@@ -43,6 +43,7 @@ export class DataStack extends Stack {
   readonly fxRateTable: dynamodb.Table;
   readonly authChallengeTable: dynamodb.Table;
   readonly phoneVelocityTable: dynamodb.Table;
+  readonly notificationOutboxTable: dynamodb.Table;
   readonly retailerSecret: secretsmanager.Secret;
   readonly cluster: rds.DatabaseCluster;
 
@@ -100,6 +101,17 @@ export class DataStack extends Stack {
     this.phoneVelocityTable = new dynamodb.Table(this, "PhoneVelocity", {
       partitionKey: { name: "phoneHash", type: dynamodb.AttributeType.STRING },
       timeToLiveAttribute: "ttl",
+      ...common,
+    });
+
+    // ADR-0023: transactional outbox for WhatsApp notifications. In-VPC producers (app-core)
+    // write over the free DynamoDB gateway endpoint; the Stream triggers the NON-VPC
+    // whatsapp-dispatcher (the NAT-free bridge - no SQS interface endpoint). TTL ~30 days:
+    // items skipped while the kill switch is off age out by design.
+    this.notificationOutboxTable = new dynamodb.Table(this, "NotificationOutbox", {
+      partitionKey: { name: "outboxId", type: dynamodb.AttributeType.STRING },
+      timeToLiveAttribute: "ttl",
+      stream: dynamodb.StreamViewType.NEW_IMAGE,
       ...common,
     });
 

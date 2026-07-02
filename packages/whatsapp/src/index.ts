@@ -9,6 +9,7 @@ export {
   MESSAGE_TYPES,
   type MessageType,
   type MessageTypeSpec,
+  OptinWelcomeVariables,
   OtpCodeVariables,
   type TemplateComponent,
 } from "./registry";
