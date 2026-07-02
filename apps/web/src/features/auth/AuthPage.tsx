@@ -71,16 +71,24 @@ export function AuthPage() {
   useEffect(() => {
     if (step !== "phone" || !knownPhone || !passkeysSupported() || autofillStarted.current) return;
     autofillStarted.current = true;
+    // A conditional WebAuthn request can stay pending indefinitely; if the user navigates away (or
+    // this step changes) before picking the passkey, don't sign them in / force-navigate on a late
+    // resolve. The cleanup flips `cancelled`; the explicit button/OTP paths are unaffected.
+    let cancelled = false;
     (async () => {
       if (!(await browserSupportsWebAuthnAutofill())) return;
       try {
         const session = await loginWithPasskey(knownPhone, { useBrowserAutofill: true });
+        if (cancelled) return;
         signIn(session);
         navigate("/home", { replace: true });
       } catch {
         // no-op: user chose another method / cancelled / ceremony aborted.
       }
     })();
+    return () => {
+      cancelled = true;
+    };
   }, [step, knownPhone, signIn, navigate]);
 
   useEffect(() => {
