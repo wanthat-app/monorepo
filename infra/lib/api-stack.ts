@@ -217,6 +217,13 @@ export class ApiStack extends Stack {
       this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: authIntegration });
     }
 
+    // Public channel-availability projection (ADR-0023) -> app-auth. GET, no authorizer.
+    this.httpApi.addRoutes({
+      path: "/auth/config",
+      methods: [HttpMethod.GET],
+      integration: authIntegration,
+    });
+
     // Public registration-ticket exchange -> app-core (the ticket is the credential). `/auth/session`
     // resolves the ticket to login-vs-register (needs Aurora); `/auth/register` provisions the row.
     for (const p of ["/auth/session", "/auth/register"]) {
