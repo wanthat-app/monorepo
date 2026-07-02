@@ -9,7 +9,14 @@ describe("passkey login contracts (ADR-0022 Flow B)", () => {
   });
   it("verify body requires a challengeId and a well-formed assertion", () => {
     expect(PasskeyLoginVerifyBody.safeParse({ challengeId: "c1" }).success).toBe(false);
-    const cred = { id: "x", rawId: "x", type: "public-key", response: { clientDataJSON: "a", authenticatorData: "b", signature: "c" } };
-    expect(PasskeyLoginVerifyBody.safeParse({ challengeId: "c1", credential: cred }).success).toBe(true);
+    const cred = {
+      id: "x",
+      rawId: "x",
+      type: "public-key",
+      response: { clientDataJSON: "a", authenticatorData: "b", signature: "c" },
+    };
+    expect(PasskeyLoginVerifyBody.safeParse({ challengeId: "c1", credential: cred }).success).toBe(
+      true,
+    );
   });
 });
