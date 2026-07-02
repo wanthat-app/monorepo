@@ -1,8 +1,10 @@
 # Dev OTP sink — log in on dev without SMS/WhatsApp
 
 While the SMS sandbox cap and Meta onboarding block real OTP delivery, dev can park codes in
-DynamoDB instead (`auth.otpSink = "devSink"`). Prod is immune: message-sender honours the key
-only when `WANTHAT_ENV !== "prod"` (deploy-time guard, not config).
+DynamoDB instead (`auth.otpSink = "devSink"`). Prod is immune twice over: message-sender honours
+the key only when `WANTHAT_ENV !== "prod"` (deploy-time guard, not config), AND the sink table is
+not provisioned in prod at all — no table, no env var, no IAM grant. If a future bug somehow
+reached the sink there, the send fails loudly rather than storing a code (fail-closed).
 
 ## Flip it on (dev)
 Set `auth.otpSink` to `devSink` via the admin config panel (or `PUT /admin/config/auth.otpSink`).

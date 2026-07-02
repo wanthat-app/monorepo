@@ -20,7 +20,8 @@ export interface IdentityStackProps extends StackProps {
   /** From DataStack — message-sender reads whatsapp.phoneNumberId at send time (ADR-0023). */
   readonly runtimeConfigTable: dynamodb.ITable;
   /** From DataStack — message-sender's dev-only OTP park (docs/dev-otp-sink.md), write-only grant. */
-  readonly devOtpSinkTable: dynamodb.ITable;
+  /** Dev OTP sink table — absent in prod by design (fail-closed; docs/dev-otp-sink.md). */
+  readonly devOtpSinkTable?: dynamodb.ITable;
 }
 
 /** Per-env SNS monthly SMS spend hard cap (USD), the kill-switch fail-safe (ADR-0006 layer 4). */
@@ -138,7 +139,8 @@ export class IdentityStack extends Stack {
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
-        DEV_OTP_SINK_TABLE: props.devOtpSinkTable.tableName,
+        // Absent in prod (no table exists there) - the handler treats absence as sink-disabled.
+        ...(props.devOtpSinkTable ? { DEV_OTP_SINK_TABLE: props.devOtpSinkTable.tableName } : {}),
         KMS_KEY_ARN: customSenderKey.keyArn,
         // End User Messaging Social is not available in il-central-1; Frankfurt is the closest
         // supported endpoint. Deploy-time by design (moving regions is a redeploy either way).
@@ -150,7 +152,8 @@ export class IdentityStack extends Stack {
     customSenderKey.grantDecrypt(messageSenderFn);
     props.runtimeConfigTable.grantReadData(messageSenderFn);
     // Write-only — the read path is the developer AWS CLI (docs/dev-otp-sink.md), not the app.
-    props.devOtpSinkTable.grantWriteData(messageSenderFn);
+    // No grant at all in prod: the table does not exist there (fail-closed).
+    props.devOtpSinkTable?.grantWriteData(messageSenderFn);
     // sns:Publish scoped away from every topic ARN = direct-to-phone SMS only.
     messageSenderFn.addToRolePolicy(
       new iam.PolicyStatement({

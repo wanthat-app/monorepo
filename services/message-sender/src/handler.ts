@@ -28,7 +28,9 @@ function getDeps(): SendDeps {
   // End User Messaging Social is not available in il-central-1; the client region is deploy-time.
   const social = new SocialMessagingClient({ region: requireEnv("WHATSAPP_SOCIAL_REGION") });
   const whatsapp = new WhatsAppSender(social);
-  const sink = new DevOtpSinkRepo(getDocClient(region), requireEnv("DEV_OTP_SINK_TABLE"));
+  // The sink table is NOT provisioned in prod (no env var, no table, no grant — fail-closed).
+  const sinkTable = process.env.DEV_OTP_SINK_TABLE;
+  const sink = sinkTable ? new DevOtpSinkRepo(getDocClient(region), sinkTable) : undefined;
   deps = {
     config: new RuntimeConfigRepo(getDocClient(region), requireEnv("RUNTIME_CONFIG_TABLE")),
     decryptCode: async (encryptedB64) => {
@@ -50,9 +52,12 @@ function getDeps(): SendDeps {
       },
     },
     devSink: {
-      // Deploy-time guard: whatever the config says, the sink can never activate in prod.
-      allowed: process.env.WANTHAT_ENV !== "prod",
+      // Deploy-time guard: whatever the config says, the sink can never activate in prod —
+      // belt (env name) and braces (the table only exists where DataStack provisioned it).
+      allowed: process.env.WANTHAT_ENV !== "prod" && sink !== undefined,
       put: async (item) => {
+        // Unreachable when !allowed; if a future bug ever gets here without a table, fail loudly.
+        if (!sink) throw new Error("message-sender: dev OTP sink is not provisioned in this env");
         await sink.put({
           ...item,
           createdAt: new Date().toISOString(),
