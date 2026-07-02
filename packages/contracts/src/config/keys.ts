@@ -93,6 +93,17 @@ export const WhatsappPhoneNumberId = z.string().max(120);
 export const NotificationsWhatsappEnabled = z.boolean();
 
 /**
+ * Per-phone cap on passkey-login challenge requests within `auth.passkeyWindowMinutes`. Passkey
+ * login fires on every auth-page load (conditional UI, ADR-0022), so this is deliberately generous
+ * and SEPARATE from the SMS velocity counter — reusing that would lock out a member who signs in
+ * with Face ID often. Guards against hammering one phone's endpoint; enumeration is bounded by the
+ * API-wide throttle.
+ */
+export const AuthPasskeyMaxPerWindow = z.number().int().min(1).max(200);
+/** Window length for auth.passkeyMaxPerWindow, in minutes. */
+export const AuthPasskeyWindowMinutes = z.number().int().min(1).max(1440);
+
+/**
  * Where message-sender routes decrypted OTP codes. `delivery` = the real channel (WhatsApp/SMS).
  * `devSink` = a TTL'd DynamoDB item a developer reads via the CLI — unblocks end-to-end user
  * creation while both real channels are blocked (SMS sandbox cap / Meta onboarding). The sender
@@ -118,6 +129,8 @@ export const CONFIG_KEYS = [
   "whatsapp.phoneNumberId",
   "notifications.whatsappEnabled",
   "auth.otpSink",
+  "auth.passkeyMaxPerWindow",
+  "auth.passkeyWindowMinutes",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -141,6 +154,8 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "whatsapp.phoneNumberId": WhatsappPhoneNumberId,
   "notifications.whatsappEnabled": NotificationsWhatsappEnabled,
   "auth.otpSink": AuthOtpSink,
+  "auth.passkeyMaxPerWindow": AuthPasskeyMaxPerWindow,
+  "auth.passkeyWindowMinutes": AuthPasskeyWindowMinutes,
 };
 
 /**
@@ -172,6 +187,9 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "notifications.whatsappEnabled": false,
   // real delivery by default; dev flips to devSink while SMS/WhatsApp are blocked
   "auth.otpSink": "delivery",
+  // Generous — fires on every auth-page load (conditional UI), separate from the SMS counter.
+  "auth.passkeyMaxPerWindow": 30,
+  "auth.passkeyWindowMinutes": 60,
 };
 
 /** Validate a value against its key's schema — use in the config API handler before persisting. */

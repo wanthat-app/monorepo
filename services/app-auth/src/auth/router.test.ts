@@ -79,6 +79,10 @@ beforeEach(() => {
         return Promise.resolve(5);
       case "auth.smsLockoutMinutes":
         return Promise.resolve(180);
+      case "auth.passkeyMaxPerWindow":
+        return Promise.resolve(30);
+      case "auth.passkeyWindowMinutes":
+        return Promise.resolve(60);
       default:
         return Promise.resolve(undefined);
     }
@@ -455,6 +459,13 @@ describe("POST /auth/passkey/login/options (ADR-0022 Flow B)", () => {
     fake.cognito.startPasskeyAuth.mockRejectedValue(new Error("no WEB_AUTHN"));
     const res = await post("/auth/passkey/login/options", { phone: PHONE });
     expect(res.status).toBe(409);
+  });
+
+  it("429s when over the passkey-login velocity cap", async () => {
+    fake.velocity.hit.mockResolvedValue({ count: 99, ttl: 1000 });
+    const res = await post("/auth/passkey/login/options", { phone: PHONE });
+    expect(res.status).toBe(429);
+    expect(fake.cognito.getUserByPhone).not.toHaveBeenCalled();
   });
 });
 

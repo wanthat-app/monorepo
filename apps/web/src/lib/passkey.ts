@@ -2,6 +2,8 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 import type { AuthSession } from "@wanthat/contracts";
 import { authApi } from "./api";
 
+export { browserSupportsWebAuthnAutofill } from "@simplewebauthn/browser";
+
 /** Whether this browser can create platform passkeys (FaceID/TouchID/Windows Hello). */
 export function passkeysSupported(): boolean {
   return typeof window !== "undefined" && !!window.PublicKeyCredential;
@@ -28,10 +30,16 @@ export async function enrollPasskey(accessToken: string): Promise<string> {
  * enrolment, so the passkey's RP-ID matches — no hosted-UI redirect. Throws on cancel/failure; the
  * caller falls back to OTP.
  */
-export async function loginWithPasskey(phone: string): Promise<AuthSession> {
+export async function loginWithPasskey(
+  phone: string,
+  opts: { useBrowserAutofill?: boolean } = {},
+): Promise<AuthSession> {
   const { challengeId, options } = await authApi.passkeyLoginOptions(phone);
-  // biome-ignore lint/suspicious/noExplicitAny: options is the server-generated WebAuthn document
-  const credential = await startAuthentication({ optionsJSON: options as any });
+  const credential = await startAuthentication({
+    // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
+    optionsJSON: options as any,
+    useBrowserAutofill: opts.useBrowserAutofill ?? false,
+  });
   const { registrationTicket } = await authApi.passkeyLoginVerify(challengeId, credential);
   const res = await authApi.session(registrationTicket);
   if (res.status !== "authenticated") throw new Error("passkey login did not resolve a session");
