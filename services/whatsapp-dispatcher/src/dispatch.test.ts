@@ -21,7 +21,7 @@ const record = (overrides: Record<string, unknown> = {}, eventName = "INSERT") =
 
 const deps = {
   config: { get: vi.fn() },
-  outbox: { markSent: vi.fn(), markFailed: vi.fn() },
+  outbox: { get: vi.fn(), markSent: vi.fn(), markFailed: vi.fn() },
   whatsapp: { sendTemplate: vi.fn().mockResolvedValue({ messageId: "wamid.X" }) },
   log: vi.fn(),
 } satisfies DispatchDeps;
@@ -37,6 +37,7 @@ beforeEach(() => {
       }[key],
     ),
   );
+  deps.outbox.get.mockResolvedValue(item);
 });
 
 describe("dispatchRecord", () => {
@@ -80,6 +81,23 @@ describe("dispatchRecord", () => {
     expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
     expect(deps.outbox.markSent).not.toHaveBeenCalled();
     expect(deps.outbox.markFailed).not.toHaveBeenCalled();
+    expect(deps.outbox.get).not.toHaveBeenCalled();
+  });
+
+  it("skips a replayed record whose TABLE status is no longer pending", async () => {
+    deps.outbox.get.mockResolvedValue({ ...item, status: "sent" });
+    await dispatchRecord(deps, record());
+    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
+    expect(deps.outbox.markSent).not.toHaveBeenCalled();
+    expect(deps.outbox.markFailed).not.toHaveBeenCalled();
+    expect(deps.log).toHaveBeenCalledWith("notification_skipped_not_pending", {
+      outboxId: "ob-1",
+    });
+  });
+
+  it("propagates a get() failure (infra error → event-source retry)", async () => {
+    deps.outbox.get.mockRejectedValue(new Error("dynamo down"));
+    await expect(dispatchRecord(deps, record())).rejects.toThrow("dynamo down");
   });
 
   it("marks failed (and does NOT throw) on a send-submission error", async () => {

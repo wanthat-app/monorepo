@@ -1,7 +1,11 @@
 import type { AttributeValue } from "@aws-sdk/client-dynamodb";
 import { unmarshall } from "@aws-sdk/util-dynamodb";
 import type { MessageLanguage } from "@wanthat/contracts";
-import type { NotificationOutboxItem, RuntimeConfigReader } from "@wanthat/dynamo";
+import type {
+  NotificationOutboxItem,
+  NotificationOutboxRepo,
+  RuntimeConfigReader,
+} from "@wanthat/dynamo";
 import type { MessageType } from "@wanthat/whatsapp";
 
 /** The slice of a DynamoDB stream record we consume. */
@@ -12,10 +16,7 @@ export interface OutboxStreamRecord {
 
 export interface DispatchDeps {
   config: RuntimeConfigReader;
-  outbox: {
-    markSent(outboxId: string): Promise<void>;
-    markFailed(outboxId: string, error: string): Promise<void>;
-  };
+  outbox: Pick<NotificationOutboxRepo, "get" | "markSent" | "markFailed">;
   whatsapp: {
     sendTemplate(args: {
       phoneNumberId: string;
@@ -52,6 +53,15 @@ export async function dispatchRecord(
   ]);
   if (enabled !== true || typeof phoneNumberId !== "string" || phoneNumberId === "") {
     deps.log("notification_skipped_disabled", { outboxId: item.outboxId });
+    return;
+  }
+
+  // The stream image is a frozen snapshot (an INSERT's status is always "pending"), so replayed
+  // records after a partial-batch failure must re-check the TABLE: only a still-pending item may
+  // send. This is the at-least-once idempotency the outbox status exists for.
+  const current = await deps.outbox.get(item.outboxId);
+  if (current?.status !== "pending") {
+    deps.log("notification_skipped_not_pending", { outboxId: item.outboxId });
     return;
   }
 

@@ -180,7 +180,7 @@ export class ApiStack extends Stack {
     props.guestAttributionTable.grantReadWriteData(appCoreFn);
     props.runtimeConfigTable.grantReadData(appCoreFn);
     ticketSecret.grantRead(appCoreFn);
-    // Outbox producer: PutItem only (ADR-0023) - the dispatcher owns updates.
+    // Outbox producer: write-only (no read grant) - the dispatcher owns status updates (ADR-0023).
     props.notificationOutboxTable.grantWriteData(appCoreFn);
 
     // --- One HTTP API fronting both functions ---
