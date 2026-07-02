@@ -1,5 +1,6 @@
 import type {
   AttributionClaimResponse,
+  AuthConfigResponse,
   AuthRefreshResponse,
   AuthResendResponse,
   AuthSession,
@@ -7,6 +8,8 @@ import type {
   AuthStartResponse,
   AuthVerifyResponse,
   CustomerProfile,
+  MessageLanguage,
+  OtpChannel,
   PasskeyRegisterVerifyResponse,
 } from "@wanthat/contracts";
 import { getConfig } from "./config";
@@ -42,10 +45,15 @@ async function request<T>(
 }
 
 export const authApi = {
-  start: (phone: string) =>
-    request<AuthStartResponse>("/auth/start", { method: "POST", body: { phone } }),
-  resend: (challengeId: string) =>
-    request<AuthResendResponse>("/auth/resend", { method: "POST", body: { challengeId } }),
+  // Channel availability projection (ADR-0023) — fetched pre-login to render the channel choice.
+  config: () => request<AuthConfigResponse>("/auth/config"),
+  start: (phone: string, channel: OtpChannel, locale?: MessageLanguage) =>
+    request<AuthStartResponse>("/auth/start", {
+      method: "POST",
+      body: { phone, channel, ...(locale ? { locale } : {}) },
+    }),
+  resend: (challengeId: string, channel: OtpChannel) =>
+    request<AuthResendResponse>("/auth/resend", { method: "POST", body: { challengeId, channel } }),
   verify: (challengeId: string, code: string) =>
     request<AuthVerifyResponse>("/auth/verify", { method: "POST", body: { challengeId, code } }),
   // Resolve a verify ticket to a session: `authenticated` (login) or `registration_required` (new).

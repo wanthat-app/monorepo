@@ -11,7 +11,7 @@ describe("api client", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const res = await authApi.start("+972541234567");
+    const res = await authApi.start("+972541234567", "sms");
     expect(res.challengeId).toBe("c1");
     const call = fetchMock.mock.calls[0] as [string, { method: string }];
     expect(call[0]).toContain("/auth/start");
@@ -36,8 +36,8 @@ describe("api client", () => {
         json: async () => ({ error: "rate_limited" }),
       }),
     );
-    await expect(authApi.start("+972")).rejects.toBeInstanceOf(ApiError);
-    await expect(authApi.start("+972")).rejects.toMatchObject({
+    await expect(authApi.start("+972", "sms")).rejects.toBeInstanceOf(ApiError);
+    await expect(authApi.start("+972", "sms")).rejects.toMatchObject({
       status: 429,
       code: "rate_limited",
     });

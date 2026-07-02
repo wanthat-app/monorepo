@@ -1,5 +1,5 @@
-import { normalizePhone } from "@wanthat/contracts";
-import { useState } from "react";
+import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
+import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ApiError, authApi } from "../../lib/api";
@@ -44,6 +44,22 @@ export function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
+  // Channel choice (ADR-0023): the UI owns the default and the recovery path. Availability comes
+  // from /auth/config; until (or unless) it loads, sms-only keeps the flow working.
+  const [channels, setChannels] = useState<OtpChannel[]>(["sms"]);
+  const [channel, setChannel] = useState<OtpChannel>("sms");
+  const [errorCode, setErrorCode] = useState<string | undefined>();
+
+  useEffect(() => {
+    void authApi
+      .config()
+      .then((cfg) => {
+        setChannels(cfg.channels);
+        if (cfg.defaultChannel) setChannel(cfg.defaultChannel);
+      })
+      .catch(() => {}); // advisory only — the server re-checks on /auth/start
+  }, []);
+
   // The country affordance is IL (+972); the field carries the local part. Normalize + validate to
   // E.164 (null until it's a valid number); the API re-normalizes defensively. A country picker would
   // just pass a different default here.
@@ -53,9 +69,11 @@ export function AuthPage() {
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError(undefined);
+    setErrorCode(undefined);
     try {
       await fn();
     } catch (err) {
+      setErrorCode(err instanceof ApiError ? err.code : undefined);
       setError(
         err instanceof ApiError
           ? t(`auth.errors.${err.code}`, t("auth.errors.generic"))
@@ -68,10 +86,11 @@ export function AuthPage() {
 
   const goHome = () => navigate("/home", { replace: true });
 
-  const onStart = () =>
+  const onStart = (ch: OtpChannel = channel) =>
     run(async () => {
       if (!e164) return; // guarded by the disabled button, but narrows the type
-      const res = await authApi.start(e164);
+      const res = await authApi.start(e164, ch, lang);
+      setChannel(res.channel);
       setChallengeId(res.challengeId);
       setStep("otp");
     });
@@ -150,9 +169,29 @@ export function AuthPage() {
               </div>
               {error ? <span className="mt-1 block text-sm text-rejected">{error}</span> : null}
             </label>
-            <Button onClick={onStart} loading={busy} disabled={!e164}>
+            {channels.length > 1 && (
+              <div>
+                <span className="mb-1.5 block text-sm font-medium text-muted">
+                  {t("auth.channelLabel")}
+                </span>
+                <Segmented
+                  value={channel}
+                  onChange={(value) => setChannel(value as OtpChannel)}
+                  options={channels.map((ch) => ({ value: ch, label: t(`auth.channel.${ch}`) }))}
+                />
+              </div>
+            )}
+            <Button onClick={() => onStart()} loading={busy} disabled={!e164}>
               {t("auth.continue")}
             </Button>
+            {errorCode &&
+              ["send_failed", "channel_disabled"].includes(errorCode) &&
+              channel === "whatsapp" &&
+              channels.includes("sms") && (
+                <Button variant="ghost" onClick={() => onStart("sms")}>
+                  {t("auth.trySms")}
+                </Button>
+              )}
             {passkeysSupported() && (
               <Button variant="ghost" onClick={() => beginPasskeyLogin()}>
                 {t("auth.passkeyLogin")}
@@ -166,6 +205,7 @@ export function AuthPage() {
             <div>
               <BackButton onClick={() => setStep("phone")} label={t("auth.back")} />
             </div>
+            <p className="text-[15px] leading-normal text-muted">{t(`auth.sentVia.${channel}`)}</p>
             <OtpInput
               name="code"
               label={t("auth.codeLabel")}
@@ -179,10 +219,28 @@ export function AuthPage() {
             </Button>
             <Button
               variant="ghost"
-              onClick={() => run(async () => void (await authApi.resend(challengeId)))}
+              onClick={() =>
+                run(async () => {
+                  const r = await authApi.resend(challengeId, channel);
+                  setChannel(r.channel);
+                })
+              }
             >
               {t("auth.resend")}
             </Button>
+            {channel === "whatsapp" && channels.includes("sms") && (
+              <Button
+                variant="ghost"
+                onClick={() =>
+                  run(async () => {
+                    const r = await authApi.resend(challengeId, "sms");
+                    setChannel(r.channel);
+                  })
+                }
+              >
+                {t("auth.resendSms")}
+              </Button>
+            )}
           </>
         )}
 
