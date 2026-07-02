@@ -33,6 +33,7 @@ export interface ApiStackProps extends StackProps {
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly authChallengeTable: dynamodb.ITable;
   readonly phoneVelocityTable: dynamodb.ITable;
+  readonly notificationOutboxTable: dynamodb.ITable;
   // In-VPC placement + Aurora (ADR-0004/0020/0021) — app-core only.
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
@@ -157,6 +158,10 @@ export class ApiStack extends Stack {
         DB_NAME: "wanthat",
         DB_USER: "app_rw",
         ...RDS_CA_ENV,
+        NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
+        // Canonical SPA origin for links in outbound messages (first CORS origin = the site). Both
+        // envs set `domainName` (config.ts ENVIRONMENTS), so webOrigins() is never empty in practice.
+        APP_URL: webOrigins(wanthatEnv)[0] ?? `https://${wanthatEnv.domainName}`,
       },
       bundling: rdsCaBundling,
     });
@@ -169,6 +174,8 @@ export class ApiStack extends Stack {
     props.guestAttributionTable.grantReadWriteData(appCoreFn);
     props.runtimeConfigTable.grantReadData(appCoreFn);
     ticketSecret.grantRead(appCoreFn);
+    // Outbox producer: PutItem only (ADR-0023) - the dispatcher owns updates.
+    props.notificationOutboxTable.grantWriteData(appCoreFn);
 
     // --- One HTTP API fronting both functions ---
     const authIntegration = new HttpLambdaIntegration("AppAuthIntegration", appAuthFn);
