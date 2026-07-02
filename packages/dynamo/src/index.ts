@@ -12,6 +12,7 @@ export {
   type TicketRecord,
 } from "./auth-challenge";
 export { getDocClient } from "./client";
+export { type DevOtpSinkItem, DevOtpSinkRepo } from "./dev-otp-sink";
 export { FxRateRepo, fxPairKey } from "./fx-rate";
 export { type GuestAttribution, GuestAttributionRepo } from "./guest-attribution";
 export {

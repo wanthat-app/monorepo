@@ -58,6 +58,7 @@ const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), {
   ...common,
   crossRegionReferences: true,
   runtimeConfigTable: data.runtimeConfigTable,
+  devOtpSinkTable: data.devOtpSinkTable,
 });
 const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   ...common,

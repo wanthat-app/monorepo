@@ -44,6 +44,7 @@ export class DataStack extends Stack {
   readonly authChallengeTable: dynamodb.Table;
   readonly phoneVelocityTable: dynamodb.Table;
   readonly notificationOutboxTable: dynamodb.Table;
+  readonly devOtpSinkTable: dynamodb.Table;
   readonly retailerSecret: secretsmanager.Secret;
   readonly cluster: rds.DatabaseCluster;
 
@@ -112,6 +113,15 @@ export class DataStack extends Stack {
       partitionKey: { name: "outboxId", type: dynamodb.AttributeType.STRING },
       timeToLiveAttribute: "ttl",
       stream: dynamodb.StreamViewType.NEW_IMAGE,
+      ...common,
+    });
+
+    // Dev OTP sink (auth.otpSink = "devSink", docs/dev-otp-sink.md): message-sender parks codes
+    // here for CLI pickup while both delivery channels are blocked. Exists in every env; the
+    // sender's deploy-time env guard keeps it permanently empty in prod. 5-minute TTL.
+    this.devOtpSinkTable = new dynamodb.Table(this, "DevOtpSink", {
+      partitionKey: { name: "phone", type: dynamodb.AttributeType.STRING },
+      timeToLiveAttribute: "ttl",
       ...common,
     });
 

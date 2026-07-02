@@ -2,7 +2,7 @@ import { buildClient, CommitmentPolicy, KmsKeyringNode } from "@aws-crypto/clien
 import { Logger } from "@aws-lambda-powertools/logger";
 import { PublishCommand, SNSClient } from "@aws-sdk/client-sns";
 import { SocialMessagingClient } from "@aws-sdk/client-socialmessaging";
-import { getDocClient, RuntimeConfigRepo } from "@wanthat/dynamo";
+import { DevOtpSinkRepo, getDocClient, RuntimeConfigRepo } from "@wanthat/dynamo";
 import { WhatsAppSender } from "@wanthat/whatsapp";
 import { type CustomSmsSenderEvent, deliverOtp, type SendDeps } from "./send";
 
@@ -28,6 +28,7 @@ function getDeps(): SendDeps {
   // End User Messaging Social is not available in il-central-1; the client region is deploy-time.
   const social = new SocialMessagingClient({ region: requireEnv("WHATSAPP_SOCIAL_REGION") });
   const whatsapp = new WhatsAppSender(social);
+  const sink = new DevOtpSinkRepo(getDocClient(region), requireEnv("DEV_OTP_SINK_TABLE"));
   deps = {
     config: new RuntimeConfigRepo(getDocClient(region), requireEnv("RUNTIME_CONFIG_TABLE")),
     decryptCode: async (encryptedB64) => {
@@ -46,6 +47,17 @@ function getDeps(): SendDeps {
             },
           }),
         );
+      },
+    },
+    devSink: {
+      // Deploy-time guard: whatever the config says, the sink can never activate in prod.
+      allowed: process.env.WANTHAT_ENV !== "prod",
+      put: async (item) => {
+        await sink.put({
+          ...item,
+          createdAt: new Date().toISOString(),
+          ttl: Math.floor(Date.now() / 1000) + 300, // 5 minutes, matches the OTP lifetime
+        });
       },
     },
     log: (msg, ctx) => logger.info(msg, ctx ?? {}),

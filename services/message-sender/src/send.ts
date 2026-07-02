@@ -25,6 +25,20 @@ export interface SendDeps {
     }): Promise<unknown>;
   };
   sms: { publish(toE164: string, message: string): Promise<void> };
+  /**
+   * Dev-only sink: when `allowed` (deploy-time: WANTHAT_ENV !== "prod") AND `auth.otpSink` is
+   * "devSink", the code is parked for CLI pickup instead of delivered. `allowed` gates the config
+   * read itself, so prod and the sms fast path make zero extra reads.
+   */
+  devSink: {
+    allowed: boolean;
+    put(item: {
+      phone: string;
+      code: string;
+      channel: OtpChannel;
+      triggerSource: string;
+    }): Promise<void>;
+  };
   /** Structured log sink. The success line carries `sub` — the field app-auth's otp_start log shares, so one Logs Insights query follows the chain. */
   log: (msg: string, ctx?: Record<string, unknown>) => void;
 }
@@ -47,6 +61,19 @@ export async function deliverOtp(deps: SendDeps, event: CustomSmsSenderEvent): P
   if (!to) throw new Error("message-sender: event carries no phone_number");
 
   const code = await deps.decryptCode(event.request.code);
+
+  // Dev-only sink (docs/dev-otp-sink.md): park the code instead of delivering. Checked before the
+  // channel dispatch so BOTH channels sink; the code itself is never logged.
+  if (deps.devSink.allowed && (await deps.config.get("auth.otpSink")) === "devSink") {
+    await deps.devSink.put({
+      phone: to,
+      code,
+      channel: channel.data,
+      triggerSource: event.triggerSource,
+    });
+    deps.log("otp_sunk_dev", { channel: channel.data, sub: attrs.sub });
+    return;
+  }
 
   if (channel.data === "whatsapp") {
     // The origination identity is a send parameter (it cannot ride the Cognito event), not flow logic.

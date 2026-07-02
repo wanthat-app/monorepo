@@ -48,4 +48,10 @@ describe("OTP channel contracts (ADR-0023)", () => {
   it("ships notifications.whatsappEnabled OFF", () => {
     expect(CONFIG_DEFAULTS["notifications.whatsappEnabled"]).toBe(false);
   });
+
+  it("ships auth.otpSink as real delivery by default", () => {
+    expect(CONFIG_DEFAULTS["auth.otpSink"]).toBe("delivery");
+    expect(parseConfigValue("auth.otpSink", "devSink")).toBe("devSink");
+    expect(() => parseConfigValue("auth.otpSink", "log")).toThrow();
+  });
 });

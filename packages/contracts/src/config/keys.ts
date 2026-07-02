@@ -92,6 +92,14 @@ export const WhatsappPhoneNumberId = z.string().max(120);
 /** Kill switch for the outbox-driven WhatsApp notifications (optin_welcome) — ADR-0023. */
 export const NotificationsWhatsappEnabled = z.boolean();
 
+/**
+ * Where message-sender routes decrypted OTP codes. `delivery` = the real channel (WhatsApp/SMS).
+ * `devSink` = a TTL'd DynamoDB item a developer reads via the CLI — unblocks end-to-end user
+ * creation while both real channels are blocked (SMS sandbox cap / Meta onboarding). The sender
+ * honours `devSink` ONLY outside prod (deploy-time env guard); flipping this key in prod is inert.
+ */
+export const AuthOtpSink = z.enum(["delivery", "devSink"]);
+
 /** Known config keys. Dotted namespaces group related settings. */
 export const CONFIG_KEYS = [
   "landing.countdownSeconds",
@@ -109,6 +117,7 @@ export const CONFIG_KEYS = [
   "auth.defaultOtpChannel",
   "whatsapp.phoneNumberId",
   "notifications.whatsappEnabled",
+  "auth.otpSink",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -131,6 +140,7 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "auth.defaultOtpChannel": AuthDefaultOtpChannel,
   "whatsapp.phoneNumberId": WhatsappPhoneNumberId,
   "notifications.whatsappEnabled": NotificationsWhatsappEnabled,
+  "auth.otpSink": AuthOtpSink,
 };
 
 /**
@@ -160,6 +170,8 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "whatsapp.phoneNumberId": "",
   // Notifications WhatsApp kill switch (ADR-0023) — ships OFF.
   "notifications.whatsappEnabled": false,
+  // real delivery by default; dev flips to devSink while SMS/WhatsApp are blocked
+  "auth.otpSink": "delivery",
 };
 
 /** Validate a value against its key's schema — use in the config API handler before persisting. */

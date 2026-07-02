@@ -6,6 +6,10 @@ const deps = {
   decryptCode: vi.fn().mockResolvedValue("12345678"),
   whatsapp: { sendTemplate: vi.fn().mockResolvedValue({ messageId: "wamid.X" }) },
   sms: { publish: vi.fn().mockResolvedValue(undefined) },
+  // `false as boolean`: under `satisfies` (unlike a `: SendDeps` annotation) object-literal
+  // properties keep their narrowed literal type, so an un-widened `false` would forbid the
+  // `deps.devSink.allowed = true` flips the sink tests below perform.
+  devSink: { allowed: false as boolean, put: vi.fn() },
   log: vi.fn(),
 } satisfies SendDeps;
 
@@ -20,6 +24,10 @@ beforeEach(() => {
   vi.clearAllMocks();
   deps.decryptCode.mockResolvedValue("12345678");
   deps.config.get.mockResolvedValue("phone-number-id-test");
+  // clearAllMocks() does not reset a mock's implementation (only .mock.calls/.results), so a
+  // rejection set by an earlier test (e.g. "propagates an SNS error") would otherwise leak into
+  // every later test that hits the sms fast path — re-pin the happy-path implementation here.
+  deps.sms.publish.mockResolvedValue(undefined);
 });
 
 describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)", () => {
@@ -104,5 +112,50 @@ describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)"
     await expect(
       deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" })),
     ).rejects.toThrow("sns down");
+  });
+});
+
+describe("dev OTP sink (auth.otpSink = devSink, never in prod)", () => {
+  it("parks the code instead of delivering when allowed AND configured", async () => {
+    deps.devSink.allowed = true;
+    deps.config.get.mockImplementation((key: string) =>
+      Promise.resolve(key === "auth.otpSink" ? "devSink" : "phone-number-id-test"),
+    );
+    await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
+    expect(deps.devSink.put).toHaveBeenCalledWith({
+      phone: "+97254",
+      code: "12345678",
+      channel: "sms",
+      triggerSource: "CustomSMSSender_Authentication",
+    });
+    expect(deps.sms.publish).not.toHaveBeenCalled();
+    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
+    expect(deps.log).toHaveBeenCalledWith("otp_sunk_dev", { channel: "sms", sub: undefined });
+    deps.devSink.allowed = false;
+  });
+
+  it("sinks the whatsapp channel too, before any phoneNumberId read", async () => {
+    deps.devSink.allowed = true;
+    deps.config.get.mockImplementation((key: string) =>
+      Promise.resolve(key === "auth.otpSink" ? "devSink" : ""),
+    );
+    await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
+    expect(deps.devSink.put).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "whatsapp", code: "12345678" }),
+    );
+    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
+    deps.devSink.allowed = false;
+  });
+
+  it("ignores the config entirely when not allowed (the prod guard)", async () => {
+    // allowed stays false; even a poisoned config value cannot activate the sink.
+    deps.config.get.mockResolvedValue("devSink");
+    await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
+    expect(deps.devSink.put).not.toHaveBeenCalled();
+    expect(deps.sms.publish).toHaveBeenCalledWith(
+      "+97254",
+      "Your authentication code is 12345678.",
+    );
+    expect(deps.config.get).not.toHaveBeenCalled(); // guard short-circuits before any read
   });
 });
