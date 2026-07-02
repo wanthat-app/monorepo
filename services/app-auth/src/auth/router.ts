@@ -22,7 +22,7 @@ import { Hono } from "hono";
 import { getContext } from "../context";
 import { OTP_REJECTION_ERRORS, toAuthTokens } from "./cognito";
 import { otpChannelAvailability } from "./killswitch";
-import { withinPasskeyVelocity, withinVelocity } from "./velocity";
+import { withinVelocity } from "./velocity";
 
 const RESEND_COOLDOWN_SEC = 30;
 const OTP_EXPIRES_SEC = 180; // Cognito SMS OTP lifetime (~3 min)
@@ -347,10 +347,6 @@ export function authRouter(): Hono {
     const ctx = getContext();
     const phone = normalizePhone(body.phone);
     if (!phone) return c.json({ error: "invalid_request" }, 400);
-
-    const gate = await withinPasskeyVelocity(ctx.config, ctx.velocity, phone, nowEpoch());
-    if (!gate.allowed)
-      return c.json({ error: "rate_limited", retryAfterSec: gate.retryAfterSec }, 429);
 
     const user = await ctx.cognito.getUserByPhone(phone);
     if (!user) return c.json({ error: "passkey_unavailable" }, 409);
