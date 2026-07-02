@@ -44,4 +44,8 @@ describe("OTP channel contracts (ADR-0023)", () => {
     expect(() => parseConfigValue("auth.defaultOtpChannel", "email")).toThrow();
     expect(OtpChannel.parse("whatsapp")).toBe("whatsapp");
   });
+
+  it("ships notifications.whatsappEnabled OFF", () => {
+    expect(CONFIG_DEFAULTS["notifications.whatsappEnabled"]).toBe(false);
+  });
 });

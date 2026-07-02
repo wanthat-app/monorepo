@@ -89,6 +89,9 @@ export const AuthDefaultOtpChannel = z.enum(["whatsapp", "sms"]);
  */
 export const WhatsappPhoneNumberId = z.string().max(120);
 
+/** Kill switch for the outbox-driven WhatsApp notifications (optin_welcome) — ADR-0023. */
+export const NotificationsWhatsappEnabled = z.boolean();
+
 /** Known config keys. Dotted namespaces group related settings. */
 export const CONFIG_KEYS = [
   "landing.countdownSeconds",
@@ -105,6 +108,7 @@ export const CONFIG_KEYS = [
   "auth.whatsappEnabled",
   "auth.defaultOtpChannel",
   "whatsapp.phoneNumberId",
+  "notifications.whatsappEnabled",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -126,6 +130,7 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "auth.whatsappEnabled": AuthWhatsappEnabled,
   "auth.defaultOtpChannel": AuthDefaultOtpChannel,
   "whatsapp.phoneNumberId": WhatsappPhoneNumberId,
+  "notifications.whatsappEnabled": NotificationsWhatsappEnabled,
 };
 
 /**
@@ -153,6 +158,8 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "auth.whatsappEnabled": false,
   "auth.defaultOtpChannel": "whatsapp",
   "whatsapp.phoneNumberId": "",
+  // Notifications WhatsApp kill switch (ADR-0023) — ships OFF.
+  "notifications.whatsappEnabled": false,
 };
 
 /** Validate a value against its key's schema — use in the config API handler before persisting. */

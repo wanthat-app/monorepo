@@ -31,6 +31,10 @@ function defineMessageType<V>(spec: MessageTypeSpec<V>): MessageTypeSpec<V> {
 
 export const OtpCodeVariables = z.object({ code: z.string().min(4).max(12) }).strict();
 
+export const OptinWelcomeVariables = z
+  .object({ firstName: z.string().min(1).max(100), appUrl: z.string().url() })
+  .strict();
+
 export const MESSAGE_TYPES = {
   // Meta authentication templates have a fixed shape: the code as the body parameter AND as the
   // copy-code (url sub_type) button parameter.
@@ -41,6 +45,22 @@ export const MESSAGE_TYPES = {
     components: (v) => [
       { type: "body", parameters: [{ type: "text", text: v.code }] },
       { type: "button", sub_type: "url", index: "0", parameters: [{ type: "text", text: v.code }] },
+    ],
+  }),
+  // Utility template: welcome message in the member's language with a link to the app. Text as
+  // submitted to Meta lives in docs/whatsapp-onboarding.md ({{1}} firstName, {{2}} appUrl).
+  optin_welcome: defineMessageType({
+    metaTemplateName: "optin_welcome",
+    category: "utility",
+    variables: OptinWelcomeVariables,
+    components: (v) => [
+      {
+        type: "body",
+        parameters: [
+          { type: "text", text: v.firstName },
+          { type: "text", text: v.appUrl },
+        ],
+      },
     ],
   }),
 };

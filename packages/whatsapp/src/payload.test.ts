@@ -55,4 +55,26 @@ describe("buildTemplateMessage", () => {
       }),
     ).toThrow(/unknown message type/);
   });
+
+  it("builds the optin_welcome utility template (firstName + appUrl body params)", () => {
+    const msg = buildTemplateMessage({
+      type: "optin_welcome",
+      language: "he",
+      variables: { firstName: "Dana", appUrl: "https://dev.wanthat.app" },
+      to: "+972541234567",
+    });
+    expect(msg.template).toEqual({
+      name: "optin_welcome",
+      language: { code: "he" },
+      components: [
+        {
+          type: "body",
+          parameters: [
+            { type: "text", text: "Dana" },
+            { type: "text", text: "https://dev.wanthat.app" },
+          ],
+        },
+      ],
+    });
+  });
 });
