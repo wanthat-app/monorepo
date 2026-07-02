@@ -54,4 +54,10 @@ describe("OTP channel contracts (ADR-0023)", () => {
     expect(parseConfigValue("auth.otpSink", "devSink")).toBe("devSink");
     expect(() => parseConfigValue("auth.otpSink", "log")).toThrow();
   });
+
+  it("ships the passkey-login velocity keys (generous, separate from SMS)", () => {
+    expect(CONFIG_DEFAULTS["auth.passkeyMaxPerWindow"]).toBe(30);
+    expect(CONFIG_DEFAULTS["auth.passkeyWindowMinutes"]).toBe(60);
+    expect(parseConfigValue("auth.passkeyMaxPerWindow", 50)).toBe(50);
+  });
 });
