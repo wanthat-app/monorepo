@@ -9,7 +9,6 @@ import {
   useState,
 } from "react";
 import { authApi, meApi } from "./api";
-import { rememberDevicePhone } from "./device";
 import { isAdminToken } from "./jwt";
 
 /**
@@ -41,7 +40,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     setTokens(session.tokens);
     setCustomer(session.customer);
     localStorage.setItem(REFRESH_KEY, session.tokens.refreshToken);
-    rememberDevicePhone(session.customer.phone); // ADR-0022 Flow B: enable next-visit Face ID login
   }, []);
 
   const signOut = useCallback(async () => {
@@ -66,9 +64,6 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         setTokens(fresh);
         setCustomer(profile);
         localStorage.setItem(REFRESH_KEY, fresh.refreshToken);
-        // Backfill the remembered phone for sessions that predate Flow B (ADR-0022): any device
-        // with a live session gets its passkey-login hint on next load, no re-OTP required.
-        rememberDevicePhone(profile.phone);
       } catch {
         localStorage.removeItem(REFRESH_KEY);
       } finally {
