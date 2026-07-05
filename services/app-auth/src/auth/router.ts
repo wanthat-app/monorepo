@@ -355,13 +355,19 @@ export function authRouter(): Hono {
     const ctx = getContext();
     const { sub, username } = claims;
 
+    // Friendly label for the OS / passkey-manager picker (ADR-0024): the member's phone, not the
+    // opaque `sub` UUID. This sets ONLY the WebAuthn `user.name`/`displayName` (display strings) — the
+    // userHandle stays the immutable `sub` and the stored credential still keys on it, so a
+    // phone-number change can never break login. Fall back to `sub` if Cognito has no phone.
+    const label = (await ctx.cognito.getPhone(username)) ?? sub;
+
     const existing = await ctx.passkeys.listByCustomer(sub);
     const options = await buildRegistrationOptions({
       rpID: ctx.webauthn.rpId,
       rpName: "Wanthat",
       sub,
-      userName: sub,
-      displayName: sub,
+      userName: label,
+      displayName: label,
       excludeCredentialIds: existing.map((cred) => cred.credentialId),
     });
 

@@ -442,8 +442,9 @@ describe("passkey register (ADR-0024 — own-store enrolment)", () => {
       expect(res.status).toBe(401);
     });
 
-    it("builds options excluding the caller's existing credentials, stores the challenge", async () => {
+    it("builds options with the friendly phone label, excluding existing creds, stores the challenge", async () => {
       fake.passkeys.listByCustomer.mockResolvedValue([{ credentialId: "cred-old" }]);
+      fake.cognito.getPhone.mockResolvedValue("+972541234567");
       webauthnMock.buildRegistrationOptions.mockResolvedValue({ challenge: "abc" });
 
       const res = await postAuthed("/auth/passkey/register/options", {});
@@ -453,16 +454,29 @@ describe("passkey register (ADR-0024 — own-store enrolment)", () => {
         options: { challenge: "abc" },
       });
       expect(fake.passkeys.listByCustomer).toHaveBeenCalledWith(SUB);
+      // user.name/displayName are the phone (friendly OS-picker label); `sub` stays the userHandle.
       expect(webauthnMock.buildRegistrationOptions).toHaveBeenCalledWith(
         expect.objectContaining({
           rpID: "wanthat.test",
           sub: SUB,
-          userName: SUB,
+          userName: "+972541234567",
+          displayName: "+972541234567",
           excludeCredentialIds: ["cred-old"],
         }),
       );
       expect(fake.challenges.putPasskeyChallenge).toHaveBeenCalledWith(
         expect.objectContaining({ kind: "reg", sub: SUB, username: "u", challenge: "abc" }),
+      );
+    });
+
+    it("falls back to the sub as the label when Cognito has no phone", async () => {
+      fake.passkeys.listByCustomer.mockResolvedValue([]);
+      fake.cognito.getPhone.mockResolvedValue(null);
+      webauthnMock.buildRegistrationOptions.mockResolvedValue({ challenge: "abc" });
+
+      await postAuthed("/auth/passkey/register/options", {});
+      expect(webauthnMock.buildRegistrationOptions).toHaveBeenCalledWith(
+        expect.objectContaining({ userName: SUB, displayName: SUB }),
       );
     });
   });
