@@ -142,13 +142,9 @@ export function applyThrottle(httpApi: HttpApi, throttle: Throttle): void {
 const here = path.dirname(fileURLToPath(import.meta.url)); // infra/lib
 export const REPO_ROOT = path.resolve(here, "..", "..");
 
-/**
- * Absolute path to a service's Lambda handler entry, for NodejsFunction bundling. Defaults to
- * `src/handler.ts` (one function per service); pass `file` for a service that exports several
- * Lambda entry points from one package (e.g. `passkey-auth-triggers`'s CUSTOM_AUTH trigger trio).
- */
-export const serviceEntry = (service: string, file = "handler"): string =>
-  path.join(REPO_ROOT, "services", service, "src", `${file}.ts`);
+/** Absolute path to a service's Lambda handler entry (`src/handler.ts`), for NodejsFunction bundling. */
+export const serviceEntry = (service: string): string =>
+  path.join(REPO_ROOT, "services", service, "src", "handler.ts");
 
 /**
  * Amazon RDS CA trust for in-VPC Aurora connections (ADR-0003/0020).
