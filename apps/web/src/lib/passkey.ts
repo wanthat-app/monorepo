@@ -1,10 +1,28 @@
-import { startAuthentication, startRegistration } from "@simplewebauthn/browser";
+import {
+  browserSupportsWebAuthnAutofill,
+  startAuthentication,
+  startRegistration,
+} from "@simplewebauthn/browser";
 import type { AuthSession } from "@wanthat/contracts";
 import { authApi } from "./api";
 
 /** Whether this browser can create platform passkeys (FaceID/TouchID/Windows Hello). */
 export function passkeysSupported(): boolean {
   return typeof window !== "undefined" && !!window.PublicKeyCredential;
+}
+
+/**
+ * Whether this browser supports WebAuthn *conditional UI* (autofill) — the passkey offering itself in
+ * a field's autofill (ADR-0024 Slice 2). When true we arm {@link loginWithPasskeyAutofill} instead of
+ * showing an explicit button; when false the explicit modal button ({@link loginWithPasskey}) is the
+ * path. Never throws.
+ */
+export async function passkeyAutofillSupported(): Promise<boolean> {
+  try {
+    return await browserSupportsWebAuthnAutofill();
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -32,9 +50,36 @@ export async function enrollPasskey(accessToken: string): Promise<string> {
 export async function loginWithPasskey(): Promise<AuthSession> {
   const { challengeId, options } = await authApi.passkeyLoginChallenge();
   // Modal discoverable get(): the server sent an empty allowCredentials, so the OS shows the
-  // member's passkeys for this origin. (Autofill/conditional UI is Slice 2.)
+  // member's passkeys for this origin. Used only where conditional UI is unsupported.
   // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
   const credential = await startAuthentication({ optionsJSON: options as any });
+  return finishPasskeyLogin(challengeId, credential);
+}
+
+/**
+ * Arm WebAuthn *conditional UI* (autofill) for userless discoverable login (ADR-0024 Slice 2). The
+ * passkey offers itself in the autofill of a field marked `autocomplete="… webauthn"`; this promise
+ * stays pending until the member picks it and authenticates biometrically, then resolves a session.
+ * Same empty-allowCredentials challenge as the modal path — only `useBrowserAutofill` differs. Only
+ * ONE conditional get() may be pending, and it must not run alongside the modal button (the caller
+ * shows the button ONLY when autofill is unsupported, so the two never collide). Rejects on
+ * abort/cancel/failure; the caller falls back to OTP silently.
+ */
+export async function loginWithPasskeyAutofill(): Promise<AuthSession> {
+  const { challengeId, options } = await authApi.passkeyLoginChallenge();
+  const credential = await startAuthentication({
+    // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
+    optionsJSON: options as any,
+    useBrowserAutofill: true,
+  });
+  return finishPasskeyLogin(challengeId, credential);
+}
+
+/** Shared tail of both passkey-login paths: verify the assertion server-side, resolve the session. */
+async function finishPasskeyLogin(
+  challengeId: string,
+  credential: Awaited<ReturnType<typeof startAuthentication>>,
+): Promise<AuthSession> {
   const { registrationTicket } = await authApi.passkeyLoginVerify(challengeId, credential);
   const res = await authApi.session(registrationTicket);
   if (res.status !== "authenticated") throw new Error("passkey login did not resolve a session");

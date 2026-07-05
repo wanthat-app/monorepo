@@ -8,7 +8,6 @@ import { AdminPage } from "./features/admin/AdminPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { CallbackPage } from "./features/auth/CallbackPage";
 import { HomePage } from "./features/home/HomePage";
-import { SpikePasskeyPage } from "./features/spike/SpikePasskeyPage";
 import "./i18n";
 import "./index.css";
 import { initConfig } from "./lib/config";
@@ -22,8 +21,6 @@ const router = createBrowserRouter([
   { path: "/home", element: <HomePage /> },
   { path: "/admin", element: <AdminPage /> },
   { path: "/admin/callback", element: <AdminCallbackPage /> },
-  // THROWAWAY spike (unlinked) — proves WebAuthn conditional UI on-device; remove after.
-  { path: "/spike/passkey", element: <SpikePasskeyPage /> },
 ]);
 
 const root = document.getElementById("root");

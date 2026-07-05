@@ -1,5 +1,5 @@
 import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ApiError, authApi } from "../../lib/api";
@@ -7,6 +7,8 @@ import {
   biometricLabelKey,
   enrollPasskey,
   loginWithPasskey,
+  loginWithPasskeyAutofill,
+  passkeyAutofillSupported,
   passkeysSupported,
 } from "../../lib/passkey";
 import { useSession } from "../../lib/session";
@@ -58,6 +60,12 @@ export function AuthPage() {
 
   const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
 
+  // Conditional-UI autofill (ADR-0024 Slice 2): null while we probe support. When true, the passkey
+  // offers itself in the phone field's autofill and we hide the explicit button; when false, the
+  // modal button is the path.
+  const [autofillSupported, setAutofillSupported] = useState<boolean | null>(null);
+  const armed = useRef(false);
+
   useEffect(() => {
     void authApi
       .config()
@@ -67,6 +75,29 @@ export function AuthPage() {
       })
       .catch(() => {}); // advisory only — the server re-checks on /auth/start
   }, []);
+
+  // Probe conditional-UI support and, if available, ARM it once: the passkey surfaces in the phone
+  // field's autofill and, when the member picks it, signs them straight in. A silent failure/cancel is
+  // fine — OTP stays available. Guarded so it arms exactly once (a second get() would abort the first).
+  useEffect(() => {
+    if (!passkeysSupported()) {
+      setAutofillSupported(false);
+      return;
+    }
+    void (async () => {
+      const supported = await passkeyAutofillSupported();
+      setAutofillSupported(supported);
+      if (!supported || armed.current) return;
+      armed.current = true;
+      try {
+        const session = await loginWithPasskeyAutofill();
+        signIn(session);
+        navigate("/home", { replace: true });
+      } catch {
+        // aborted / cancelled / not used — stay on the form; OTP or the fallback path continues.
+      }
+    })();
+  }, [navigate, signIn]);
 
   // The country affordance is IL (+972); the field carries the local part. Normalize + validate to
   // E.164 (null until it's a valid number); the API re-normalizes defensively. A country picker would
@@ -161,7 +192,10 @@ export function AuthPage() {
               <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
               <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
             </div>
-            {passkeysSupported() && (
+            {/* When conditional UI is available the passkey offers itself in the field's autofill, so
+                the explicit button is shown ONLY where autofill is unsupported (ADR-0024 Slice 2).
+                They are mutually exclusive — never a modal get() alongside a pending conditional get(). */}
+            {passkeysSupported() && autofillSupported === false && (
               <Button onClick={onPasskeyLogin} loading={busy}>
                 {t("auth.passkeyCta", { label: bioLabel })}
               </Button>
@@ -179,6 +213,9 @@ export function AuthPage() {
                   name="phone"
                   type="tel"
                   inputMode="tel"
+                  // `webauthn` makes this field the conditional-UI autofill target: focusing it surfaces
+                  // the member's passkeys for this origin (ADR-0024 Slice 2), armed in the effect above.
+                  autoComplete="tel webauthn"
                   placeholder="50 123 4567"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
