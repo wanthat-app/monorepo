@@ -16,6 +16,10 @@ import {
 export interface PasskeyCredentialItem {
   credentialId: string;
   customerSub: string;
+  /** Cognito username (opaque UUID) for this credential's holder — the passkey-login bridge
+   * (ADR-0024) mints tokens via `Cognito.passkeyCustomAuth(cognitoUsername, proof)`, so we carry
+   * it alongside `customerSub` rather than re-resolving it from Cognito on every login. */
+  cognitoUsername: string;
   /** base64url of the COSE public key (see @wanthat/webauthn StoredCredential). */
   publicKey: string;
   signCount: number;

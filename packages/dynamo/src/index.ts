@@ -9,6 +9,7 @@
 export {
   AuthChallengeRepo,
   type ChallengeRecord,
+  type PasskeyChallengeRecord,
   type TicketRecord,
 } from "./auth-challenge";
 export { getDocClient } from "./client";

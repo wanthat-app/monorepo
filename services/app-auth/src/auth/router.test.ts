@@ -15,18 +15,26 @@ const { fake } = vi.hoisted(() => ({
       respondSmsOtp: vi.fn(),
       refresh: vi.fn(),
       revoke: vi.fn(),
-      startWebAuthnRegistration: vi.fn(),
-      completeWebAuthnRegistration: vi.fn(),
-      startPasskeyAuth: vi.fn(),
-      respondPasskeyAuth: vi.fn(),
+      passkeyCustomAuth: vi.fn(),
     },
     challenges: {
       putChallenge: vi.fn(),
       getChallenge: vi.fn(),
       deleteChallenge: vi.fn(),
+      putPasskeyChallenge: vi.fn(),
+      getPasskeyChallenge: vi.fn(),
+      deletePasskeyChallenge: vi.fn(),
     },
     guests: { claim: vi.fn() },
     tickets: { sign: vi.fn(), verify: vi.fn() },
+    passkeys: {
+      put: vi.fn(),
+      getByCredentialId: vi.fn(),
+      listByCustomer: vi.fn(),
+      updateSignCount: vi.fn(),
+    },
+    passkeyProof: { sign: vi.fn(), verify: vi.fn() },
+    webauthn: { rpId: "wanthat.test", origins: ["https://wanthat.test"] },
   },
 }));
 
@@ -37,6 +45,18 @@ const { logMock } = vi.hoisted(() => ({
   logMock: { info: vi.fn(), warn: vi.fn(), error: vi.fn() },
 }));
 vi.mock("@aws-lambda-powertools/logger", () => ({ Logger: vi.fn(() => logMock) }));
+
+// The router now owns the WebAuthn ceremony itself (ADR-0024) via @wanthat/webauthn; mock its
+// build/verify functions so these tests exercise router logic, not the WebAuthn library.
+const { webauthnMock } = vi.hoisted(() => ({
+  webauthnMock: {
+    buildRegistrationOptions: vi.fn(),
+    verifyRegistration: vi.fn(),
+    buildAuthenticationOptions: vi.fn(),
+    verifyAuthentication: vi.fn(),
+  },
+}));
+vi.mock("@wanthat/webauthn", () => webauthnMock);
 
 import { authRouter } from "./router";
 
@@ -387,7 +407,16 @@ describe("POST /auth/resend — channel switch (ADR-0023)", () => {
   });
 });
 
-describe("passkey registration", () => {
+/** Build a Bearer token whose middle (payload) segment decodes to `{sub, username}` — enough for
+ * `tokenClaims` (which decodes but never re-verifies, matching the JWT-authorizer-already-checked-it
+ * design). The header/signature segments are dummies; only the payload segment is real. */
+function fakeAccessToken(sub: string, username: string): string {
+  const payload = Buffer.from(JSON.stringify({ sub, username })).toString("base64url");
+  return `header.${payload}.sig`;
+}
+
+describe("passkey register (ADR-0024 — own-store enrolment)", () => {
+  const ACCESS_TOKEN = fakeAccessToken(SUB, "u");
   const credential = {
     id: "cred-1",
     rawId: "cred-1",
@@ -395,112 +424,226 @@ describe("passkey registration", () => {
     response: { clientDataJSON: "x", attestationObject: "y" },
   };
 
-  function postAuthed(path: string, body: unknown) {
+  function postAuthed(path: string, body: unknown, token = ACCESS_TOKEN) {
     return app.request(path, {
       method: "POST",
-      headers: { "content-type": "application/json", authorization: "Bearer access-token" },
+      headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
       body: JSON.stringify(body),
     });
   }
 
-  it("options requires a Bearer token", async () => {
-    const res = await post("/auth/passkey/register/options", {});
-    expect(res.status).toBe(401);
-  });
-
-  it("returns server-generated creation options", async () => {
-    fake.cognito.startWebAuthnRegistration.mockResolvedValue({ challenge: "abc" });
-    const res = await postAuthed("/auth/passkey/register/options", {});
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ options: { challenge: "abc" } });
-    expect(fake.cognito.startWebAuthnRegistration).toHaveBeenCalledWith("access-token");
-  });
-
-  it("verify registers the credential and echoes the passkey", async () => {
-    fake.cognito.completeWebAuthnRegistration.mockResolvedValue(undefined);
-    const res = await postAuthed("/auth/passkey/register/verify", { credential });
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { passkey: { credentialId: string } };
-    expect(body.passkey.credentialId).toBe("cred-1");
-    expect(fake.cognito.completeWebAuthnRegistration).toHaveBeenCalledWith(
-      "access-token",
-      credential,
-    );
-  });
-});
-
-describe("POST /auth/passkey/login/options (ADR-0022 Flow B)", () => {
-  it("starts a WEB_AUTHN challenge and stores it, returns options", async () => {
-    fake.cognito.getUserByPhone.mockResolvedValue({ username: "u", sub: SUB });
-    fake.cognito.startPasskeyAuth.mockResolvedValue({
-      session: "sess",
-      options: { challenge: "abc" },
+  describe("POST /auth/passkey/register/options", () => {
+    it("requires a Bearer token", async () => {
+      const res = await post("/auth/passkey/register/options", {});
+      expect(res.status).toBe(401);
     });
-    const res = await post("/auth/passkey/login/options", { phone: PHONE });
-    expect(res.status).toBe(200);
-    expect(await res.json()).toMatchObject({ options: { challenge: "abc" } });
-    expect(fake.challenges.putChallenge).toHaveBeenCalledWith(
-      expect.objectContaining({ username: "u", sub: SUB, phone: PHONE, cognitoSession: "sess" }),
-    );
+
+    it("401s on a Bearer token with no decodable sub/username", async () => {
+      const res = await postAuthed("/auth/passkey/register/options", {}, "not-a-jwt");
+      expect(res.status).toBe(401);
+    });
+
+    it("builds options excluding the caller's existing credentials, stores the challenge", async () => {
+      fake.passkeys.listByCustomer.mockResolvedValue([{ credentialId: "cred-old" }]);
+      webauthnMock.buildRegistrationOptions.mockResolvedValue({ challenge: "abc" });
+
+      const res = await postAuthed("/auth/passkey/register/options", {});
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        challengeId: expect.any(String),
+        options: { challenge: "abc" },
+      });
+      expect(fake.passkeys.listByCustomer).toHaveBeenCalledWith(SUB);
+      expect(webauthnMock.buildRegistrationOptions).toHaveBeenCalledWith(
+        expect.objectContaining({
+          rpID: "wanthat.test",
+          sub: SUB,
+          userName: SUB,
+          excludeCredentialIds: ["cred-old"],
+        }),
+      );
+      expect(fake.challenges.putPasskeyChallenge).toHaveBeenCalledWith(
+        expect.objectContaining({ kind: "reg", sub: SUB, username: "u", challenge: "abc" }),
+      );
+    });
   });
-  it("409 passkey_unavailable when the phone has no user (no existence oracle)", async () => {
-    fake.cognito.getUserByPhone.mockResolvedValue(null);
-    const res = await post("/auth/passkey/login/options", { phone: PHONE });
-    expect(res.status).toBe(409);
-    expect(await res.json()).toEqual({ error: "passkey_unavailable" });
-    expect(fake.cognito.startPasskeyAuth).not.toHaveBeenCalled();
-  });
-  it("409 passkey_unavailable when no WEB_AUTHN challenge is issued (no passkey enrolled)", async () => {
-    fake.cognito.getUserByPhone.mockResolvedValue({ username: "u", sub: SUB });
-    fake.cognito.startPasskeyAuth.mockRejectedValue(new Error("no WEB_AUTHN"));
-    const res = await post("/auth/passkey/login/options", { phone: PHONE });
-    expect(res.status).toBe(409);
+
+  describe("POST /auth/passkey/register/verify", () => {
+    it("requires a Bearer token", async () => {
+      const res = await post("/auth/passkey/register/verify", { challengeId: "c1", credential });
+      expect(res.status).toBe(401);
+    });
+
+    it("400s when the challenge is missing", async () => {
+      fake.challenges.getPasskeyChallenge.mockResolvedValue(undefined);
+      const res = await postAuthed("/auth/passkey/register/verify", {
+        challengeId: "c1",
+        credential,
+      });
+      expect(res.status).toBe(400);
+      expect(webauthnMock.verifyRegistration).not.toHaveBeenCalled();
+    });
+
+    it("400s when the stored challenge's sub does not match the caller's token (single-use, deleted either way)", async () => {
+      fake.challenges.getPasskeyChallenge.mockResolvedValue({
+        challengeId: "c1",
+        kind: "reg",
+        sub: "someone-else",
+        username: "u2",
+        challenge: "abc",
+        ttl: 0,
+      });
+      const res = await postAuthed("/auth/passkey/register/verify", {
+        challengeId: "c1",
+        credential,
+      });
+      expect(res.status).toBe(400);
+      expect(fake.challenges.deletePasskeyChallenge).toHaveBeenCalledWith("c1");
+    });
+
+    it("verifies the attestation, stores the credential (incl. cognitoUsername), echoes the passkey", async () => {
+      fake.challenges.getPasskeyChallenge.mockResolvedValue({
+        challengeId: "c1",
+        kind: "reg",
+        sub: SUB,
+        username: "u",
+        challenge: "abc",
+        ttl: 0,
+      });
+      webauthnMock.verifyRegistration.mockResolvedValue({
+        credentialId: "cred-1",
+        publicKey: "pub-key",
+        counter: 0,
+        transports: ["internal"],
+      });
+
+      const res = await postAuthed("/auth/passkey/register/verify", {
+        challengeId: "c1",
+        credential,
+      });
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as { passkey: { credentialId: string } };
+      expect(body.passkey.credentialId).toBe("cred-1");
+      expect(webauthnMock.verifyRegistration).toHaveBeenCalledWith(
+        expect.objectContaining({
+          response: credential,
+          expectedChallenge: "abc",
+          expectedOrigin: ["https://wanthat.test"],
+          expectedRPID: "wanthat.test",
+        }),
+      );
+      expect(fake.passkeys.put).toHaveBeenCalledWith(
+        expect.objectContaining({
+          credentialId: "cred-1",
+          customerSub: SUB,
+          cognitoUsername: "u",
+          publicKey: "pub-key",
+          signCount: 0,
+          transports: ["internal"],
+        }),
+      );
+      expect(fake.challenges.deletePasskeyChallenge).toHaveBeenCalledWith("c1");
+    });
   });
 });
 
-describe("POST /auth/passkey/login/verify", () => {
-  const challenge = {
+describe("GET /auth/passkey/login/challenge (ADR-0024 — userless discoverable)", () => {
+  it("returns options + a challengeId, no-store, no user resolved yet", async () => {
+    webauthnMock.buildAuthenticationOptions.mockResolvedValue({ challenge: "xyz" });
+    const res = await app.request("/auth/passkey/login/challenge");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("cache-control")).toBe("no-store");
+    expect(await res.json()).toEqual({
+      challengeId: expect.any(String),
+      options: { challenge: "xyz" },
+    });
+    expect(fake.challenges.putPasskeyChallenge).toHaveBeenCalledWith(
+      expect.objectContaining({ kind: "login", sub: "", username: "", challenge: "xyz" }),
+    );
+  });
+});
+
+describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
+  const cred = {
+    id: "cred-1",
+    rawId: "cred-1",
+    type: "public-key",
+    response: { clientDataJSON: "a", authenticatorData: "b", signature: "c" },
+  };
+  const loginChallenge = {
     challengeId: "c1",
-    username: "u",
-    sub: SUB,
-    phone: PHONE,
-    cognitoSession: "sess",
-    isNewUser: false,
-    resendAfterEpoch: 0,
-    attempts: 0,
+    kind: "login" as const,
+    sub: "",
+    username: "",
+    challenge: "xyz",
     ttl: 0,
   };
-  it("verifies the assertion and hands off a signed ticket", async () => {
-    fake.challenges.getChallenge.mockResolvedValue(challenge);
-    fake.cognito.respondPasskeyAuth.mockResolvedValue(cognitoResult);
+  const storedCred = {
+    credentialId: "cred-1",
+    customerSub: SUB,
+    cognitoUsername: "u",
+    publicKey: "pub-key",
+    signCount: 5,
+    transports: ["internal"],
+    createdAt: "2026-01-01T00:00:00.000Z",
+  };
+
+  it("happy path: verifies, bumps the sign count, bridges to Cognito, hands off a ticket", async () => {
+    fake.challenges.getPasskeyChallenge.mockResolvedValue(loginChallenge);
+    fake.passkeys.getByCredentialId.mockResolvedValue(storedCred);
+    webauthnMock.verifyAuthentication.mockResolvedValue({ newCounter: 6 });
+    fake.passkeyProof.sign.mockResolvedValue("proof-token");
+    fake.cognito.passkeyCustomAuth.mockResolvedValue(cognitoResult);
     fake.tickets.sign.mockResolvedValue("signed-ticket");
-    const cred = {
-      id: "x",
-      rawId: "x",
-      type: "public-key",
-      response: { clientDataJSON: "a", authenticatorData: "b", signature: "c" },
-    };
+
     const res = await post("/auth/passkey/login/verify", { challengeId: "c1", credential: cred });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ registrationTicket: "signed-ticket" });
-    expect(fake.challenges.deleteChallenge).toHaveBeenCalledWith("c1");
+
+    expect(fake.challenges.deletePasskeyChallenge).toHaveBeenCalledWith("c1"); // single-use
+    expect(webauthnMock.verifyAuthentication).toHaveBeenCalledWith(
+      expect.objectContaining({
+        expectedChallenge: "xyz",
+        expectedOrigin: ["https://wanthat.test"],
+        expectedRPID: "wanthat.test",
+        credential: expect.objectContaining({ credentialId: "cred-1", counter: 5 }),
+      }),
+    );
+    expect(fake.passkeys.updateSignCount).toHaveBeenCalledWith("cred-1", 6);
+    expect(fake.passkeyProof.sign).toHaveBeenCalledWith(SUB);
+    expect(fake.cognito.passkeyCustomAuth).toHaveBeenCalledWith("u", "proof-token");
     expect(fake.tickets.sign).toHaveBeenCalledWith(
-      expect.objectContaining({ sub: SUB, phone: PHONE }),
+      expect.objectContaining({ sub: SUB, accessToken: "a", refreshToken: "r" }),
     );
+    expect(logMock.info).toHaveBeenCalledWith("passkey_login_ok", { sub: SUB });
   });
-  it("401 invalid_passkey on a rejected assertion", async () => {
-    fake.challenges.getChallenge.mockResolvedValue(challenge);
-    fake.cognito.respondPasskeyAuth.mockRejectedValue(
-      Object.assign(new Error("bad"), { name: "NotAuthorizedException" }),
-    );
-    const cred = {
-      id: "x",
-      rawId: "x",
-      type: "public-key",
-      response: { clientDataJSON: "a", authenticatorData: "b", signature: "c" },
-    };
+
+  it("401 invalid_passkey for an unknown credential (no such-credential oracle)", async () => {
+    fake.challenges.getPasskeyChallenge.mockResolvedValue(loginChallenge);
+    fake.passkeys.getByCredentialId.mockResolvedValue(undefined);
+
     const res = await post("/auth/passkey/login/verify", { challengeId: "c1", credential: cred });
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "invalid_passkey" });
+    expect(webauthnMock.verifyAuthentication).not.toHaveBeenCalled();
+  });
+
+  it("401 invalid_passkey when the assertion fails verification", async () => {
+    fake.challenges.getPasskeyChallenge.mockResolvedValue(loginChallenge);
+    fake.passkeys.getByCredentialId.mockResolvedValue(storedCred);
+    webauthnMock.verifyAuthentication.mockRejectedValue(new Error("bad signature"));
+
+    const res = await post("/auth/passkey/login/verify", { challengeId: "c1", credential: cred });
+    expect(res.status).toBe(401);
+    expect(await res.json()).toEqual({ error: "invalid_passkey" });
+    expect(fake.passkeys.updateSignCount).not.toHaveBeenCalled();
+    expect(fake.cognito.passkeyCustomAuth).not.toHaveBeenCalled();
+  });
+
+  it("400s when the challenge is missing or already spent (single-use)", async () => {
+    fake.challenges.getPasskeyChallenge.mockResolvedValue(undefined);
+    const res = await post("/auth/passkey/login/verify", { challengeId: "gone", credential: cred });
+    expect(res.status).toBe(400);
+    expect(fake.passkeys.getByCredentialId).not.toHaveBeenCalled();
   });
 });

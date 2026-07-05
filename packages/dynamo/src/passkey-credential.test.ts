@@ -4,6 +4,7 @@ import { PasskeyCredentialRepo } from "./passkey-credential";
 const item = {
   credentialId: "cred-1",
   customerSub: "sub-1",
+  cognitoUsername: "u-1",
   publicKey: "cG9zZS1wdWJsaWMta2V5",
   signCount: 0,
   transports: ["internal"],

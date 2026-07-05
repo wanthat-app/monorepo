@@ -8,7 +8,7 @@ import type { OtpChannel } from "@wanthat/contracts";
 
 /**
  * Repository over the `auth_challenge` table (ADR-0020) — short-lived server state for the OTP flow.
- * Two record kinds share the `challengeId` partition key (disjoint id namespaces, tagged by
+ * Record kinds share the `challengeId` partition key (disjoint id namespaces, tagged by
  * `recordType`):
  *
  *  - **challenge** — one per `/auth/start`: the Cognito `Session` (rotated on each resend), whether
@@ -17,8 +17,13 @@ import type { OtpChannel } from "@wanthat/contracts";
  *  - **ticket** — issued by `/auth/verify` for a not-yet-registered user: the freshly minted tokens
  *    are parked here (never handed to the client until `/auth/register`), keyed by an unguessable id
  *    that `/auth/register` presents back as an HMAC-signed registration ticket.
+ *  - **pk-challenge** (ADR-0024) — one per passkey register/login ceremony: the single-use WebAuthn
+ *    `challenge` we issued, so `app-auth` (which now owns the WebAuthn verification itself, not
+ *    Cognito) can check it at verify time. Registration challenges carry the caller's `sub`/`username`
+ *    (from the access token); login challenges are issued userless (`sub`/`username` empty) since the
+ *    assertion itself resolves the credential.
  *
- * Both carry a Unix-seconds `ttl` so abandoned state self-cleans via DynamoDB TTL.
+ * All carry a Unix-seconds `ttl` so abandoned state self-cleans via DynamoDB TTL.
  */
 
 export interface ChallengeRecord {
@@ -46,6 +51,18 @@ export interface TicketRecord {
   idToken: string;
   refreshToken: string;
   expiresIn: number;
+  ttl: number;
+}
+
+/** A single-use WebAuthn ceremony challenge (ADR-0024). `sub`/`username` are empty for a userless
+ * login challenge — the assertion resolves the credential, not the challenge record. */
+export interface PasskeyChallengeRecord {
+  challengeId: string;
+  kind: "reg" | "login";
+  sub: string;
+  username: string;
+  /** The base64url `options.challenge` we issued; checked against the credential response at verify. */
+  challenge: string;
   ttl: number;
 }
 
@@ -94,5 +111,23 @@ export class AuthChallengeRepo {
     await this.doc.send(
       new DeleteCommand({ TableName: this.tableName, Key: { challengeId: ticketId } }),
     );
+  }
+
+  async putPasskeyChallenge(rec: PasskeyChallengeRecord): Promise<void> {
+    await this.doc.send(
+      new PutCommand({ TableName: this.tableName, Item: { recordType: "pk-challenge", ...rec } }),
+    );
+  }
+
+  async getPasskeyChallenge(challengeId: string): Promise<PasskeyChallengeRecord | undefined> {
+    const res = await this.doc.send(
+      new GetCommand({ TableName: this.tableName, Key: { challengeId } }),
+    );
+    if (res.Item?.recordType !== "pk-challenge") return undefined;
+    return res.Item as unknown as PasskeyChallengeRecord;
+  }
+
+  async deletePasskeyChallenge(challengeId: string): Promise<void> {
+    await this.doc.send(new DeleteCommand({ TableName: this.tableName, Key: { challengeId } }));
   }
 }

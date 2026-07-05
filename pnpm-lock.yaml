@@ -239,6 +239,9 @@ importers:
       '@wanthat/dynamo':
         specifier: workspace:*
         version: link:../../packages/dynamo
+      '@wanthat/webauthn':
+        specifier: workspace:*
+        version: link:../../packages/webauthn
       hono:
         specifier: ^4.6.0
         version: 4.12.27

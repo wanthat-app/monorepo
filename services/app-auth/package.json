@@ -15,6 +15,7 @@
     "@wanthat/auth": "workspace:*",
     "@wanthat/contracts": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
+    "@wanthat/webauthn": "workspace:*",
     "hono": "^4.6.0"
   }
 }
