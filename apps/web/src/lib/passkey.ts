@@ -12,25 +12,28 @@ export function passkeysSupported(): boolean {
  * WebAuthn ceremony in the browser, and register the attestation. Returns the new credential id.
  */
 export async function enrollPasskey(accessToken: string): Promise<string> {
-  const { options } = await authApi.passkeyRegisterOptions(accessToken);
+  const { challengeId, options } = await authApi.passkeyRegisterOptions(accessToken);
   // Cognito returns standard WebAuthn creation-options JSON, which startRegistration consumes.
   const credential = await startRegistration({
     // biome-ignore lint/suspicious/noExplicitAny: options is the server-generated WebAuthn document
     optionsJSON: options as any,
   });
-  const { passkey } = await authApi.passkeyRegisterVerify(credential, accessToken);
+  const { passkey } = await authApi.passkeyRegisterVerify(challengeId, credential, accessToken);
   return passkey.credentialId;
 }
 
 /**
- * Username-hinted passkey login (ADR-0022 Flow B): fetch the WebAuthn assertion options for the
- * remembered phone, run the biometric ceremony, verify, then resolve the session. Same origin as
- * enrolment, so the passkey's RP-ID matches — no hosted-UI redirect. Throws on cancel/failure; the
- * caller falls back to OTP.
+ * Userless discoverable passkey login (ADR-0024): no phone/username anywhere. The server's login
+ * challenge carries an empty allowCredentials, so the OS shows a modal picker with the member's
+ * passkeys registered for this origin; the member taps one and authenticates biometrically. Same
+ * origin as enrolment, so the passkey's RP-ID matches — no hosted-UI redirect. Throws on
+ * cancel/failure; the caller falls back to OTP.
  */
-export async function loginWithPasskey(phone: string): Promise<AuthSession> {
-  const { challengeId, options } = await authApi.passkeyLoginOptions(phone);
-  // biome-ignore lint/suspicious/noExplicitAny: options is the server-generated WebAuthn document
+export async function loginWithPasskey(): Promise<AuthSession> {
+  const { challengeId, options } = await authApi.passkeyLoginChallenge();
+  // Modal discoverable get(): the server sent an empty allowCredentials, so the OS shows the
+  // member's passkeys for this origin. (Autofill/conditional UI is Slice 2.)
+  // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
   const credential = await startAuthentication({ optionsJSON: options as any });
   const { registrationTicket } = await authApi.passkeyLoginVerify(challengeId, credential);
   const res = await authApi.session(registrationTicket);

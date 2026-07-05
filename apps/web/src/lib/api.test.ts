@@ -19,12 +19,30 @@ describe("api client", () => {
   });
 
   it("attaches the Bearer token for authorised calls", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ options: {} }) });
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ challengeId: "c1", options: {} }),
+    });
     vi.stubGlobal("fetch", fetchMock);
 
     await authApi.passkeyRegisterOptions("tok-123");
     const call = fetchMock.mock.calls[0] as [string, { headers: Record<string, string> }];
     expect(call[1].headers.authorization).toBe("Bearer tok-123");
+  });
+
+  it("GETs the userless passkey login challenge with no body or token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ challengeId: "c1", options: {} }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await authApi.passkeyLoginChallenge();
+    expect(res.challengeId).toBe("c1");
+    const call = fetchMock.mock.calls[0] as [string, { method?: string; body?: unknown }];
+    expect(call[0]).toContain("/auth/passkey/login/challenge");
+    expect(call[1].method ?? "GET").toBe("GET");
+    expect(call[1].body).toBeUndefined();
   });
 
   it("throws ApiError carrying the server error code", async () => {
