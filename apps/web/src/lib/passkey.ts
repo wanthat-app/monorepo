@@ -11,6 +11,31 @@ export function passkeysSupported(): boolean {
   return typeof window !== "undefined" && !!window.PublicKeyCredential;
 }
 
+const PASSKEY_DEVICE_KEY = "wanthat.passkeyDevice";
+
+/**
+ * Mark that this device has successfully used a passkey here (login or enrolment). On the next visit
+ * the auth screen fires an AUTOMATIC modal passkey prompt on load (Face ID pops with no tap). We gate
+ * the auto-prompt on this flag so a brand-new visitor / signup is NOT hit with a Face ID sheet they
+ * can't satisfy — they get the gentle autofill offer first, which sets this flag once they use it.
+ */
+export function markPasskeyDevice(): void {
+  try {
+    localStorage.setItem(PASSKEY_DEVICE_KEY, "1");
+  } catch {
+    // storage disabled (private mode) — degrade to the non-auto path, no crash.
+  }
+}
+
+/** Whether this device has used a passkey here before (gates the auto-prompt on load). */
+export function deviceHasPasskey(): boolean {
+  try {
+    return localStorage.getItem(PASSKEY_DEVICE_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
 /**
  * Whether this browser supports WebAuthn *conditional UI* (autofill) — the passkey offering itself in
  * a field's autofill (ADR-0024 Slice 2). When true we arm {@link loginWithPasskeyAutofill} instead of
