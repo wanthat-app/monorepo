@@ -41,6 +41,8 @@ export interface ApiStackProps extends StackProps {
   readonly phoneVelocityTable: dynamodb.ITable;
   readonly notificationOutboxTable: dynamodb.ITable;
   readonly passkeyCredentialTable: dynamodb.ITable;
+  /** From IdentityStack — app-auth signs the CUSTOM_AUTH proof the trigger trio verifies (ADR-0024). */
+  readonly passkeyProofSecret: secretsmanager.Secret;
   // In-VPC placement + Aurora (ADR-0004/0020/0021) — app-core only.
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
@@ -108,10 +110,17 @@ export class ApiStack extends Stack {
         USER_POOL_ID: props.userPool.userPoolId,
         USER_POOL_CLIENT_ID: props.userPoolClient.userPoolClientId,
         AUTH_TICKET_SECRET_ARN: ticketSecret.secretArn,
+        // ADR-0024: signs the CUSTOM_AUTH proof the passkey trigger trio verifies, and pins the
+        // WebAuthn ceremony to this site (rpId is the registrable domain; origins are the exact
+        // SPA origins) so an assertion for another origin/RP is rejected.
+        PASSKEY_PROOF_SECRET_ARN: props.passkeyProofSecret.secretArn,
+        WEBAUTHN_RP_ID: wanthatEnv.domainName ?? "",
+        WEBAUTHN_ORIGINS: webOrigins(wanthatEnv).join(","),
       },
       bundling: { minify: true, sourceMap: true },
     });
     this.appAuthFn = appAuthFn;
+    props.passkeyProofSecret.grantRead(appAuthFn);
 
     // DynamoDB: auth working tables RW, guest attribution RW, config read.
     props.authChallengeTable.grantReadWriteData(appAuthFn);
