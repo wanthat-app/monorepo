@@ -81,6 +81,19 @@ export class Cognito {
     }
   }
 
+  /** The E.164 phone (sign-in alias) for a user by username, or null. Fills the passkey-login ticket. */
+  async getPhone(username: string): Promise<string | null> {
+    try {
+      const res = await this.client.send(
+        new AdminGetUserCommand({ UserPoolId: this.userPoolId, Username: username }),
+      );
+      return res.UserAttributes?.find((a) => a.Name === "phone_number")?.Value ?? null;
+    } catch (err) {
+      if (err instanceof UserNotFoundException) return null;
+      throw err;
+    }
+  }
+
   /**
    * Create a CONFIRMED user for a new phone (ADR-0020): suppressed invite + a random permanent
    * password the member never uses (auth is passwordless OTP/passkey).

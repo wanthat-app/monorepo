@@ -16,6 +16,7 @@ const { fake } = vi.hoisted(() => ({
       refresh: vi.fn(),
       revoke: vi.fn(),
       passkeyCustomAuth: vi.fn(),
+      getPhone: vi.fn(),
     },
     challenges: {
       putChallenge: vi.fn(),
@@ -594,6 +595,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
     webauthnMock.verifyAuthentication.mockResolvedValue({ newCounter: 6 });
     fake.passkeyProof.sign.mockResolvedValue("proof-token");
     fake.cognito.passkeyCustomAuth.mockResolvedValue(cognitoResult);
+    fake.cognito.getPhone.mockResolvedValue("+972541234567");
     fake.tickets.sign.mockResolvedValue("signed-ticket");
 
     const res = await post("/auth/passkey/login/verify", { challengeId: "c1", credential: cred });
@@ -612,10 +614,29 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
     expect(fake.passkeys.updateSignCount).toHaveBeenCalledWith("cred-1", 6);
     expect(fake.passkeyProof.sign).toHaveBeenCalledWith(SUB);
     expect(fake.cognito.passkeyCustomAuth).toHaveBeenCalledWith("u", "proof-token");
+    // Ticket carries the REAL phone from Cognito, never "" (empty would corrupt Aurora on /auth/register).
     expect(fake.tickets.sign).toHaveBeenCalledWith(
-      expect.objectContaining({ sub: SUB, accessToken: "a", refreshToken: "r" }),
+      expect.objectContaining({
+        sub: SUB,
+        phone: "+972541234567",
+        accessToken: "a",
+        refreshToken: "r",
+      }),
     );
     expect(logMock.info).toHaveBeenCalledWith("passkey_login_ok", { sub: SUB });
+  });
+
+  it("401 invalid_passkey when the user has no phone on record (never mints an empty-phone ticket)", async () => {
+    fake.challenges.getPasskeyChallenge.mockResolvedValue(loginChallenge);
+    fake.passkeys.getByCredentialId.mockResolvedValue(storedCred);
+    webauthnMock.verifyAuthentication.mockResolvedValue({ newCounter: 6 });
+    fake.passkeyProof.sign.mockResolvedValue("proof-token");
+    fake.cognito.passkeyCustomAuth.mockResolvedValue(cognitoResult);
+    fake.cognito.getPhone.mockResolvedValue(null);
+
+    const res = await post("/auth/passkey/login/verify", { challengeId: "c1", credential: cred });
+    expect(res.status).toBe(401);
+    expect(fake.tickets.sign).not.toHaveBeenCalled();
   });
 
   it("401 invalid_passkey for an unknown credential (no such-credential oracle)", async () => {

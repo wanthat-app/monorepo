@@ -476,17 +476,15 @@ export function authRouter(): Hono {
     const result = await ctx.cognito.passkeyCustomAuth(cred.cognitoUsername, proof);
     const tokens = toAuthTokens(result);
 
-    // Same self-contained ticket shape as /auth/verify. `phone` is unknown on this path (we never
-    // asked for one) — passed empty. Safe for /auth/session's normal `authenticated` branch (it reads
-    // `existing.phone` from Aurora, never `ticket.phone`). NOT safe if `/auth/register`'s new-customer
-    // branch is ever reached from here — it writes `phone: ticket.phone` verbatim (see app-core
-    // register.ts) — but that requires enrolling a passkey before completing registration, which the
-    // enrol routes don't currently prevent (they only require a valid Bearer token, not an existing
-    // Aurora row). Flagged for review; not fixed here (would need either a phone lookup or gating
-    // enrolment on registration-complete).
+    // The ticket carries the REAL phone (from Cognito, the sign-in alias) — never an empty string:
+    // if `/auth/register`'s new-customer branch were ever reached from a passkey ticket it writes
+    // `ticket.phone` verbatim to Aurora, so an empty phone would corrupt the row. Fetch it here and
+    // refuse to mint a ticket without one. (app-auth reads Cognito, not Aurora — ADR-0021.)
+    const phone = await ctx.cognito.getPhone(cred.cognitoUsername);
+    if (!phone) return c.json({ error: "invalid_passkey" }, 401);
     const registrationTicket = await ctx.tickets.sign({
       sub: cred.customerSub,
-      phone: "",
+      phone,
       accessToken: tokens.accessToken,
       idToken: tokens.idToken,
       refreshToken: tokens.refreshToken,
