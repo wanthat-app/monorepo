@@ -1,5 +1,5 @@
 import { Signer } from "@aws-sdk/rds-signer";
-import { Kysely, PostgresDialect } from "kysely";
+import { Kysely, PostgresDialect, sql } from "kysely";
 import pg from "pg";
 import type { Database } from "./schema";
 
@@ -63,4 +63,39 @@ export function createDb(cfg: DbConfig): Kysely<Database> {
     connectionTimeoutMillis: 60_000,
   });
   return new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
+}
+
+/**
+ * Wait until the database accepts a connection, riding out an Aurora Serverless v2 scale-to-zero
+ * resume (min ACU 0, ADR-0003). A cold/paused cluster refuses the connection — at the OS/TCP layer a
+ * `connect ETIMEDOUT` fires around ~21s, *before* pg's 60s connect timeout even applies — so a single
+ * attempt fails. The attempt itself triggers the resume; retrying with a short backoff catches the
+ * cluster once it is up (typically 1-3 attempts, tens of seconds). Used by the one-shot DB migrator,
+ * whose deploy would otherwise fail whenever a deploy happens to fire while the cluster is paused.
+ * Rethrows the last error if the cluster never comes up within the budget (a genuine failure).
+ */
+export async function waitForDb(
+  db: Kysely<Database>,
+  opts: {
+    attempts?: number;
+    delayMs?: number;
+    log?: (msg: string, ctx: Record<string, unknown>) => void;
+  } = {},
+): Promise<void> {
+  const attempts = opts.attempts ?? 8;
+  const delayMs = opts.delayMs ?? 5_000;
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    try {
+      await sql`select 1`.execute(db);
+      return;
+    } catch (err) {
+      if (attempt === attempts) throw err;
+      opts.log?.("db_connect_retry", {
+        attempt,
+        of: attempts,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+    }
+  }
 }

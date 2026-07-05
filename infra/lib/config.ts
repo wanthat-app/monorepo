@@ -194,7 +194,13 @@ export const MIGRATIONS_DIR_ENV = { MIGRATIONS_DIR: "/var/task/migrations" } as 
 
 export const migratorBundling = {
   minify: true,
-  sourceMap: true,
+  // sourceMap OFF on purpose: source maps embed absolute pnpm-store paths (which carry
+  // lockfile-dependent hashes), so a sourcemapped bundle's asset hash CHURNS whenever pnpm-lock
+  // changes for ANY reason — even unrelated packages. That churn bumps the migrator's Lambda
+  // `currentVersion`, which is what the MigrateTrigger keys on, so the one-shot migrator re-ran (and
+  // re-hit a possibly-cold Aurora) on nearly every deploy. Without source maps the migrator's asset is
+  // stable, so it re-runs only when its own code or the `.sql` migrations actually change.
+  sourceMap: false,
   commandHooks: {
     beforeBundling: () => [],
     beforeInstall: () => [],

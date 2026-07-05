@@ -8,5 +8,5 @@ export {
   updateProfile,
 } from "./customer";
 export { createMigrator } from "./migrator";
-export { createDb, type DbConfig } from "./pool";
+export { createDb, type DbConfig, waitForDb } from "./pool";
 export type { AuditLogTable, CustomerTable, Database, WalletEntryTable } from "./schema";

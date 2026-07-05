@@ -217,6 +217,10 @@ export class DataStack extends Stack {
     new Trigger(this, "MigrateTrigger", {
       handler: migratorFn,
       executeAfter: [this.cluster],
+      // Match the migrator's 5-min Lambda timeout. The Trigger's invocation timeout defaults to 2 min,
+      // which would fail the deploy if a cold Aurora resume + migrations legitimately run past 2 min
+      // even though the Lambda itself has 5 (the migrator now retries the connect via waitForDb).
+      timeout: Duration.minutes(5),
     });
   }
 }

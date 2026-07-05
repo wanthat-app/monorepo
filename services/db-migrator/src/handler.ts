@@ -13,7 +13,7 @@
  */
 import { Logger } from "@aws-lambda-powertools/logger";
 import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
-import { createDb, createMigrator } from "@wanthat/db";
+import { createDb, createMigrator, waitForDb } from "@wanthat/db";
 
 const SERVICE = "db-migrator";
 const logger = new Logger({ serviceName: SERVICE });
@@ -49,6 +49,10 @@ export const handler = async (): Promise<{ status: "ok"; applied: string[] }> =>
   });
 
   try {
+    // Ride out a scale-to-zero cold resume before migrating: the cluster (min ACU 0, ADR-0003) may be
+    // paused when this deploy fires, so the first connection ETIMEDOUTs — retry until it wakes. Without
+    // this, any deploy that runs the migrator against a paused cluster fails and rolls back the stack.
+    await waitForDb(db, { log: (msg, ctx) => logger.warn(msg, ctx) });
     // The .sql files are shipped in the bundle at MIGRATIONS_DIR (/var/task/migrations); see DataStack.
     const { error, results } = await createMigrator(
       db,
