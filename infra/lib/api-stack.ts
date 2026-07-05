@@ -40,6 +40,7 @@ export interface ApiStackProps extends StackProps {
   readonly authChallengeTable: dynamodb.ITable;
   readonly phoneVelocityTable: dynamodb.ITable;
   readonly notificationOutboxTable: dynamodb.ITable;
+  readonly passkeyCredentialTable: dynamodb.ITable;
   // In-VPC placement + Aurora (ADR-0004/0020/0021) — app-core only.
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
@@ -103,6 +104,7 @@ export class ApiStack extends Stack {
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
         AUTH_CHALLENGE_TABLE: props.authChallengeTable.tableName,
         PHONE_VELOCITY_TABLE: props.phoneVelocityTable.tableName,
+        PASSKEY_CREDENTIAL_TABLE: props.passkeyCredentialTable.tableName,
         USER_POOL_ID: props.userPool.userPoolId,
         USER_POOL_CLIENT_ID: props.userPoolClient.userPoolClientId,
         AUTH_TICKET_SECRET_ARN: ticketSecret.secretArn,
@@ -116,6 +118,8 @@ export class ApiStack extends Stack {
     props.phoneVelocityTable.grantReadWriteData(appAuthFn);
     props.guestAttributionTable.grantReadWriteData(appAuthFn);
     props.runtimeConfigTable.grantReadData(appAuthFn);
+    // ADR-0024: put on enrol, get on login, updateSignCount after login, query for exclude-list.
+    props.passkeyCredentialTable.grantReadWriteData(appAuthFn);
     ticketSecret.grantRead(appAuthFn);
 
     // Scoped Cognito control-plane actions on this pool only (ADR-0020).

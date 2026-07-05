@@ -71,6 +71,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   authChallengeTable: data.authChallengeTable,
   phoneVelocityTable: data.phoneVelocityTable,
   notificationOutboxTable: data.notificationOutboxTable,
+  passkeyCredentialTable: data.passkeyCredentialTable,
   vpc: network.vpc,
   lambdaSg: network.lambdaSg,
   cluster: data.cluster,
