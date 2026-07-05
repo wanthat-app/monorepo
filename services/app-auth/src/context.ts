@@ -27,8 +27,9 @@ export interface AuthContext {
   tickets: TicketSigner;
   /** Own-store passkey credentials (ADR-0024) — `app-auth` verifies WebAuthn itself, not Cognito. */
   passkeys: PasskeyCredentialRepo;
-  /** Signs/verifies the short-lived proof that bridges a verified passkey login into Cognito's
-   * CUSTOM_AUTH triggers (ADR-0024) — see {@link Cognito.passkeyCustomAuth}. */
+  /** Signs/verifies the short-lived HMAC proof from the original CUSTOM_AUTH bridge design (ADR-0024).
+   * Currently unused on the login path — the ESSENTIALS pool rejects CUSTOM_AUTH, so login mints tokens
+   * via {@link Cognito.passkeyAdminAuth} instead. Retained pending the ADR update + cleanup. */
   passkeyProof: PasskeyProofSigner;
   /** WebAuthn Relying Party identity (ADR-0024): `rpId` is the site's registrable domain;
    * `origins` are the exact origins the SPA is served from. Both pin `verifyRegistration`/

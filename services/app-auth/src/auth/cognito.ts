@@ -52,8 +52,8 @@ export function toAuthTokens(
  * disables PrivateLink, ADR-0021). The unified flow creates a user on the fly for an unseen phone,
  * then drives the choice-based USER_AUTH SMS-OTP flow. Passkeys are no longer a Cognito WEB_AUTHN
  * challenge (ADR-0024): `app-auth` owns the WebAuthn ceremony itself against our own
- * `passkey_credential` store, then bridges into Cognito via `passkeyCustomAuth`'s CUSTOM_AUTH flow
- * purely to mint tokens.
+ * `passkey_credential` store, then bridges into Cognito via `passkeyAdminAuth` (an ephemeral
+ * server-set password) purely to mint tokens — the ESSENTIALS pool rejects CUSTOM_AUTH.
  */
 export class Cognito {
   private readonly client: CognitoIdentityProviderClient;
@@ -173,26 +173,36 @@ export class Cognito {
    * assertion itself, then proves it to Cognito's CUSTOM_AUTH triggers via a short-lived HMAC proof
    * passed as the challenge ANSWER. `username` is the Cognito username stored with the credential.
    */
-  async passkeyCustomAuth(username: string, proof: string): Promise<AuthenticationResultType> {
-    const init = await this.client.send(
+  /**
+   * Mint tokens for an already-verified passkey login (ADR-0024 bridge). app-auth verified the
+   * WebAuthn assertion itself against our own `passkey_credential` store; this exchanges that trust
+   * for real Cognito tokens. Our ESSENTIALS/choice-based pool rejects `AuthFlow=CUSTOM_AUTH`
+   * (CUSTOM_AUTH is not a valid auth factor on this tier), so instead of the CUSTOM_AUTH+HMAC-proof
+   * design we set a fresh random password server-side and immediately consume it via
+   * ADMIN_USER_PASSWORD_AUTH. The password is 40+ chars, NEVER returned to the client or logged, and
+   * rotated on every login; the member stays passwordless (they only ever use OTP/passkey). `username`
+   * is the Cognito username stored with the credential.
+   * NOTE: deviates from ADR-0024's stated CUSTOM_AUTH bridge pending an ADR update.
+   */
+  async passkeyAdminAuth(username: string): Promise<AuthenticationResultType> {
+    const password = `${randomBytes(24).toString("base64url")}aA1!`;
+    await this.client.send(
+      new AdminSetUserPasswordCommand({
+        UserPoolId: this.userPoolId,
+        Username: username,
+        Password: password,
+        Permanent: true,
+      }),
+    );
+    const res = await this.client.send(
       new AdminInitiateAuthCommand({
         UserPoolId: this.userPoolId,
         ClientId: this.clientId,
-        AuthFlow: "CUSTOM_AUTH",
-        AuthParameters: { USERNAME: username },
+        AuthFlow: "ADMIN_USER_PASSWORD_AUTH",
+        AuthParameters: { USERNAME: username, PASSWORD: password },
       }),
     );
-    if (!init.Session) throw new Error("passkeyCustomAuth: no session from CUSTOM_AUTH initiate");
-    const res = await this.client.send(
-      new AdminRespondToAuthChallengeCommand({
-        UserPoolId: this.userPoolId,
-        ClientId: this.clientId,
-        ChallengeName: "CUSTOM_CHALLENGE",
-        Session: init.Session,
-        ChallengeResponses: { USERNAME: username, ANSWER: proof },
-      }),
-    );
-    if (!res.AuthenticationResult) throw new Error("passkeyCustomAuth: no AuthenticationResult");
+    if (!res.AuthenticationResult) throw new Error("passkeyAdminAuth: no AuthenticationResult");
     return res.AuthenticationResult;
   }
 

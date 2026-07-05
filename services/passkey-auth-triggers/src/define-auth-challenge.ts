@@ -21,15 +21,22 @@ export interface DefineAuthChallengeEvent {
  */
 export function defineAuthChallenge(event: DefineAuthChallengeEvent): DefineAuthChallengeEvent {
   const sessions = event.request.session ?? [];
-  if (sessions.length === 0) {
+  // Look only at CUSTOM_CHALLENGE rounds. On this Essentials / choice-based (USER_AUTH) pool, Cognito
+  // can seed the first DefineAuthChallenge session with a NON-custom entry (e.g. an initial factor
+  // selection) — a naive `session.length === 0` check would then fall into the else branch and fail
+  // the auth outright. We instead present a CUSTOM_CHALLENGE until exactly one has been attempted, and
+  // decide the outcome from that attempt (one-shot: a wrong/missing proof fails the sign-in).
+  const custom = sessions.filter((s) => s.challengeName === "CUSTOM_CHALLENGE");
+  if (custom.some((s) => s.challengeResult === true)) {
+    event.response.issueTokens = true;
+    event.response.failAuthentication = false;
+  } else if (custom.length > 0) {
+    event.response.issueTokens = false;
+    event.response.failAuthentication = true;
+  } else {
     event.response.issueTokens = false;
     event.response.failAuthentication = false;
     event.response.challengeName = "CUSTOM_CHALLENGE";
-  } else {
-    const last = sessions[sessions.length - 1];
-    const ok = last?.challengeName === "CUSTOM_CHALLENGE" && last?.challengeResult === true;
-    event.response.issueTokens = ok;
-    event.response.failAuthentication = !ok;
   }
   return event;
 }
