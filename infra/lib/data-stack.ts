@@ -44,6 +44,7 @@ export class DataStack extends Stack {
   readonly authChallengeTable: dynamodb.Table;
   readonly phoneVelocityTable: dynamodb.Table;
   readonly notificationOutboxTable: dynamodb.Table;
+  readonly passkeyCredentialTable: dynamodb.Table;
   /** Absent in prod by design (fail-closed) — see the DevOtpSink construct below. */
   readonly devOtpSinkTable?: dynamodb.Table;
   readonly retailerSecret: secretsmanager.Secret;
@@ -115,6 +116,18 @@ export class DataStack extends Stack {
       timeToLiveAttribute: "ttl",
       stream: dynamodb.StreamViewType.NEW_IMAGE,
       ...common,
+    });
+
+    // ADR-0024: passkey public keys we store + verify ourselves (Cognito no longer holds them).
+    // PK credentialId; byCustomerSub GSI lists a member's passkeys. Non-PII (sub + public key).
+    this.passkeyCredentialTable = new dynamodb.Table(this, "PasskeyCredential", {
+      partitionKey: { name: "credentialId", type: dynamodb.AttributeType.STRING },
+      ...common,
+    });
+    this.passkeyCredentialTable.addGlobalSecondaryIndex({
+      indexName: "byCustomerSub",
+      partitionKey: { name: "customerSub", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "createdAt", type: dynamodb.AttributeType.STRING },
     });
 
     // Dev OTP sink (auth.otpSink = "devSink", docs/dev-otp-sink.md): message-sender parks codes

@@ -30,7 +30,6 @@ const en = {
     trySms: "Try SMS instead",
     finish: "Create account",
     passkeyCta: "Sign in with {{label}}",
-    differentNumber: "Use a different number",
     biometric: {
       faceId: "Face ID",
       touchId: "Touch ID",
@@ -186,7 +185,6 @@ const he: typeof en = {
     trySms: "לנסות ב-SMS",
     finish: "יצירת חשבון",
     passkeyCta: "כניסה עם {{label}}",
-    differentNumber: "מספר אחר",
     biometric: {
       faceId: "Face ID",
       touchId: "Touch ID",

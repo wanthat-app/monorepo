@@ -11,13 +11,20 @@ import {
   AuthVerifyBody,
   AuthVerifyResponse,
   normalizePhone,
-  PasskeyLoginOptionsBody,
-  PasskeyLoginOptionsResponse,
+  PasskeyLoginChallengeResponse,
   PasskeyLoginVerifyBody,
+  PasskeyLoginVerifyResponse,
   PasskeyRegisterOptionsBody,
+  PasskeyRegisterOptionsResponse,
   PasskeyRegisterVerifyBody,
   PasskeyRegisterVerifyResponse,
 } from "@wanthat/contracts";
+import {
+  buildAuthenticationOptions,
+  buildRegistrationOptions,
+  verifyAuthentication,
+  verifyRegistration,
+} from "@wanthat/webauthn";
 import { Hono } from "hono";
 import { getContext } from "../context";
 import { OTP_REJECTION_ERRORS, toAuthTokens } from "./cognito";
@@ -29,6 +36,9 @@ const OTP_EXPIRES_SEC = 180; // Cognito SMS OTP lifetime (~3 min)
 const CHALLENGE_TTL_SEC = 600;
 const TICKET_TTL_SEC = 600;
 const MAX_OTP_ATTEMPTS = 5;
+// WebAuthn ceremonies are a single round trip; a generous-but-bounded window in case the platform
+// authenticator prompt sits open for a while (ADR-0024).
+const PASSKEY_CHALLENGE_TTL_SEC = 300;
 
 const nowEpoch = (): number => Math.floor(Date.now() / 1000);
 
@@ -41,6 +51,25 @@ const logger = new Logger({ serviceName: "app-auth" });
 function bearerToken(c: { req: { header: (n: string) => string | undefined } }): string | null {
   const h = c.req.header("Authorization");
   return h?.startsWith("Bearer ") ? h.slice(7) : null;
+}
+
+/**
+ * Decode (NOT re-verify) an access token's `sub` + `username` claims. Safe ONLY because the passkey
+ * enrol routes sit behind the JWT authorizer (ADR-0024): API Gateway has already verified the token's
+ * signature/expiry before this Lambda runs, so re-verifying here would be redundant — we just need to
+ * read the claims it already vetted.
+ */
+function tokenClaims(token: string): { sub: string; username: string } | null {
+  try {
+    const seg = token.split(".")[1];
+    if (!seg) return null;
+    const c = JSON.parse(Buffer.from(seg, "base64url").toString("utf8"));
+    return typeof c.sub === "string" && typeof c.username === "string"
+      ? { sub: c.sub, username: c.username }
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 /** Parse a JSON body against a Zod schema; returns the value or null (the caller 400s on null). */
@@ -302,118 +331,167 @@ export function authRouter(): Hono {
     return c.json({ ok: true } as const);
   });
 
-  // --- Passkeys (ADR-0006/0020) ---
-  // Enrolment is API-driven and authorised by the caller's access token (Cognito's WebAuthn
-  // registration is access-token-scoped), so these sit under /auth but read the Bearer directly.
+  // --- Passkeys (ADR-0024) ---
+  // We now own the whole WebAuthn ceremony ourselves (via @wanthat/webauthn), verifying against our
+  // own `passkey_credential` store rather than delegating to Cognito's WEB_AUTHN challenge. Cognito
+  // is only re-entered at the very end of login, to mint tokens via CUSTOM_AUTH (see
+  // `Cognito.passkeyCustomAuth`) — it never sees the assertion.
   //
-  // Passkey *login* (below, ADR-0022 Flow B) is username-hinted, not discoverable: Cognito's raw
-  // API requires a username for the WEB_AUTHN challenge. The phone (Cognito username) is remembered
-  // client-side after any sign-in and replayed silently, so a returning device still gets
-  // "visit -> biometric -> in" with no phone prompt. True discoverable (userless) login would go
-  // through Managed Login (Flow C) — currently non-functional (its origin can't consume a passkey
-  // bound to this site's RP-ID); see the plan's closing note.
+  // Enrolment (register/*) sits behind the JWT authorizer: the caller's access token — already
+  // signature/expiry-verified by API Gateway — is decoded (not re-verified) via `tokenClaims` to read
+  // `sub`/`username`.
+  //
+  // Login (login/*) is PUBLIC and userless/discoverable (ADR-0024): no phone/username is ever sent;
+  // the platform authenticator resolves the resident credential and the assertion's credentialId
+  // resolves the member server-side.
 
   auth.post("/passkey/register/options", async (c) => {
     const token = bearerToken(c);
     if (!token) return c.json({ error: "unauthorized" }, 401);
+    const claims = tokenClaims(token);
+    if (!claims) return c.json({ error: "unauthorized" }, 401);
     if (!(await parseBody(c, PasskeyRegisterOptionsBody)))
       return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
-    // `options` is server-generated and passed straight to the browser; the contract types it loosely.
-    const options = await ctx.cognito.startWebAuthnRegistration(token);
-    return c.json({ options });
+    const { sub, username } = claims;
+
+    const existing = await ctx.passkeys.listByCustomer(sub);
+    const options = await buildRegistrationOptions({
+      rpID: ctx.webauthn.rpId,
+      rpName: "Wanthat",
+      sub,
+      userName: sub,
+      displayName: sub,
+      excludeCredentialIds: existing.map((cred) => cred.credentialId),
+    });
+
+    const challengeId = randomUUID();
+    await ctx.challenges.putPasskeyChallenge({
+      challengeId,
+      kind: "reg",
+      sub,
+      username,
+      challenge: options.challenge,
+      ttl: nowEpoch() + PASSKEY_CHALLENGE_TTL_SEC,
+    });
+    return c.json(PasskeyRegisterOptionsResponse.parse({ challengeId, options }));
   });
 
   auth.post("/passkey/register/verify", async (c) => {
     const token = bearerToken(c);
     if (!token) return c.json({ error: "unauthorized" }, 401);
+    const claims = tokenClaims(token);
+    if (!claims) return c.json({ error: "unauthorized" }, 401);
     const body = await parseBody(c, PasskeyRegisterVerifyBody);
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
-    await ctx.cognito.completeWebAuthnRegistration(token, body.credential);
-    return c.json(
-      PasskeyRegisterVerifyResponse.parse({
-        passkey: { credentialId: body.credential.id, createdAt: new Date().toISOString() },
-      }),
-    );
+
+    const rec = await ctx.challenges.consumePasskeyChallenge(body.challengeId); // atomic single-use
+    if (rec?.kind !== "reg" || rec.sub !== claims.sub || rec.ttl < nowEpoch())
+      return c.json({ error: "invalid_request" }, 400);
+
+    const { credentialId, publicKey, counter, transports } = await verifyRegistration({
+      // The Zod contract validates every field @simplewebauthn's verifier actually reads; it doesn't
+      // model `clientExtensionResults` (present on the wire, never consumed by the verifier) — same
+      // narrow cast as @wanthat/webauthn's own `transports as never`.
+      response: body.credential as never,
+      expectedChallenge: rec.challenge,
+      expectedOrigin: ctx.webauthn.origins,
+      expectedRPID: ctx.webauthn.rpId,
+    });
+
+    const createdAt = new Date().toISOString();
+    await ctx.passkeys.put({
+      credentialId,
+      customerSub: claims.sub,
+      cognitoUsername: claims.username,
+      publicKey,
+      signCount: counter,
+      transports,
+      createdAt,
+    });
+    return c.json(PasskeyRegisterVerifyResponse.parse({ passkey: { credentialId, createdAt } }));
   });
 
-  // POST /auth/passkey/login/options — begin username-hinted passkey login (ADR-0022 Flow B).
-  // Public (the assertion is the credential). The phone is the device-remembered Cognito username,
-  // never prompted on a known device. "no user" and "no passkey" collapse to one error (no oracle).
-  auth.post("/passkey/login/options", async (c) => {
-    const body = await parseBody(c, PasskeyLoginOptionsBody);
-    if (!body) return c.json({ error: "invalid_request" }, 400);
+  // GET /auth/passkey/login/challenge — begin a USERLESS discoverable passkey login (ADR-0024).
+  // Public. No user is resolved yet — the assertion's credentialId does that at verify.
+  auth.get("/passkey/login/challenge", async (c) => {
     const ctx = getContext();
-    const phone = normalizePhone(body.phone);
-    if (!phone) return c.json({ error: "invalid_request" }, 400);
-
-    const user = await ctx.cognito.getUserByPhone(phone);
-    if (!user) return c.json({ error: "passkey_unavailable" }, 409);
-
-    let session: string;
-    let options: unknown;
-    try {
-      ({ session, options } = await ctx.cognito.startPasskeyAuth(user.username));
-    } catch {
-      return c.json({ error: "passkey_unavailable" }, 409);
-    }
+    const options = await buildAuthenticationOptions({ rpID: ctx.webauthn.rpId });
 
     const challengeId = randomUUID();
-    const now = nowEpoch();
-    await ctx.challenges.putChallenge({
+    await ctx.challenges.putPasskeyChallenge({
       challengeId,
-      username: user.username,
-      sub: user.sub,
-      phone,
-      cognitoSession: session,
-      isNewUser: false,
-      resendAfterEpoch: now + RESEND_COOLDOWN_SEC,
-      attempts: 0,
-      ttl: now + CHALLENGE_TTL_SEC,
+      kind: "login",
+      sub: "",
+      username: "",
+      challenge: options.challenge,
+      ttl: nowEpoch() + PASSKEY_CHALLENGE_TTL_SEC,
     });
-    logger.info("passkey_login_start", { challengeId, sub: user.sub });
-    return c.json(PasskeyLoginOptionsResponse.parse({ challengeId, options }));
+    c.header("cache-control", "no-store");
+    return c.json(PasskeyLoginChallengeResponse.parse({ challengeId, options }));
   });
 
-  // POST /auth/passkey/login/verify — finish; hand off the SAME signed ticket as /auth/verify so
-  // /auth/session (app-core) resolves the member. The passkey holder is always already registered.
+  // POST /auth/passkey/login/verify — verify the assertion against OUR stored public key, resolve
+  // the member from the credential, bridge into Cognito (CUSTOM_AUTH) to mint tokens, then hand off
+  // the SAME signed ticket as /auth/verify so /auth/session (app-core) resolves the member. Public.
   auth.post("/passkey/login/verify", async (c) => {
     const body = await parseBody(c, PasskeyLoginVerifyBody);
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
-    const challenge = await ctx.challenges.getChallenge(body.challengeId);
-    if (!challenge) return c.json({ error: "challenge_not_found" }, 404);
+    const rec = await ctx.challenges.consumePasskeyChallenge(body.challengeId); // atomic single-use
+    if (rec?.kind !== "login" || rec.ttl < nowEpoch())
+      return c.json({ error: "invalid_request" }, 400);
 
-    let result: Awaited<ReturnType<typeof ctx.cognito.respondPasskeyAuth>>;
+    // "no such credential" and "assertion failed" collapse to the same 401 (no oracle for which
+    // credentials exist).
+    const cred = await ctx.passkeys.getByCredentialId(body.credential.id);
+    if (!cred) return c.json({ error: "invalid_passkey" }, 401);
+
+    let newCounter: number;
     try {
-      result = await ctx.cognito.respondPasskeyAuth(
-        challenge.username,
-        challenge.cognitoSession,
-        body.credential,
-      );
-    } catch (err) {
-      if (err instanceof Error && OTP_REJECTION_ERRORS.has(err.name)) {
-        await ctx.challenges.deleteChallenge(challenge.challengeId);
-        return c.json({ error: "invalid_passkey" }, 401);
-      }
-      throw err;
+      ({ newCounter } = await verifyAuthentication({
+        // See the matching comment on verifyRegistration above.
+        response: body.credential as never,
+        expectedChallenge: rec.challenge,
+        expectedOrigin: ctx.webauthn.origins,
+        expectedRPID: ctx.webauthn.rpId,
+        credential: {
+          credentialId: cred.credentialId,
+          publicKey: cred.publicKey,
+          counter: cred.signCount,
+          transports: cred.transports,
+        },
+      }));
+    } catch {
+      return c.json({ error: "invalid_passkey" }, 401);
     }
+    await ctx.passkeys.updateSignCount(cred.credentialId, newCounter);
 
-    await ctx.challenges.deleteChallenge(challenge.challengeId);
+    // We verified the assertion ourselves — Cognito never sees it. The proof is how we tell
+    // Cognito's CUSTOM_AUTH triggers "this sub is authenticated", so they mint real tokens.
+    const proof = await ctx.passkeyProof.sign(cred.customerSub);
+    const result = await ctx.cognito.passkeyCustomAuth(cred.cognitoUsername, proof);
     const tokens = toAuthTokens(result);
+
+    // The ticket carries the REAL phone (from Cognito, the sign-in alias) — never an empty string:
+    // if `/auth/register`'s new-customer branch were ever reached from a passkey ticket it writes
+    // `ticket.phone` verbatim to Aurora, so an empty phone would corrupt the row. Fetch it here and
+    // refuse to mint a ticket without one. (app-auth reads Cognito, not Aurora — ADR-0021.)
+    const phone = await ctx.cognito.getPhone(cred.cognitoUsername);
+    if (!phone) return c.json({ error: "invalid_passkey" }, 401);
     const registrationTicket = await ctx.tickets.sign({
-      sub: challenge.sub,
-      phone: challenge.phone,
+      sub: cred.customerSub,
+      phone,
       accessToken: tokens.accessToken,
       idToken: tokens.idToken,
       refreshToken: tokens.refreshToken,
       expiresIn: tokens.expiresIn,
       exp: nowEpoch() + TICKET_TTL_SEC,
     });
-    logger.info("passkey_login_ok", { sub: challenge.sub });
-    return c.json(AuthVerifyResponse.parse({ registrationTicket }));
+    logger.info("passkey_login_ok", { sub: cred.customerSub });
+    return c.json(PasskeyLoginVerifyResponse.parse({ registrationTicket }));
   });
 
   return auth;

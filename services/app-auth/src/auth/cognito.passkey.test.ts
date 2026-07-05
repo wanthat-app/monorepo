@@ -11,45 +11,37 @@ import { Cognito } from "./cognito";
 const c = new Cognito("pool", "client", "il-central-1");
 beforeEach(() => vi.clearAllMocks());
 
-describe("startPasskeyAuth", () => {
-  it("initiates USER_AUTH/WEB_AUTHN and returns the parsed request options + session", async () => {
-    send.mockResolvedValue({
-      Session: "sess",
-      ChallengeName: "WEB_AUTHN",
-      ChallengeParameters: { CREDENTIAL_REQUEST_OPTIONS: '{"challenge":"abc"}' },
-    });
-    const r = await c.startPasskeyAuth("u1");
-    expect(r).toEqual({ session: "sess", options: { challenge: "abc" } });
-    const input = send.mock.calls[0]?.[0].input;
-    expect(input.AuthFlow).toBe("USER_AUTH");
-    expect(input.AuthParameters).toMatchObject({
-      USERNAME: "u1",
-      PREFERRED_CHALLENGE: "WEB_AUTHN",
-    });
-  });
-  it("throws when no WEB_AUTHN challenge comes back (no passkey enrolled)", async () => {
-    send.mockResolvedValue({
-      Session: "s",
-      ChallengeName: "SELECT_CHALLENGE",
-      ChallengeParameters: {},
-    });
-    await expect(c.startPasskeyAuth("u1")).rejects.toThrow(/WEB_AUTHN/);
-  });
-});
-
-describe("respondPasskeyAuth", () => {
-  it("answers WEB_AUTHN with the stringified credential and returns tokens", async () => {
-    send.mockResolvedValue({
+describe("passkeyCustomAuth (ADR-0024)", () => {
+  it("initiates CUSTOM_AUTH then answers CUSTOM_CHALLENGE with the proof, returning tokens", async () => {
+    send.mockResolvedValueOnce({ Session: "sess" }).mockResolvedValueOnce({
       AuthenticationResult: { AccessToken: "a", IdToken: "i", RefreshToken: "r", ExpiresIn: 3600 },
     });
-    const cred = { id: "x", type: "public-key" };
-    const res = await c.respondPasskeyAuth("u1", "sess", cred);
+
+    const res = await c.passkeyCustomAuth("u1", "proof-token");
     expect(res.AccessToken).toBe("a");
-    const input = send.mock.calls[0]?.[0].input;
-    expect(input.ChallengeName).toBe("WEB_AUTHN");
-    expect(input.ChallengeResponses).toMatchObject({
+
+    const initInput = send.mock.calls[0]?.[0].input;
+    expect(initInput.AuthFlow).toBe("CUSTOM_AUTH");
+    expect(initInput.AuthParameters).toMatchObject({ USERNAME: "u1" });
+
+    const respondInput = send.mock.calls[1]?.[0].input;
+    expect(respondInput.ChallengeName).toBe("CUSTOM_CHALLENGE");
+    expect(respondInput.Session).toBe("sess");
+    expect(respondInput.ChallengeResponses).toMatchObject({
       USERNAME: "u1",
-      CREDENTIAL: JSON.stringify(cred),
+      ANSWER: "proof-token",
     });
+  });
+
+  it("throws when CUSTOM_AUTH initiate returns no session", async () => {
+    send.mockResolvedValueOnce({});
+    await expect(c.passkeyCustomAuth("u1", "proof-token")).rejects.toThrow(/no session/);
+  });
+
+  it("throws when the challenge response carries no AuthenticationResult", async () => {
+    send.mockResolvedValueOnce({ Session: "sess" }).mockResolvedValueOnce({});
+    await expect(c.passkeyCustomAuth("u1", "proof-token")).rejects.toThrow(
+      /no AuthenticationResult/,
+    );
   });
 });

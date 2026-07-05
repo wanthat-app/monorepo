@@ -10,7 +10,8 @@ import type {
   CustomerProfile,
   MessageLanguage,
   OtpChannel,
-  PasskeyLoginOptionsResponse,
+  PasskeyLoginChallengeResponse,
+  PasskeyRegisterOptionsResponse,
   PasskeyRegisterVerifyResponse,
 } from "@wanthat/contracts";
 import { getConfig } from "./config";
@@ -72,22 +73,21 @@ export const authApi = {
   signout: (refreshToken: string) =>
     request<{ ok: true }>("/auth/signout", { method: "POST", body: { refreshToken } }),
   passkeyRegisterOptions: (token: string) =>
-    request<{ options: unknown }>("/auth/passkey/register/options", {
+    request<PasskeyRegisterOptionsResponse>("/auth/passkey/register/options", {
       method: "POST",
       body: {},
       token,
     }),
-  passkeyRegisterVerify: (credential: unknown, token: string) =>
+  passkeyRegisterVerify: (challengeId: string, credential: unknown, token: string) =>
     request<PasskeyRegisterVerifyResponse>("/auth/passkey/register/verify", {
       method: "POST",
-      body: { credential },
+      body: { challengeId, credential },
       token,
     }),
-  passkeyLoginOptions: (phone: string) =>
-    request<PasskeyLoginOptionsResponse>("/auth/passkey/login/options", {
-      method: "POST",
-      body: { phone },
-    }),
+  // Userless discoverable passkey login (ADR-0024): no phone/username, the server sends an empty
+  // allowCredentials so the OS shows the member's passkeys for this origin.
+  passkeyLoginChallenge: () =>
+    request<PasskeyLoginChallengeResponse>("/auth/passkey/login/challenge"),
   passkeyLoginVerify: (challengeId: string, credential: unknown) =>
     request<AuthVerifyResponse>("/auth/passkey/login/verify", {
       method: "POST",

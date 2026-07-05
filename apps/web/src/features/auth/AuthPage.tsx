@@ -3,7 +3,6 @@ import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { ApiError, authApi } from "../../lib/api";
-import { forgetDevicePhone, rememberedDevicePhone } from "../../lib/device";
 import {
   biometricLabelKey,
   enrollPasskey,
@@ -30,8 +29,9 @@ const LOCALE_BY_LANG: Record<string, string> = { he: "he-IL", en: "en-US" };
 /**
  * UC1 Onboard + UC2 Sign-in. One unified phone-OTP flow: a phone that has no profile yet branches to
  * the registration step (name + email + language + Terms), then a Face ID enrolment step; a known
- * phone signs straight in. On a returning device (ADR-0022 Flow B), the remembered phone drives a
- * username-hinted passkey login offered up front, above the phone form; OTP is always the fallback.
+ * phone signs straight in. Wherever this browser supports passkeys (ADR-0024), a userless
+ * discoverable passkey login button is offered up front, above the phone form — the OS shows a
+ * modal picker of the member's passkeys for this origin; OTP is always the fallback.
  */
 export function AuthPage() {
   const { t, i18n } = useTranslation();
@@ -56,10 +56,6 @@ export function AuthPage() {
   const [channel, setChannel] = useState<OtpChannel>("sms");
   const [errorCode, setErrorCode] = useState<string | undefined>();
 
-  // Device-remembered phone (ADR-0022 Flow B): a returning device offers passkey login up front
-  // instead of the phone form.
-  const [knownPhone, setKnownPhone] = useState<string | null>(null);
-  useEffect(() => setKnownPhone(rememberedDevicePhone()), []);
   const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
 
   useEffect(() => {
@@ -109,8 +105,7 @@ export function AuthPage() {
 
   const onPasskeyLogin = () =>
     run(async () => {
-      if (!knownPhone) return;
-      const session = await loginWithPasskey(knownPhone);
+      const session = await loginWithPasskey();
       signIn(session);
       navigate("/home", { replace: true });
     });
@@ -166,21 +161,10 @@ export function AuthPage() {
               <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
               <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
             </div>
-            {knownPhone && passkeysSupported() && (
-              <div className="flex flex-col gap-2">
-                <Button onClick={onPasskeyLogin} loading={busy}>
-                  {t("auth.passkeyCta", { label: bioLabel })}
-                </Button>
-                <Button
-                  variant="ghost"
-                  onClick={() => {
-                    forgetDevicePhone();
-                    setKnownPhone(null);
-                  }}
-                >
-                  {t("auth.differentNumber")}
-                </Button>
-              </div>
+            {passkeysSupported() && (
+              <Button onClick={onPasskeyLogin} loading={busy}>
+                {t("auth.passkeyCta", { label: bioLabel })}
+              </Button>
             )}
             <label htmlFor="phone" className="block">
               <span className="mb-1.5 block text-sm font-medium text-muted">

@@ -9,9 +9,7 @@ import {
   type AttributeType,
   type AuthenticationResultType,
   CognitoIdentityProviderClient,
-  CompleteWebAuthnRegistrationCommand,
   RevokeTokenCommand,
-  StartWebAuthnRegistrationCommand,
   UserNotFoundException,
 } from "@aws-sdk/client-cognito-identity-provider";
 import type { AuthTokens } from "@wanthat/contracts";
@@ -49,10 +47,13 @@ export function toAuthTokens(
 }
 
 /**
- * Thin wrapper over the Cognito admin APIs (ADR-0006/0020/0021). All server-side (no app-client
+ * Thin wrapper over the Cognito admin APIs (ADR-0006/0020/0021/0024). All server-side (no app-client
  * secret); the non-VPC `app-auth` edge reaches Cognito over the public AWS endpoint (Managed Login
  * disables PrivateLink, ADR-0021). The unified flow creates a user on the fly for an unseen phone,
- * then drives the choice-based USER_AUTH SMS-OTP flow.
+ * then drives the choice-based USER_AUTH SMS-OTP flow. Passkeys are no longer a Cognito WEB_AUTHN
+ * challenge (ADR-0024): `app-auth` owns the WebAuthn ceremony itself against our own
+ * `passkey_credential` store, then bridges into Cognito via `passkeyCustomAuth`'s CUSTOM_AUTH flow
+ * purely to mint tokens.
  */
 export class Cognito {
   private readonly client: CognitoIdentityProviderClient;
@@ -74,6 +75,19 @@ export class Cognito {
       const sub = res.UserAttributes?.find((a) => a.Name === "sub")?.Value;
       if (!res.Username || !sub) throw new Error("AdminGetUser returned no username/sub");
       return { username: res.Username, sub };
+    } catch (err) {
+      if (err instanceof UserNotFoundException) return null;
+      throw err;
+    }
+  }
+
+  /** The E.164 phone (sign-in alias) for a user by username, or null. Fills the passkey-login ticket. */
+  async getPhone(username: string): Promise<string | null> {
+    try {
+      const res = await this.client.send(
+        new AdminGetUserCommand({ UserPoolId: this.userPoolId, Username: username }),
+      );
+      return res.UserAttributes?.find((a) => a.Name === "phone_number")?.Value ?? null;
     } catch (err) {
       if (err instanceof UserNotFoundException) return null;
       throw err;
@@ -155,42 +169,30 @@ export class Cognito {
   }
 
   /**
-   * Begin a username-hinted passkey (WebAuthn) login (ADR-0022 Flow B): USER_AUTH with a preferred
-   * WEB_AUTHN challenge. Returns the Cognito Session to carry forward and the credential-request
-   * options JSON the browser feeds to navigator.credentials.get(). Throws if the pool did not issue a
-   * WEB_AUTHN challenge (e.g. the user has no passkey) — the router maps that to passkey_unavailable.
+   * Mint tokens for an already-verified passkey login (ADR-0024). `app-auth` verified the WebAuthn
+   * assertion itself, then proves it to Cognito's CUSTOM_AUTH triggers via a short-lived HMAC proof
+   * passed as the challenge ANSWER. `username` is the Cognito username stored with the credential.
    */
-  async startPasskeyAuth(username: string): Promise<{ session: string; options: unknown }> {
-    const res = await this.client.send(
+  async passkeyCustomAuth(username: string, proof: string): Promise<AuthenticationResultType> {
+    const init = await this.client.send(
       new AdminInitiateAuthCommand({
         UserPoolId: this.userPoolId,
         ClientId: this.clientId,
-        AuthFlow: "USER_AUTH",
-        AuthParameters: { USERNAME: username, PREFERRED_CHALLENGE: "WEB_AUTHN" },
+        AuthFlow: "CUSTOM_AUTH",
+        AuthParameters: { USERNAME: username },
       }),
     );
-    const raw = res.ChallengeParameters?.CREDENTIAL_REQUEST_OPTIONS;
-    if (res.ChallengeName !== "WEB_AUTHN" || !res.Session || !raw)
-      throw new Error("startPasskeyAuth: pool did not issue a WEB_AUTHN challenge");
-    return { session: res.Session, options: JSON.parse(raw) };
-  }
-
-  /** Answer the WEB_AUTHN challenge with the browser assertion; tokens on success. */
-  async respondPasskeyAuth(
-    username: string,
-    session: string,
-    credential: unknown,
-  ): Promise<AuthenticationResultType> {
+    if (!init.Session) throw new Error("passkeyCustomAuth: no session from CUSTOM_AUTH initiate");
     const res = await this.client.send(
       new AdminRespondToAuthChallengeCommand({
         UserPoolId: this.userPoolId,
         ClientId: this.clientId,
-        ChallengeName: "WEB_AUTHN",
-        Session: session,
-        ChallengeResponses: { USERNAME: username, CREDENTIAL: JSON.stringify(credential) },
+        ChallengeName: "CUSTOM_CHALLENGE",
+        Session: init.Session,
+        ChallengeResponses: { USERNAME: username, ANSWER: proof },
       }),
     );
-    if (!res.AuthenticationResult) throw new Error("respondPasskeyAuth: no AuthenticationResult");
+    if (!res.AuthenticationResult) throw new Error("passkeyCustomAuth: no AuthenticationResult");
     return res.AuthenticationResult;
   }
 
@@ -222,30 +224,6 @@ export class Cognito {
         UserPoolId: this.userPoolId,
         Username: username,
         UserAttributes: attributes,
-      }),
-    );
-  }
-
-  /**
-   * Begin passkey (WebAuthn) enrolment for the signed-in user (ADR-0006). Authorised by the caller's
-   * access token; returns the `PublicKeyCredentialCreationOptions` the browser feeds to
-   * `navigator.credentials.create()`.
-   */
-  async startWebAuthnRegistration(accessToken: string): Promise<unknown> {
-    const res = await this.client.send(
-      new StartWebAuthnRegistrationCommand({ AccessToken: accessToken }),
-    );
-    if (!res.CredentialCreationOptions) throw new Error("no CredentialCreationOptions");
-    return res.CredentialCreationOptions;
-  }
-
-  /** Finish passkey enrolment: register the browser's attestation against the signed-in user. */
-  async completeWebAuthnRegistration(accessToken: string, credential: unknown): Promise<void> {
-    await this.client.send(
-      new CompleteWebAuthnRegistrationCommand({
-        AccessToken: accessToken,
-        // biome-ignore lint/suspicious/noExplicitAny: Cognito models Credential as an open document
-        Credential: credential as any,
       }),
     );
   }

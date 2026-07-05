@@ -5,6 +5,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import {
@@ -62,6 +63,13 @@ export class IdentityStack extends Stack {
   readonly employeePoolDomain: cognito.UserPoolDomain;
   /** ADR-0023: the Cognito custom-SMS-sender executor — observed by ObservabilityStack. */
   readonly messageSenderFn: lambda.Function;
+  /** ADR-0024: HMAC secret proving an app-auth-verified passkey login to the CUSTOM_AUTH triggers
+   * below. Exposed so ApiStack can grantRead it to app-auth (the signer). */
+  readonly passkeyProofSecret: secretsmanager.Secret;
+  /** ADR-0024: the CUSTOM_AUTH trigger trio — observed by ObservabilityStack. */
+  readonly passkeyDefineFn: lambda.Function;
+  readonly passkeyCreateFn: lambda.Function;
+  readonly passkeyVerifyFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: IdentityStackProps) {
     super(scope, id, props);
@@ -170,6 +178,74 @@ export class IdentityStack extends Stack {
     );
     this.userPool.addTrigger(cognito.UserPoolOperation.CUSTOM_SMS_SENDER, messageSenderFn);
 
+    // ADR-0024: the CUSTOM_AUTH trigger trio bridging app-auth's own WebAuthn verification into
+    // Cognito tokens. app-auth verifies the passkey assertion against our own `passkey_credential`
+    // store (not Cognito's), then proves that to VerifyAuthChallengeResponse via a short-TTL HMAC
+    // proof passed as the CUSTOM_CHALLENGE answer — see `Cognito.passkeyCustomAuth` in app-auth.
+    // Define/Create need no secret; only Verify (the trust gate) reads it.
+    const passkeyProofSecret = new secretsmanager.Secret(this, "PasskeyProofSecret", {
+      secretName: `wanthat/${wanthatEnv.name}/passkey/proof-hmac`,
+      description:
+        "HMAC key proving an app-auth-verified passkey login to the CUSTOM_AUTH triggers (ADR-0024)",
+      generateSecretString: { passwordLength: 48, excludePunctuation: true },
+    });
+    this.passkeyProofSecret = passkeyProofSecret;
+
+    const passkeyDefineFn = new NodejsFunction(this, "PasskeyDefineAuthChallenge", {
+      functionName: `wanthat-${wanthatEnv.name}-passkey-define-auth-challenge`,
+      entry: serviceEntry("passkey-auth-triggers", "define-auth-challenge"),
+      handler: "handler",
+      runtime: LAMBDA_RUNTIME,
+      memorySize: 256,
+      timeout: Duration.seconds(10),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "PasskeyDefineAuthChallengeLogs", wanthatEnv),
+      environment: { WANTHAT_ENV: wanthatEnv.name },
+      bundling: { minify: true, sourceMap: true },
+    });
+    this.passkeyDefineFn = passkeyDefineFn;
+
+    const passkeyCreateFn = new NodejsFunction(this, "PasskeyCreateAuthChallenge", {
+      functionName: `wanthat-${wanthatEnv.name}-passkey-create-auth-challenge`,
+      entry: serviceEntry("passkey-auth-triggers", "create-auth-challenge"),
+      handler: "handler",
+      runtime: LAMBDA_RUNTIME,
+      memorySize: 256,
+      timeout: Duration.seconds(10),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "PasskeyCreateAuthChallengeLogs", wanthatEnv),
+      environment: { WANTHAT_ENV: wanthatEnv.name },
+      bundling: { minify: true, sourceMap: true },
+    });
+    this.passkeyCreateFn = passkeyCreateFn;
+
+    // VerifyAuthChallengeResponse — the trust gate: validates the HMAC proof AND that it is for
+    // THIS user (sub match), fails closed on anything else.
+    const passkeyVerifyFn = new NodejsFunction(this, "PasskeyVerifyAuthChallenge", {
+      functionName: `wanthat-${wanthatEnv.name}-passkey-verify-auth-challenge`,
+      entry: serviceEntry("passkey-auth-triggers", "verify-auth-challenge.handler"),
+      handler: "handler",
+      runtime: LAMBDA_RUNTIME,
+      memorySize: 256,
+      timeout: Duration.seconds(10),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "PasskeyVerifyAuthChallengeLogs", wanthatEnv),
+      environment: {
+        WANTHAT_ENV: wanthatEnv.name,
+        PASSKEY_PROOF_SECRET_ARN: passkeyProofSecret.secretArn,
+      },
+      bundling: { minify: true, sourceMap: true },
+    });
+    this.passkeyVerifyFn = passkeyVerifyFn;
+    passkeyProofSecret.grantRead(passkeyVerifyFn);
+
+    this.userPool.addTrigger(cognito.UserPoolOperation.DEFINE_AUTH_CHALLENGE, passkeyDefineFn);
+    this.userPool.addTrigger(cognito.UserPoolOperation.CREATE_AUTH_CHALLENGE, passkeyCreateFn);
+    this.userPool.addTrigger(
+      cognito.UserPoolOperation.VERIFY_AUTH_CHALLENGE_RESPONSE,
+      passkeyVerifyFn,
+    );
+
     // Browser origins allowed to complete the hosted-UI OAuth redirect — the same list the app/admin
     // HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).
     const origins = webOrigins(wanthatEnv);
@@ -180,7 +256,10 @@ export class IdentityStack extends Stack {
     this.userPoolClient = this.userPool.addClient("Spa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-spa`,
       generateSecret: false,
-      authFlows: { user: true },
+      // `custom: true` enables ALLOW_CUSTOM_AUTH (ADR-0024) — the CUSTOM_AUTH bridge app-auth's
+      // passkey login drives via Cognito.passkeyCustomAuth. No other factor rides this flow: the
+      // define trigger above only issues tokens after a correct CUSTOM_CHALLENGE.
+      authFlows: { user: true, custom: true },
       enableTokenRevocation: true,
       accessTokenValidity: Duration.hours(1),
       idTokenValidity: Duration.hours(1),

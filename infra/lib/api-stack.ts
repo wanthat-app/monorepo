@@ -40,6 +40,9 @@ export interface ApiStackProps extends StackProps {
   readonly authChallengeTable: dynamodb.ITable;
   readonly phoneVelocityTable: dynamodb.ITable;
   readonly notificationOutboxTable: dynamodb.ITable;
+  readonly passkeyCredentialTable: dynamodb.ITable;
+  /** From IdentityStack — app-auth signs the CUSTOM_AUTH proof the trigger trio verifies (ADR-0024). */
+  readonly passkeyProofSecret: secretsmanager.Secret;
   // In-VPC placement + Aurora (ADR-0004/0020/0021) — app-core only.
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
@@ -103,19 +106,29 @@ export class ApiStack extends Stack {
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
         AUTH_CHALLENGE_TABLE: props.authChallengeTable.tableName,
         PHONE_VELOCITY_TABLE: props.phoneVelocityTable.tableName,
+        PASSKEY_CREDENTIAL_TABLE: props.passkeyCredentialTable.tableName,
         USER_POOL_ID: props.userPool.userPoolId,
         USER_POOL_CLIENT_ID: props.userPoolClient.userPoolClientId,
         AUTH_TICKET_SECRET_ARN: ticketSecret.secretArn,
+        // ADR-0024: signs the CUSTOM_AUTH proof the passkey trigger trio verifies, and pins the
+        // WebAuthn ceremony to this site (rpId is the registrable domain; origins are the exact
+        // SPA origins) so an assertion for another origin/RP is rejected.
+        PASSKEY_PROOF_SECRET_ARN: props.passkeyProofSecret.secretArn,
+        WEBAUTHN_RP_ID: wanthatEnv.domainName ?? "",
+        WEBAUTHN_ORIGINS: webOrigins(wanthatEnv).join(","),
       },
       bundling: { minify: true, sourceMap: true },
     });
     this.appAuthFn = appAuthFn;
+    props.passkeyProofSecret.grantRead(appAuthFn);
 
     // DynamoDB: auth working tables RW, guest attribution RW, config read.
     props.authChallengeTable.grantReadWriteData(appAuthFn);
     props.phoneVelocityTable.grantReadWriteData(appAuthFn);
     props.guestAttributionTable.grantReadWriteData(appAuthFn);
     props.runtimeConfigTable.grantReadData(appAuthFn);
+    // ADR-0024: put on enrol, get on login, updateSignCount after login, query for exclude-list.
+    props.passkeyCredentialTable.grantReadWriteData(appAuthFn);
     ticketSecret.grantRead(appAuthFn);
 
     // Scoped Cognito control-plane actions on this pool only (ADR-0020).
@@ -230,12 +243,20 @@ export class ApiStack extends Stack {
       this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: authIntegration });
     }
 
-    // Passkey LOGIN (ADR-0022 Flow B) -> app-auth, PUBLIC (the assertion is the credential; the user
-    // is not signed in yet). Explicit static routes so they take precedence over the authorizer-
-    // protected /auth/passkey/{proxy+} enrolment route below.
-    for (const p of ["/auth/passkey/login/options", "/auth/passkey/login/verify"]) {
-      this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: authIntegration });
-    }
+    // Passkey LOGIN (ADR-0024, userless discoverable) -> app-auth, PUBLIC (the assertion is the
+    // credential; the user is not signed in yet). Explicit static routes so they take precedence over
+    // the authorizer-protected /auth/passkey/{proxy+} enrolment route below. GET issues a single-use
+    // challenge; POST verifies the assertion and bridges to Cognito tokens.
+    this.httpApi.addRoutes({
+      path: "/auth/passkey/login/challenge",
+      methods: [HttpMethod.GET],
+      integration: authIntegration,
+    });
+    this.httpApi.addRoutes({
+      path: "/auth/passkey/login/verify",
+      methods: [HttpMethod.POST],
+      integration: authIntegration,
+    });
 
     // Public channel-availability projection (ADR-0023) -> app-auth. GET, no authorizer.
     this.httpApi.addRoutes({
