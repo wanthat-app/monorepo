@@ -348,15 +348,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/whatsapp
 
-  services/passkey-auth-triggers:
-    dependencies:
-      '@aws-lambda-powertools/logger':
-        specifier: ^2.8.0
-        version: 2.33.1
-      '@wanthat/auth':
-        specifier: workspace:*
-        version: link:../../packages/auth
-
   services/retailer-proxy:
     dependencies:
       '@aws-lambda-powertools/logger':

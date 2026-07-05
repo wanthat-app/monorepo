@@ -33,7 +33,6 @@ const { fake } = vi.hoisted(() => ({
       listByCustomer: vi.fn(),
       updateSignCount: vi.fn(),
     },
-    passkeyProof: { sign: vi.fn(), verify: vi.fn() },
     webauthn: { rpId: "wanthat.test", origins: ["https://wanthat.test"] },
   },
 }));

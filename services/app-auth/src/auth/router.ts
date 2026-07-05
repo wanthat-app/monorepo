@@ -433,8 +433,9 @@ export function authRouter(): Hono {
   });
 
   // POST /auth/passkey/login/verify — verify the assertion against OUR stored public key, resolve
-  // the member from the credential, bridge into Cognito (CUSTOM_AUTH) to mint tokens, then hand off
-  // the SAME signed ticket as /auth/verify so /auth/session (app-core) resolves the member. Public.
+  // the member from the credential, bridge into Cognito (the admin token exchange, ADR-0024 decision
+  // 3) to mint tokens, then hand off the SAME signed ticket as /auth/verify so /auth/session
+  // (app-core) resolves the member. Public.
   auth.post("/passkey/login/verify", async (c) => {
     const body = await parseBody(c, PasskeyLoginVerifyBody);
     if (!body) return c.json({ error: "invalid_request" }, 400);
@@ -470,8 +471,8 @@ export function authRouter(): Hono {
     await ctx.passkeys.updateSignCount(cred.credentialId, newCounter);
 
     // We verified the assertion ourselves — Cognito never sees it. Exchange that trust for real
-    // Cognito tokens via the admin bridge (ephemeral server-set password; ESSENTIALS pools reject
-    // CUSTOM_AUTH). The password never leaves app-auth and the member stays passwordless.
+    // Cognito tokens via the admin bridge (ephemeral server-set password, ADR-0024 decision 3). The
+    // password never leaves app-auth and the member stays passwordless.
     const result = await ctx.cognito.passkeyAdminAuth(cred.cognitoUsername);
     const tokens = toAuthTokens(result);
 

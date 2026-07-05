@@ -148,8 +148,9 @@ export const PasskeyLoginChallengeResponse = z.object({
 export type PasskeyLoginChallengeResponse = z.infer<typeof PasskeyLoginChallengeResponse>;
 
 // POST /auth/passkey/login/verify — app-auth verifies the assertion against the stored public key,
-// resolves the sub from the credential, bridges to Cognito (CUSTOM_AUTH), and hands off the SAME
-// signed ticket as /auth/verify so /auth/session resolves the member (ADR-0021/0024).
+// resolves the sub from the credential, bridges to Cognito (the admin token exchange, ADR-0024
+// decision 3), and hands off the SAME signed ticket as /auth/verify so /auth/session resolves the
+// member (ADR-0021/0024).
 export const PasskeyLoginVerifyBody = z.object({
   challengeId: z.string(),
   credential: AuthenticationResponseJSON,
