@@ -23,8 +23,7 @@ const { fake } = vi.hoisted(() => ({
       getChallenge: vi.fn(),
       deleteChallenge: vi.fn(),
       putPasskeyChallenge: vi.fn(),
-      getPasskeyChallenge: vi.fn(),
-      deletePasskeyChallenge: vi.fn(),
+      consumePasskeyChallenge: vi.fn(),
     },
     guests: { claim: vi.fn() },
     tickets: { sign: vi.fn(), verify: vi.fn() },
@@ -476,7 +475,7 @@ describe("passkey register (ADR-0024 — own-store enrolment)", () => {
     });
 
     it("400s when the challenge is missing", async () => {
-      fake.challenges.getPasskeyChallenge.mockResolvedValue(undefined);
+      fake.challenges.consumePasskeyChallenge.mockResolvedValue(undefined);
       const res = await postAuthed("/auth/passkey/register/verify", {
         challengeId: "c1",
         credential,
@@ -486,7 +485,7 @@ describe("passkey register (ADR-0024 — own-store enrolment)", () => {
     });
 
     it("400s when the stored challenge's sub does not match the caller's token (single-use, deleted either way)", async () => {
-      fake.challenges.getPasskeyChallenge.mockResolvedValue({
+      fake.challenges.consumePasskeyChallenge.mockResolvedValue({
         challengeId: "c1",
         kind: "reg",
         sub: "someone-else",
@@ -499,17 +498,17 @@ describe("passkey register (ADR-0024 — own-store enrolment)", () => {
         credential,
       });
       expect(res.status).toBe(400);
-      expect(fake.challenges.deletePasskeyChallenge).toHaveBeenCalledWith("c1");
+      expect(fake.challenges.consumePasskeyChallenge).toHaveBeenCalledWith("c1");
     });
 
     it("verifies the attestation, stores the credential (incl. cognitoUsername), echoes the passkey", async () => {
-      fake.challenges.getPasskeyChallenge.mockResolvedValue({
+      fake.challenges.consumePasskeyChallenge.mockResolvedValue({
         challengeId: "c1",
         kind: "reg",
         sub: SUB,
         username: "u",
         challenge: "abc",
-        ttl: 0,
+        ttl: 9_999_999_999,
       });
       webauthnMock.verifyRegistration.mockResolvedValue({
         credentialId: "cred-1",
@@ -543,7 +542,7 @@ describe("passkey register (ADR-0024 — own-store enrolment)", () => {
           transports: ["internal"],
         }),
       );
-      expect(fake.challenges.deletePasskeyChallenge).toHaveBeenCalledWith("c1");
+      expect(fake.challenges.consumePasskeyChallenge).toHaveBeenCalledWith("c1");
     });
   });
 });
@@ -577,7 +576,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
     sub: "",
     username: "",
     challenge: "xyz",
-    ttl: 0,
+    ttl: 9_999_999_999,
   };
   const storedCred = {
     credentialId: "cred-1",
@@ -590,7 +589,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
   };
 
   it("happy path: verifies, bumps the sign count, bridges to Cognito, hands off a ticket", async () => {
-    fake.challenges.getPasskeyChallenge.mockResolvedValue(loginChallenge);
+    fake.challenges.consumePasskeyChallenge.mockResolvedValue(loginChallenge);
     fake.passkeys.getByCredentialId.mockResolvedValue(storedCred);
     webauthnMock.verifyAuthentication.mockResolvedValue({ newCounter: 6 });
     fake.passkeyProof.sign.mockResolvedValue("proof-token");
@@ -602,7 +601,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ registrationTicket: "signed-ticket" });
 
-    expect(fake.challenges.deletePasskeyChallenge).toHaveBeenCalledWith("c1"); // single-use
+    expect(fake.challenges.consumePasskeyChallenge).toHaveBeenCalledWith("c1"); // single-use
     expect(webauthnMock.verifyAuthentication).toHaveBeenCalledWith(
       expect.objectContaining({
         expectedChallenge: "xyz",
@@ -627,7 +626,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
   });
 
   it("401 invalid_passkey when the user has no phone on record (never mints an empty-phone ticket)", async () => {
-    fake.challenges.getPasskeyChallenge.mockResolvedValue(loginChallenge);
+    fake.challenges.consumePasskeyChallenge.mockResolvedValue(loginChallenge);
     fake.passkeys.getByCredentialId.mockResolvedValue(storedCred);
     webauthnMock.verifyAuthentication.mockResolvedValue({ newCounter: 6 });
     fake.passkeyProof.sign.mockResolvedValue("proof-token");
@@ -640,7 +639,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
   });
 
   it("401 invalid_passkey for an unknown credential (no such-credential oracle)", async () => {
-    fake.challenges.getPasskeyChallenge.mockResolvedValue(loginChallenge);
+    fake.challenges.consumePasskeyChallenge.mockResolvedValue(loginChallenge);
     fake.passkeys.getByCredentialId.mockResolvedValue(undefined);
 
     const res = await post("/auth/passkey/login/verify", { challengeId: "c1", credential: cred });
@@ -650,7 +649,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
   });
 
   it("401 invalid_passkey when the assertion fails verification", async () => {
-    fake.challenges.getPasskeyChallenge.mockResolvedValue(loginChallenge);
+    fake.challenges.consumePasskeyChallenge.mockResolvedValue(loginChallenge);
     fake.passkeys.getByCredentialId.mockResolvedValue(storedCred);
     webauthnMock.verifyAuthentication.mockRejectedValue(new Error("bad signature"));
 
@@ -662,8 +661,15 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
   });
 
   it("400s when the challenge is missing or already spent (single-use)", async () => {
-    fake.challenges.getPasskeyChallenge.mockResolvedValue(undefined);
+    fake.challenges.consumePasskeyChallenge.mockResolvedValue(undefined);
     const res = await post("/auth/passkey/login/verify", { challengeId: "gone", credential: cred });
+    expect(res.status).toBe(400);
+    expect(fake.passkeys.getByCredentialId).not.toHaveBeenCalled();
+  });
+
+  it("400s an expired challenge in code, before the assertion is even checked (DynamoDB TTL is lazy)", async () => {
+    fake.challenges.consumePasskeyChallenge.mockResolvedValue({ ...loginChallenge, ttl: 1 }); // long past
+    const res = await post("/auth/passkey/login/verify", { challengeId: "c1", credential: cred });
     expect(res.status).toBe(400);
     expect(fake.passkeys.getByCredentialId).not.toHaveBeenCalled();
   });

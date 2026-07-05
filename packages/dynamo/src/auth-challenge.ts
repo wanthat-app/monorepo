@@ -1,3 +1,4 @@
+import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import {
   DeleteCommand,
   type DynamoDBDocumentClient,
@@ -119,15 +120,27 @@ export class AuthChallengeRepo {
     );
   }
 
-  async getPasskeyChallenge(challengeId: string): Promise<PasskeyChallengeRecord | undefined> {
-    const res = await this.doc.send(
-      new GetCommand({ TableName: this.tableName, Key: { challengeId } }),
-    );
-    if (res.Item?.recordType !== "pk-challenge") return undefined;
-    return res.Item as unknown as PasskeyChallengeRecord;
-  }
-
-  async deletePasskeyChallenge(challengeId: string): Promise<void> {
-    await this.doc.send(new DeleteCommand({ TableName: this.tableName, Key: { challengeId } }));
+  /**
+   * ATOMICALLY consume a passkey challenge: delete it and return its prior value, or `undefined` if
+   * already consumed / never existed. The conditional delete IS the single-use guarantee — two
+   * requests replaying the same assertion (same challengeId) race here and exactly one wins, so a
+   * captured assertion can't be redeemed twice (ADR-0024 security review). Non-pk records → undefined.
+   */
+  async consumePasskeyChallenge(challengeId: string): Promise<PasskeyChallengeRecord | undefined> {
+    try {
+      const res = await this.doc.send(
+        new DeleteCommand({
+          TableName: this.tableName,
+          Key: { challengeId },
+          ConditionExpression: "attribute_exists(challengeId)",
+          ReturnValues: "ALL_OLD",
+        }),
+      );
+      if (res.Attributes?.recordType !== "pk-challenge") return undefined;
+      return res.Attributes as unknown as PasskeyChallengeRecord;
+    } catch (err) {
+      if (err instanceof ConditionalCheckFailedException) return undefined; // already consumed
+      throw err;
+    }
   }
 }

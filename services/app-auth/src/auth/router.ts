@@ -386,9 +386,8 @@ export function authRouter(): Hono {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
-    const rec = await ctx.challenges.getPasskeyChallenge(body.challengeId);
-    if (rec) await ctx.challenges.deletePasskeyChallenge(body.challengeId); // single-use
-    if (rec?.kind !== "reg" || rec.sub !== claims.sub)
+    const rec = await ctx.challenges.consumePasskeyChallenge(body.challengeId); // atomic single-use
+    if (rec?.kind !== "reg" || rec.sub !== claims.sub || rec.ttl < nowEpoch())
       return c.json({ error: "invalid_request" }, 400);
 
     const { credentialId, publicKey, counter, transports } = await verifyRegistration({
@@ -441,9 +440,9 @@ export function authRouter(): Hono {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
-    const rec = await ctx.challenges.getPasskeyChallenge(body.challengeId);
-    if (rec) await ctx.challenges.deletePasskeyChallenge(body.challengeId); // single-use
-    if (rec?.kind !== "login") return c.json({ error: "invalid_request" }, 400);
+    const rec = await ctx.challenges.consumePasskeyChallenge(body.challengeId); // atomic single-use
+    if (rec?.kind !== "login" || rec.ttl < nowEpoch())
+      return c.json({ error: "invalid_request" }, 400);
 
     // "no such credential" and "assertion failed" collapse to the same 401 (no oracle for which
     // credentials exist).
