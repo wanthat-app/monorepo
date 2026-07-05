@@ -13,6 +13,8 @@ import type { Construct } from "constructs";
 import {
   applyThrottle,
   LAMBDA_RUNTIME,
+  RDS_CA_ENV,
+  rdsCaBundling,
   serviceEntry,
   serviceLogGroup,
   THROTTLING,
@@ -71,8 +73,13 @@ export class AdminStack extends Stack {
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_ro",
+        // Trust the Amazon RDS CA so the in-VPC TLS connection to Aurora verifies (ADR-0020) — the
+        // same setup app-core/app-auth use. Without it pg throws "unable to get local issuer
+        // certificate" and every DB-backed admin route (stats) fails. Pairs with rdsCaBundling below.
+        ...RDS_CA_ENV,
       },
-      bundling: { minify: true, sourceMap: true },
+      // Ships the RDS CA bundle into the artifact so NODE_EXTRA_CA_CERTS above can point at it.
+      bundling: rdsCaBundling,
     });
     this.adminApiFn = fn;
 
