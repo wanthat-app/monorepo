@@ -1,7 +1,7 @@
 import type { ConfigItem, ConfigKey, ConfigValue } from "@wanthat/contracts";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { adminApi, type StatsOverview } from "../../lib/admin-api";
+import { adminApi, type UsersStats } from "../../lib/admin-api";
 import {
   beginAdminLogin,
   clearAdminTokens,
@@ -80,14 +80,20 @@ export function AdminPage() {
 
 function DashboardView({ token }: { token: string | null }) {
   const { t } = useTranslation();
-  const [stats, setStats] = useState<StatsOverview | null>(null);
+  const [users, setUsers] = useState<UsersStats | null>(null);
+  const [failed, setFailed] = useState(false);
   useEffect(() => {
-    if (token)
-      adminApi
-        .statsOverview(token)
-        .then(setStats)
-        .catch(() => setStats(null));
+    if (!token) return;
+    adminApi
+      .usersStats(token)
+      .then((u) => {
+        setUsers(u);
+        setFailed(false);
+      })
+      .catch(() => setFailed(true));
   }, [token]);
+
+  const num = (v: number | undefined) => (v === undefined ? "…" : v.toLocaleString("en-US"));
 
   return (
     <div className="flex flex-col gap-[18px]">
@@ -110,7 +116,7 @@ function DashboardView({ token }: { token: string | null }) {
         />
         <KpiCard
           label={t("admin.stats.users")}
-          value={stats ? stats.usersCount.toLocaleString("en-US") : "…"}
+          value={failed ? "—" : num(users?.total)}
           live
           icon={
             <>
@@ -132,10 +138,72 @@ function DashboardView({ token }: { token: string | null }) {
         />
       </div>
 
-      {/* Charts, approvals queue and top links are deferred to a later slice. */}
-      <div className="flex flex-col items-center justify-center gap-1.5 rounded-card border border-dashed border-line bg-surface/60 px-6 py-16 text-center">
-        <div className="font-display text-lg font-semibold text-ink">{t("admin.comingSoon")}</div>
-        <div className="max-w-sm text-sm text-muted">{t("admin.comingSoonHint")}</div>
+      <UsersPanel users={failed ? null : users} failed={failed} />
+    </div>
+  );
+}
+
+function UsersPanel({ users, failed }: { users: UsersStats | null; failed: boolean }) {
+  const { t } = useTranslation();
+  const num = (v: number | undefined) => (v === undefined ? "…" : v.toLocaleString("en-US"));
+  return (
+    <div className="rounded-card border border-line bg-surface p-5">
+      <h2 className="mb-4 font-display text-lg font-semibold text-ink">{t("admin.users.title")}</h2>
+      {failed ? (
+        <div className="py-10 text-center text-sm text-muted">{t("admin.users.error")}</div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+            <StatTile label={t("admin.users.newToday")} value={num(users?.newToday)} />
+            <StatTile label={t("admin.users.new7d")} value={num(users?.new7d)} />
+            <StatTile label={t("admin.users.new30d")} value={num(users?.new30d)} />
+            <StatTile label={t("admin.users.active")} value={num(users?.active)} />
+            <StatTile label={t("admin.users.suspended")} value={num(users?.suspended)} />
+          </div>
+          <div className="mt-5">
+            <div className="mb-2 text-[12.5px] font-semibold text-muted">
+              {t("admin.users.signups30d")}
+            </div>
+            <SignupTrend data={users?.dailySignups ?? null} />
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function StatTile({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[14px] border border-line px-3.5 py-3">
+      <div className="text-[22px] font-semibold tabular-nums text-ink">{value}</div>
+      <div className="mt-0.5 text-[11.5px] text-muted">{label}</div>
+    </div>
+  );
+}
+
+/** A compact 30-bar daily-signup trend. LTR regardless of page direction so time reads left→right. */
+function SignupTrend({ data }: { data: UsersStats["dailySignups"] | null }) {
+  if (!data) return <div className="h-24 animate-pulse rounded-[12px] bg-accent-soft/40" />;
+  const max = Math.max(1, ...data.map((d) => d.count));
+  return (
+    <div>
+      <div dir="ltr" className="flex h-24 items-end gap-[3px]">
+        {data.map((d) => (
+          <div
+            key={d.date}
+            className="flex-1"
+            title={`${d.date}: ${d.count.toLocaleString("en-US")}`}
+          >
+            <div
+              className="w-full rounded-t-[3px] bg-accent/80"
+              style={{ height: `${(d.count / max) * 100}%`, minHeight: d.count > 0 ? 4 : 2 }}
+            />
+          </div>
+        ))}
+      </div>
+      <div dir="ltr" className="mt-1.5 flex justify-between text-[11px] text-muted">
+        <span>{data[0]?.date.slice(5)}</span>
+        <span>{data[data.length - 1]?.date.slice(5)}</span>
       </div>
     </div>
   );

@@ -96,6 +96,16 @@ const en = {
       cashback: "Cashback paid",
       conversions: "Link conversion",
     },
+    users: {
+      title: "Users",
+      newToday: "New today",
+      new7d: "New (7d)",
+      new30d: "New (30d)",
+      active: "Active",
+      suspended: "Suspended",
+      signups30d: "Signups (last 30 days)",
+      error: "Couldn't load user stats.",
+    },
     sections: {
       marginsTitle: "Margins & rewards",
       marginsDesc: "How affiliate commission is split between wanthat, referrers and buyers.",
@@ -250,6 +260,16 @@ const he: typeof en = {
       pending: "תשלומים ממתינים",
       cashback: "קאשבק ששולם",
       conversions: "המרת קישורים",
+    },
+    users: {
+      title: "משתמשים",
+      newToday: "חדשים היום",
+      new7d: "חדשים (7 ימים)",
+      new30d: "חדשים (30 יום)",
+      active: "פעילים",
+      suspended: "מושהים",
+      signups30d: "הרשמות (30 הימים האחרונים)",
+      error: "טעינת נתוני המשתמשים נכשלה.",
     },
     sections: {
       marginsTitle: "מרווחים ותגמולים",

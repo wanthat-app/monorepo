@@ -4,6 +4,7 @@ import type {
   GetConfigResponse,
   ListConfigResponse,
   PutConfigResponse,
+  UsersStats,
 } from "@wanthat/contracts";
 import { ApiError } from "./api";
 import { getConfig } from "./config";
@@ -45,4 +46,7 @@ export const adminApi = {
       body: { value },
     }),
   statsOverview: (token: string) => adminRequest<StatsOverview>("/admin/stats/overview", token),
+  usersStats: (token: string) => adminRequest<UsersStats>("/admin/stats/users", token),
 };
+
+export type { UsersStats };
