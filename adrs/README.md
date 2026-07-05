@@ -34,6 +34,7 @@ DynamoDB-backed SMS kill switch) for UC1/UC2.
 | [0021](0021-auth-split-vpc-edge-and-core.md) | app-api split: non-VPC auth edge (Cognito+DynamoDB) + in-VPC core (Aurora), bridged by the HMAC ticket — resolves Managed Login vs PrivateLink so discoverable passkeys + OTP coexist (supersedes [0020](0020-auth-foundation.md) decision 2) |
 | [0022](0022-faceid-passkey-authentication.md) | FaceID = platform WebAuthn passkeys: enrol (Flow A) + username-hinted on-page login (Flow B) + discoverable Managed-Login login (Flow C); device-matched naming; OTP recovery (refines [0006](0006-identity-sms-otp-and-passkeys.md)/[0020](0020-auth-foundation.md)/[0021](0021-auth-split-vpc-edge-and-core.md)) *(Proposed)* |
 | [0023](0023-whatsapp-messaging-capability.md) | WhatsApp messaging capability: reusable `@wanthat/whatsapp` + Cognito Custom SMS Sender over AWS End User Messaging Social (WhatsApp-default OTP + `optin_welcome`); DynamoDB-Streams outbox NAT-free bridge (refines [0006](0006-identity-sms-otp-and-passkeys.md)) *(Proposed)* |
+| [0024](0024-automatic-biometric-login-webauthn-conditional-ui.md) | Automatic biometric login: custom discoverable WebAuthn + conditional-UI autofill (passkey offers itself, one tap), our own assertion verification (`@wanthat/webauthn` + `passkey_credential` table), bridged to Cognito tokens via a thin CUSTOM_AUTH HMAC-proof flow; button only when autofill unsupported (supersedes [0022](0022-faceid-passkey-authentication.md) login design) |
 
 ## Status & change policy
 
