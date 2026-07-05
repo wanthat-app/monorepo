@@ -11,37 +11,41 @@ import { Cognito } from "./cognito";
 const c = new Cognito("pool", "client", "il-central-1");
 beforeEach(() => vi.clearAllMocks());
 
-describe("passkeyCustomAuth (ADR-0024)", () => {
-  it("initiates CUSTOM_AUTH then answers CUSTOM_CHALLENGE with the proof, returning tokens", async () => {
-    send.mockResolvedValueOnce({ Session: "sess" }).mockResolvedValueOnce({
+describe("passkeyAdminAuth (ADR-0024 bridge — ephemeral password on ESSENTIALS)", () => {
+  it("sets a fresh password then exchanges it via ADMIN_USER_PASSWORD_AUTH, returning tokens", async () => {
+    send.mockResolvedValueOnce({}).mockResolvedValueOnce({
       AuthenticationResult: { AccessToken: "a", IdToken: "i", RefreshToken: "r", ExpiresIn: 3600 },
     });
 
-    const res = await c.passkeyCustomAuth("u1", "proof-token");
+    const res = await c.passkeyAdminAuth("u1");
     expect(res.AccessToken).toBe("a");
 
-    const initInput = send.mock.calls[0]?.[0].input;
-    expect(initInput.AuthFlow).toBe("CUSTOM_AUTH");
-    expect(initInput.AuthParameters).toMatchObject({ USERNAME: "u1" });
+    // First call sets a permanent random password for the user (never returned to the caller).
+    const setInput = send.mock.calls[0]?.[0].input;
+    expect(setInput.Username).toBe("u1");
+    expect(setInput.Permanent).toBe(true);
+    expect(typeof setInput.Password).toBe("string");
+    expect(setInput.Password.length).toBeGreaterThanOrEqual(20);
 
-    const respondInput = send.mock.calls[1]?.[0].input;
-    expect(respondInput.ChallengeName).toBe("CUSTOM_CHALLENGE");
-    expect(respondInput.Session).toBe("sess");
-    expect(respondInput.ChallengeResponses).toMatchObject({
+    // Second call authenticates with that same password via the admin flow.
+    const authInput = send.mock.calls[1]?.[0].input;
+    expect(authInput.AuthFlow).toBe("ADMIN_USER_PASSWORD_AUTH");
+    expect(authInput.AuthParameters).toMatchObject({
       USERNAME: "u1",
-      ANSWER: "proof-token",
+      PASSWORD: setInput.Password,
     });
   });
 
-  it("throws when CUSTOM_AUTH initiate returns no session", async () => {
-    send.mockResolvedValueOnce({});
-    await expect(c.passkeyCustomAuth("u1", "proof-token")).rejects.toThrow(/no session/);
+  it("throws when the admin auth returns no AuthenticationResult", async () => {
+    send.mockResolvedValueOnce({}).mockResolvedValueOnce({});
+    await expect(c.passkeyAdminAuth("u1")).rejects.toThrow(/no AuthenticationResult/);
   });
 
-  it("throws when the challenge response carries no AuthenticationResult", async () => {
-    send.mockResolvedValueOnce({ Session: "sess" }).mockResolvedValueOnce({});
-    await expect(c.passkeyCustomAuth("u1", "proof-token")).rejects.toThrow(
-      /no AuthenticationResult/,
-    );
+  it("never logs or returns the ephemeral password", async () => {
+    send.mockResolvedValueOnce({}).mockResolvedValueOnce({
+      AuthenticationResult: { AccessToken: "a" },
+    });
+    const res = await c.passkeyAdminAuth("u1");
+    expect(JSON.stringify(res)).not.toContain(send.mock.calls[0]?.[0].input.Password);
   });
 });

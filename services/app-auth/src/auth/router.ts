@@ -334,8 +334,8 @@ export function authRouter(): Hono {
   // --- Passkeys (ADR-0024) ---
   // We now own the whole WebAuthn ceremony ourselves (via @wanthat/webauthn), verifying against our
   // own `passkey_credential` store rather than delegating to Cognito's WEB_AUTHN challenge. Cognito
-  // is only re-entered at the very end of login, to mint tokens via CUSTOM_AUTH (see
-  // `Cognito.passkeyCustomAuth`) — it never sees the assertion.
+  // is only re-entered at the very end of login, to mint tokens via the admin bridge (see
+  // `Cognito.passkeyAdminAuth`) — it never sees the assertion.
   //
   // Enrolment (register/*) sits behind the JWT authorizer: the caller's access token — already
   // signature/expiry-verified by API Gateway — is decoded (not re-verified) via `tokenClaims` to read
@@ -469,10 +469,10 @@ export function authRouter(): Hono {
     }
     await ctx.passkeys.updateSignCount(cred.credentialId, newCounter);
 
-    // We verified the assertion ourselves — Cognito never sees it. The proof is how we tell
-    // Cognito's CUSTOM_AUTH triggers "this sub is authenticated", so they mint real tokens.
-    const proof = await ctx.passkeyProof.sign(cred.customerSub);
-    const result = await ctx.cognito.passkeyCustomAuth(cred.cognitoUsername, proof);
+    // We verified the assertion ourselves — Cognito never sees it. Exchange that trust for real
+    // Cognito tokens via the admin bridge (ephemeral server-set password; ESSENTIALS pools reject
+    // CUSTOM_AUTH). The password never leaves app-auth and the member stays passwordless.
+    const result = await ctx.cognito.passkeyAdminAuth(cred.cognitoUsername);
     const tokens = toAuthTokens(result);
 
     // The ticket carries the REAL phone (from Cognito, the sign-in alias) — never an empty string:

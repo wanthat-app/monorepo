@@ -15,7 +15,7 @@ const { fake } = vi.hoisted(() => ({
       respondSmsOtp: vi.fn(),
       refresh: vi.fn(),
       revoke: vi.fn(),
-      passkeyCustomAuth: vi.fn(),
+      passkeyAdminAuth: vi.fn(),
       getPhone: vi.fn(),
     },
     challenges: {
@@ -592,8 +592,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
     fake.challenges.consumePasskeyChallenge.mockResolvedValue(loginChallenge);
     fake.passkeys.getByCredentialId.mockResolvedValue(storedCred);
     webauthnMock.verifyAuthentication.mockResolvedValue({ newCounter: 6 });
-    fake.passkeyProof.sign.mockResolvedValue("proof-token");
-    fake.cognito.passkeyCustomAuth.mockResolvedValue(cognitoResult);
+    fake.cognito.passkeyAdminAuth.mockResolvedValue(cognitoResult);
     fake.cognito.getPhone.mockResolvedValue("+972541234567");
     fake.tickets.sign.mockResolvedValue("signed-ticket");
 
@@ -611,8 +610,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
       }),
     );
     expect(fake.passkeys.updateSignCount).toHaveBeenCalledWith("cred-1", 6);
-    expect(fake.passkeyProof.sign).toHaveBeenCalledWith(SUB);
-    expect(fake.cognito.passkeyCustomAuth).toHaveBeenCalledWith("u", "proof-token");
+    expect(fake.cognito.passkeyAdminAuth).toHaveBeenCalledWith("u");
     // Ticket carries the REAL phone from Cognito, never "" (empty would corrupt Aurora on /auth/register).
     expect(fake.tickets.sign).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -629,8 +627,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
     fake.challenges.consumePasskeyChallenge.mockResolvedValue(loginChallenge);
     fake.passkeys.getByCredentialId.mockResolvedValue(storedCred);
     webauthnMock.verifyAuthentication.mockResolvedValue({ newCounter: 6 });
-    fake.passkeyProof.sign.mockResolvedValue("proof-token");
-    fake.cognito.passkeyCustomAuth.mockResolvedValue(cognitoResult);
+    fake.cognito.passkeyAdminAuth.mockResolvedValue(cognitoResult);
     fake.cognito.getPhone.mockResolvedValue(null);
 
     const res = await post("/auth/passkey/login/verify", { challengeId: "c1", credential: cred });
@@ -657,7 +654,7 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
     expect(res.status).toBe(401);
     expect(await res.json()).toEqual({ error: "invalid_passkey" });
     expect(fake.passkeys.updateSignCount).not.toHaveBeenCalled();
-    expect(fake.cognito.passkeyCustomAuth).not.toHaveBeenCalled();
+    expect(fake.cognito.passkeyAdminAuth).not.toHaveBeenCalled();
   });
 
   it("400s when the challenge is missing or already spent (single-use)", async () => {

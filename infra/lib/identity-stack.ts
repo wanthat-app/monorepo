@@ -256,10 +256,12 @@ export class IdentityStack extends Stack {
     this.userPoolClient = this.userPool.addClient("Spa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-spa`,
       generateSecret: false,
-      // `custom: true` enables ALLOW_CUSTOM_AUTH (ADR-0024) — the CUSTOM_AUTH bridge app-auth's
-      // passkey login drives via Cognito.passkeyCustomAuth. No other factor rides this flow: the
-      // define trigger above only issues tokens after a correct CUSTOM_CHALLENGE.
-      authFlows: { user: true, custom: true },
+      // `user` = the choice-based USER_AUTH OTP flow. `adminUserPassword` enables the ADR-0024
+      // passkey->token bridge (Cognito.passkeyAdminAuth): app-auth sets an ephemeral password and
+      // exchanges it for tokens after verifying the assertion. This is an ADMIN-only flow — it is not
+      // reachable from the browser (the SPA never sees a password) — chosen because our ESSENTIALS
+      // pool rejects CUSTOM_AUTH. (CUSTOM_AUTH bridge design pending an ADR update.)
+      authFlows: { user: true, adminUserPassword: true },
       enableTokenRevocation: true,
       accessTokenValidity: Duration.hours(1),
       idTokenValidity: Duration.hours(1),
