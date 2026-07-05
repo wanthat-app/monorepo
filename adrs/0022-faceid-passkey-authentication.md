@@ -1,6 +1,6 @@
 # ADR 0022 — FaceID authentication: complete the WebAuthn passkey story (enroll + login)
 
-- **Status:** Accepted
+- **Status:** Accepted *(login design superseded in part by [ADR-0024](0024-automatic-biometric-login-webauthn-conditional-ui.md): Flow B/C and the "one-tap button is the ceiling" consequence are replaced by on-page conditional-UI autofill on a custom WebAuthn + Cognito CUSTOM_AUTH flow. Enrolment intent and the RP-ID/labels decisions still stand.)*
 - **Date:** 2026-07-01
 - **Refines:** [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (passkeys as a first-auth factor),
   [ADR-0020](0020-auth-foundation.md) (passkey enrolment API-driven; discoverable login via Managed
