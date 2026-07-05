@@ -106,6 +106,9 @@ importers:
       '@wanthat/web':
         specifier: workspace:*
         version: link:../apps/web
+      '@wanthat/webauthn':
+        specifier: workspace:*
+        version: link:../packages/webauthn
       '@wanthat/whatsapp':
         specifier: workspace:*
         version: link:../packages/whatsapp

@@ -23,6 +23,7 @@
     "@wanthat/domain": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
     "@wanthat/web": "workspace:*",
+    "@wanthat/webauthn": "workspace:*",
     "@wanthat/whatsapp": "workspace:*",
     "aws-cdk": "^2.150.0",
     "esbuild": "^0.28.1",
