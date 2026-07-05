@@ -118,31 +118,38 @@ export const PasskeyRegisterOptionsBody = z.object({
 });
 export type PasskeyRegisterOptionsBody = z.infer<typeof PasskeyRegisterOptionsBody>;
 
+// The server generates + stores the challenge (single-use); the client echoes `challengeId` back at
+// verify so app-auth can look it up (ADR-0024 — we own the WebAuthn ceremony now, not Cognito).
 export const PasskeyRegisterOptionsResponse = z.object({
+  challengeId: z.string(),
   options: PublicKeyCredentialCreationOptionsJSON,
 });
 export type PasskeyRegisterOptionsResponse = z.infer<typeof PasskeyRegisterOptionsResponse>;
 
-// POST /auth/passkey/register/verify — finish passkey enrolment.
-export const PasskeyRegisterVerifyBody = z.object({ credential: RegistrationResponseJSON });
+// POST /auth/passkey/register/verify — finish enrolment; app-auth verifies the attestation and stores
+// our own public key (the `passkey_credential` table), not Cognito's.
+export const PasskeyRegisterVerifyBody = z.object({
+  challengeId: z.string(),
+  credential: RegistrationResponseJSON,
+});
 export type PasskeyRegisterVerifyBody = z.infer<typeof PasskeyRegisterVerifyBody>;
 
 export const PasskeyRegisterVerifyResponse = z.object({ passkey: Passkey });
 export type PasskeyRegisterVerifyResponse = z.infer<typeof PasskeyRegisterVerifyResponse>;
 
-// POST /auth/passkey/login/options — begin username-hinted passkey login (ADR-0022 Flow B). The
-// phone is the Cognito username; on a returning device it is remembered client-side, not prompted.
-export const PasskeyLoginOptionsBody = z.object({ phone: PhoneE164 });
-export type PasskeyLoginOptionsBody = z.infer<typeof PasskeyLoginOptionsBody>;
-
-export const PasskeyLoginOptionsResponse = z.object({
+// GET /auth/passkey/login/challenge — begin a USERLESS discoverable passkey login (ADR-0024). No
+// username/phone: the discoverable credential resolves itself (userHandle = the Cognito sub). Public.
+// The `options` carry an EMPTY allowCredentials + a single-use challenge; `challengeId` is echoed at
+// verify. This enables conditional UI (Slice 2) — the passkey offers itself, no prompt.
+export const PasskeyLoginChallengeResponse = z.object({
   challengeId: z.string(),
   options: PublicKeyCredentialRequestOptionsJSON,
 });
-export type PasskeyLoginOptionsResponse = z.infer<typeof PasskeyLoginOptionsResponse>;
+export type PasskeyLoginChallengeResponse = z.infer<typeof PasskeyLoginChallengeResponse>;
 
-// POST /auth/passkey/login/verify — finish the assertion; hands off the SAME signed ticket as
-// /auth/verify, so /auth/session resolves the member exactly like the OTP path (ADR-0021).
+// POST /auth/passkey/login/verify — app-auth verifies the assertion against the stored public key,
+// resolves the sub from the credential, bridges to Cognito (CUSTOM_AUTH), and hands off the SAME
+// signed ticket as /auth/verify so /auth/session resolves the member (ADR-0021/0024).
 export const PasskeyLoginVerifyBody = z.object({
   challengeId: z.string(),
   credential: AuthenticationResponseJSON,
