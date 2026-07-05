@@ -5,9 +5,11 @@ import { useNavigate } from "react-router-dom";
 import { ApiError, authApi } from "../../lib/api";
 import {
   biometricLabelKey,
+  deviceHasPasskey,
   enrollPasskey,
   loginWithPasskey,
   loginWithPasskeyAutofill,
+  markPasskeyDevice,
   passkeyAutofillSupported,
   passkeysSupported,
 } from "../../lib/passkey";
@@ -60,10 +62,11 @@ export function AuthPage() {
 
   const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
 
-  // Conditional-UI autofill (ADR-0024 Slice 2): null while we probe support. When true, the passkey
-  // offers itself in the phone field's autofill and we hide the explicit button; when false, the
-  // modal button is the path.
+  // Passkey login affordance (ADR-0024). `autofillSupported` is null while we probe conditional-UI
+  // support (used only for first-time devices). `autoTried` flips true after an auto-modal prompt was
+  // fired and did NOT sign the member in (cancelled / no passkey) — then we surface the manual button.
   const [autofillSupported, setAutofillSupported] = useState<boolean | null>(null);
+  const [autoTried, setAutoTried] = useState(false);
   const armed = useRef(false);
 
   useEffect(() => {
@@ -76,25 +79,44 @@ export function AuthPage() {
       .catch(() => {}); // advisory only — the server re-checks on /auth/start
   }, []);
 
-  // Probe conditional-UI support and, if available, ARM it once: the passkey surfaces in the phone
-  // field's autofill and, when the member picks it, signs them straight in. A silent failure/cancel is
-  // fine — OTP stays available. Guarded so it arms exactly once (a second get() would abort the first).
+  // Passkey login on load (ADR-0024). Two regimes, chosen once per mount:
+  //  - Returning passkey device → fire an AUTOMATIC modal prompt: the Face ID sheet pops with no tap
+  //    (iOS 16 spends its one gesture-free get() here; iOS 17.4+ has no gesture limit). This is the
+  //    fully-automatic path. On cancel/no-passkey we fall back to the manual button.
+  //  - First-time device → the gentle conditional-UI autofill (the passkey offers itself in the field);
+  //    using it marks the device so the NEXT visit gets the automatic prompt.
+  // The passkey ceremony must be the first async op on load (Safari allows only one), so nothing is
+  // awaited before it. Guarded so it runs exactly once.
   useEffect(() => {
+    if (armed.current) return;
+    armed.current = true;
     if (!passkeysSupported()) {
       setAutofillSupported(false);
       return;
     }
     void (async () => {
+      if (deviceHasPasskey()) {
+        try {
+          const session = await loginWithPasskey(); // modal; auto-prompts on load
+          markPasskeyDevice();
+          signIn(session);
+          navigate("/home", { replace: true });
+          return;
+        } catch {
+          setAutoTried(true); // cancelled / no passkey → show the manual button (freebie is spent)
+          return;
+        }
+      }
       const supported = await passkeyAutofillSupported();
       setAutofillSupported(supported);
-      if (!supported || armed.current) return;
-      armed.current = true;
+      if (!supported) return;
       try {
         const session = await loginWithPasskeyAutofill();
+        markPasskeyDevice();
         signIn(session);
         navigate("/home", { replace: true });
       } catch {
-        // aborted / cancelled / not used — stay on the form; OTP or the fallback path continues.
+        // aborted / not used — stay on the form; OTP or the manual button continues.
       }
     })();
   }, [navigate, signIn]);
@@ -137,6 +159,7 @@ export function AuthPage() {
   const onPasskeyLogin = () =>
     run(async () => {
       const session = await loginWithPasskey();
+      markPasskeyDevice();
       signIn(session);
       navigate("/home", { replace: true });
     });
@@ -175,6 +198,7 @@ export function AuthPage() {
     run(async () => {
       const token = accessToken();
       if (token) await enrollPasskey(token);
+      markPasskeyDevice(); // next visit on this device auto-prompts Face ID on load
       goHome();
     });
 
@@ -192,10 +216,11 @@ export function AuthPage() {
               <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
               <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
             </div>
-            {/* When conditional UI is available the passkey offers itself in the field's autofill, so
-                the explicit button is shown ONLY where autofill is unsupported (ADR-0024 Slice 2).
-                They are mutually exclusive — never a modal get() alongside a pending conditional get(). */}
-            {passkeysSupported() && autofillSupported === false && (
+            {/* Manual passkey button — the gesture fallback. Shown after an auto-prompt was cancelled
+                (`autoTried`, the iOS-16 freebie is spent so only a tap works now) or where conditional
+                UI isn't available. On a returning device the auto-prompt already fired on load; on a
+                first-time device the passkey offers itself in the field's autofill instead. */}
+            {passkeysSupported() && (autoTried || autofillSupported === false) && (
               <Button onClick={onPasskeyLogin} loading={busy}>
                 {t("auth.passkeyCta", { label: bioLabel })}
               </Button>
