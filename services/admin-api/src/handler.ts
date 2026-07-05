@@ -19,6 +19,7 @@ import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { getContext } from "./context";
 import { type Bindings, requireAdmin } from "./guard";
+import { loadUsersStats } from "./users-stats";
 
 const SERVICE = "admin-api";
 const EPOCH0 = new Date(0).toISOString(); // shown as "never set" for keys still on their default
@@ -83,6 +84,12 @@ app.get("/admin/stats/overview", async (c) => {
     conversions30d: null,
   });
 });
+
+// GET /admin/stats/users — real customer metrics (total, status split, recent-signup windows, and a
+// 30-day daily-signup trend), all from the Aurora `customer` table (read-only).
+app.get("/admin/stats/users", async (c) =>
+  c.json(await loadUsersStats(getContext().db, Date.now())),
+);
 
 app.get("/admin/health", (c) => c.json({ ok: true }));
 

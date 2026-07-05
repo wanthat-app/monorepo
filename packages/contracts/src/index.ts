@@ -10,4 +10,5 @@ export * from "./fx";
 export * from "./identity";
 export * from "./landing";
 export * from "./recommendations";
+export * from "./stats";
 export * from "./wallet";
