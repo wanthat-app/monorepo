@@ -66,6 +66,26 @@ export async function enrollPasskey(accessToken: string): Promise<string> {
 }
 
 /**
+ * A load-time (auto-prompt) `get()` races the page actually gaining focus: arriving from the URL bar
+ * or an external link (how every shared /p/ link opens), iOS Safari rejects the ceremony immediately
+ * with `NotAllowedError: The document is not focused.` — observed on-device. Wait briefly for focus
+ * before starting; on timeout proceed anyway (the ceremony then fails exactly as it does today and
+ * the caller's fallback runs).
+ */
+async function waitForDocumentFocus(timeoutMs = 3000): Promise<void> {
+  if (typeof document === "undefined" || document.hasFocus()) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      clearTimeout(timer);
+      window.removeEventListener("focus", done);
+      resolve();
+    };
+    const timer = setTimeout(done, timeoutMs);
+    window.addEventListener("focus", done, { once: true });
+  });
+}
+
+/**
  * Userless discoverable passkey login (ADR-0024): no phone/username anywhere. The server's login
  * challenge carries an empty allowCredentials, so the OS shows a modal picker with the member's
  * passkeys registered for this origin; the member taps one and authenticates biometrically. Same
@@ -73,6 +93,7 @@ export async function enrollPasskey(accessToken: string): Promise<string> {
  * cancel/failure; the caller falls back to OTP.
  */
 export async function loginWithPasskey(): Promise<AuthSession> {
+  await waitForDocumentFocus();
   const { challengeId, options } = await authApi.passkeyLoginChallenge();
   // Modal discoverable get(): the server sent an empty allowCredentials, so the OS shows the
   // member's passkeys for this origin. Used only where conditional UI is unsupported.
