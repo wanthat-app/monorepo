@@ -177,8 +177,9 @@ export class DataStack extends Stack {
 
     // --- One-shot migration runner (ADR-0012/0020) ---
     // A NodejsFunction (so esbuild bundles the TS handler + pg/kysely) wrapped by triggers.Trigger,
-    // NOT triggers.TriggerFunction (which is a plain lambda.Function and would not bundle). Runs as
-    // the master user from the cluster secret because the IAM login roles don't exist until 0001.
+    // NOT triggers.TriggerFunction (which is a plain lambda.Function and would not bundle). Connects
+    // as wanthat_migrator via IAM auth (0003) - no Secrets Manager read, so the VPC keeps no
+    // secretsmanager interface endpoint. New-env bootstrap caveat: see 0003_migrator_role.sql.
     const migratorFn = new NodejsFunction(this, "DbMigrator", {
       functionName: `wanthat-${wanthatEnv.name}-db-migrator`,
       entry: serviceEntry("db-migrator"),
@@ -200,7 +201,7 @@ export class DataStack extends Stack {
       // of it. CDK's Trigger already serialises invocation, and migrations are transactional.
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
-        DB_SECRET_ARN: this.cluster.secret?.secretArn ?? "",
+        DB_USER: "wanthat_migrator",
         DB_HOST: this.cluster.clusterEndpoint.hostname,
         DB_PORT: String(this.cluster.clusterEndpoint.port),
         DB_NAME: "wanthat",
@@ -212,7 +213,8 @@ export class DataStack extends Stack {
       // Ship the RDS CA bundle + the .sql migration files in the function artifact (see migratorBundling).
       bundling: migratorBundling,
     });
-    this.cluster.secret?.grantRead(migratorFn);
+    // IAM DB auth as wanthat_migrator (ADR-0003 mechanics) - no master-secret read.
+    this.cluster.grantConnect(migratorFn, "wanthat_migrator");
 
     new Trigger(this, "MigrateTrigger", {
       handler: migratorFn,
