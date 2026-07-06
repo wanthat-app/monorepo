@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
+import { warmDb } from "../../lib/api";
 import {
   deviceHasPasskey,
   loginWithPasskey,
@@ -66,6 +67,9 @@ export function SharedProductPage() {
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
+    // Kick the Aurora resume NOW (fire-and-forget, not awaited — the ceremony must stay the first
+    // AWAITED async op): by the time Face ID completes, the DB is warm(ing) for the session resolve.
+    warmDb();
     if (hasStoredSession()) {
       note("gate: stored session → rehydrating, no prompt");
       return; // the session effect above redirects once rehydration lands

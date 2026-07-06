@@ -227,6 +227,15 @@ export class ApiStack extends Stack {
       integration: authIntegration,
     });
 
+    // DB warm-up probe -> app-core (touches Aurora). Public; the SPA fires it (fire-and-forget) on
+    // landing/auth load so the scale-to-zero resume overlaps the human reading the page / doing
+    // Face ID instead of serialising ~20s after the biometric.
+    this.httpApi.addRoutes({
+      path: "/healthz/db",
+      methods: [HttpMethod.GET],
+      integration: coreIntegration,
+    });
+
     // Public, token-issuing auth flow -> app-auth. Explicit paths (no {proxy+}) so OPTIONS -> CORS.
     for (const p of [
       "/auth/start",

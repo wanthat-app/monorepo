@@ -46,6 +46,15 @@ async function request<T>(
   return data as T;
 }
 
+/**
+ * Fire-and-forget Aurora warm-up (GET /healthz/db). Called when a page that will need the DB soon
+ * mounts (landing, auth): the scale-to-zero resume (~20s cold) then overlaps the human reading the
+ * page / doing Face ID instead of running after the biometric. Never throws, never awaited for UX.
+ */
+export function warmDb(): void {
+  void fetch(`${getConfig().apiUrl}/healthz/db`).catch(() => {});
+}
+
 export const authApi = {
   // Channel availability projection (ADR-0023) — fetched pre-login to render the channel choice.
   config: () => request<AuthConfigResponse>("/auth/config"),
