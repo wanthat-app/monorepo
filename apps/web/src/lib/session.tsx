@@ -31,6 +31,19 @@ export function hasStoredSession(): boolean {
   }
 }
 
+/**
+ * Persist a session from its refresh token alone — the Aurora-free landing path (ADR-0007): the /p/
+ * page verifies a passkey, stores the rotated refresh token, and redirects to the store without ever
+ * resolving the profile. The next app-proper page load rehydrates normally.
+ */
+export function persistRefreshToken(refreshToken: string): void {
+  try {
+    localStorage.setItem(REFRESH_KEY, refreshToken);
+  } catch {
+    // storage disabled (private mode) — the redirect still happens, the session just isn't remembered.
+  }
+}
+
 interface SessionState {
   customer: CustomerProfile | null;
   tokens: AuthTokens | null;
@@ -76,6 +89,10 @@ export function SessionProvider({ children }: { children: ReactNode }) {
         // The refresh token is valid — establish the session immediately and persist the rotated token.
         localStorage.setItem(REFRESH_KEY, fresh.refreshToken);
         setTokens(fresh);
+        // The referral landing (/p/*) is Aurora-free by design (ADR-0007): a valid refresh alone
+        // proves the member there (the page gates on `tokens`), so the profile fetch — /me, which
+        // reads Aurora — is skipped entirely; it loads on the next app-proper page (e.g. /home).
+        if (window.location.pathname.startsWith("/p/")) return;
         try {
           const { profile } = await meApi.get(fresh.accessToken);
           setCustomer(profile);

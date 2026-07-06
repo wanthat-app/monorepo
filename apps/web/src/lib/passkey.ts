@@ -3,7 +3,7 @@ import {
   startAuthentication,
   startRegistration,
 } from "@simplewebauthn/browser";
-import type { AuthSession } from "@wanthat/contracts";
+import type { AuthSession, AuthTokens } from "@wanthat/contracts";
 import { authApi } from "./api";
 
 /** Whether this browser can create platform passkeys (FaceID/TouchID/Windows Hello). */
@@ -108,6 +108,25 @@ export async function loginWithPasskey(opts?: {
   const credential = await startAuthentication({ optionsJSON: options as any });
   opts?.onCredential?.();
   return finishPasskeyLogin(challengeId, credential);
+}
+
+/**
+ * Aurora-free passkey login for the referral landing (ADR-0007): verify the assertion and take the
+ * minted Cognito tokens straight off the verify response — NO `/auth/session` (which reads Aurora).
+ * A passkey credential maps to an existing member by construction, and the landing only needs a
+ * session to persist before redirecting to the store; the profile loads later (e.g. on /home).
+ */
+export async function loginWithPasskeyTokens(opts?: {
+  /** See {@link loginWithPasskey}. */
+  onCredential?: () => void;
+}): Promise<AuthTokens> {
+  await waitForDocumentFocus();
+  const { challengeId, options } = await authApi.passkeyLoginChallenge();
+  // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
+  const credential = await startAuthentication({ optionsJSON: options as any });
+  opts?.onCredential?.();
+  const { tokens } = await authApi.passkeyLoginVerify(challengeId, credential);
+  return tokens;
 }
 
 /**

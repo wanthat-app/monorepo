@@ -498,7 +498,9 @@ export function authRouter(): Hono {
       exp: nowEpoch() + TICKET_TTL_SEC,
     });
     logger.info("passkey_login_ok", { sub: cred.customerSub });
-    return c.json(PasskeyLoginVerifyResponse.parse({ registrationTicket }));
+    // `tokens` ride along for Aurora-free callers: the /p/ landing persists the session and redirects
+    // WITHOUT /auth/session (a passkey credential is an existing member by construction, ADR-0007).
+    return c.json(PasskeyLoginVerifyResponse.parse({ registrationTicket, tokens }));
   });
 
   return auth;

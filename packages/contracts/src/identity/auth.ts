@@ -150,12 +150,18 @@ export type PasskeyLoginChallengeResponse = z.infer<typeof PasskeyLoginChallenge
 // POST /auth/passkey/login/verify — app-auth verifies the assertion against the stored public key,
 // resolves the sub from the credential, bridges to Cognito (the admin token exchange, ADR-0024
 // decision 3), and hands off the SAME signed ticket as /auth/verify so /auth/session resolves the
-// member (ADR-0021/0024).
+// member (ADR-0021/0024). It ALSO returns the minted `tokens` directly: a passkey credential maps to
+// an existing member by construction (no register branch), so an Aurora-free caller — the /p/
+// referral landing, ADR-0007 — persists the session and redirects without touching /auth/session.
+// /auth keeps exchanging the ticket (it needs the customer profile for /home).
 export const PasskeyLoginVerifyBody = z.object({
   challengeId: z.string(),
   credential: AuthenticationResponseJSON,
 });
 export type PasskeyLoginVerifyBody = z.infer<typeof PasskeyLoginVerifyBody>;
 
-export const PasskeyLoginVerifyResponse = AuthVerifyResponse;
-export type PasskeyLoginVerifyResponse = AuthVerifyResponse;
+export const PasskeyLoginVerifyResponse = z.object({
+  registrationTicket: z.string(),
+  tokens: AuthTokens,
+});
+export type PasskeyLoginVerifyResponse = z.infer<typeof PasskeyLoginVerifyResponse>;

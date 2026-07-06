@@ -1,14 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
-import { warmDb } from "../../lib/api";
 import {
   deviceHasPasskey,
-  loginWithPasskey,
+  loginWithPasskeyTokens,
   markPasskeyDevice,
   passkeysSupported,
 } from "../../lib/passkey";
-import { hasStoredSession, useSession } from "../../lib/session";
+import { hasStoredSession, persistRefreshToken, useSession } from "../../lib/session";
 import { Button, Screen, Spinner } from "../../ui/components";
 
 /**
@@ -39,10 +38,14 @@ export function SharedProductPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const [searchParams] = useSearchParams();
-  const { customer, loading, signIn } = useSession();
-  // True from the moment the biometric succeeds until the session resolves (verify + /auth/session can
-  // ride a cold-Aurora resume) — the module shows "signing you in…" instead of looking hung.
+  // Aurora-free by design (ADR-0007): a member is recognised by `tokens` (a valid Cognito refresh) —
+  // never by the profile (`customer` needs /me → Aurora, which this page must not touch).
+  const { tokens, loading } = useSession();
+  // True from the moment the biometric succeeds until the verify round-trip lands — the module shows
+  // "signing you in…" instead of looking hung.
   const [verifying, setVerifying] = useState(false);
+  // A passkey login that just completed on this page (session persisted, redirect firing).
+  const [authed, setAuthed] = useState(false);
   const armed = useRef(false);
   // On-device diagnosis of the auto-prompt gates (`?debug=1` renders it): phones have no console, so
   // when the Face ID sheet doesn't appear this names WHICH gate suppressed it or what the ceremony threw.
@@ -55,24 +58,22 @@ export function SharedProductPage() {
 
   const toStore = () => window.location.assign(MOCK_STORE_URL);
 
-  // A recognised (or just-authenticated) member goes straight to the store — the acquisition
-  // destination. No button, no interstitial.
-  const signedIn = !loading && !!customer;
+  // A recognised (valid refresh) or just-authenticated member goes straight to the store — the
+  // acquisition destination. No button, no interstitial, no Aurora.
+  const signedIn = (!loading && !!tokens) || authed;
   useEffect(() => {
     if (signedIn) toStore();
   }, [signedIn]);
 
   // Arm the auto passkey prompt for a returning device with no session. It fires when the document
   // gains focus (not on a timer — see waitForDocumentFocus); rendering is never blocked on it.
+  // The whole path is Aurora-free: DynamoDB challenge + credential, Cognito token mint, done.
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
-    // Kick the Aurora resume NOW (fire-and-forget, not awaited — the ceremony must stay the first
-    // AWAITED async op): by the time Face ID completes, the DB is warm(ing) for the session resolve.
-    warmDb();
     if (hasStoredSession()) {
       note("gate: stored session → rehydrating, no prompt");
-      return; // the session effect above redirects once rehydration lands
+      return; // the session effect above redirects once the refresh lands
     }
     if (!passkeysSupported() || !deviceHasPasskey()) {
       note(
@@ -83,14 +84,15 @@ export function SharedProductPage() {
     note("auto-prompt: armed — fires on document focus");
     void (async () => {
       try {
-        const session = await loginWithPasskey({
+        const freshTokens = await loginWithPasskeyTokens({
           onCredential: () => {
-            note("biometric ok → resolving session");
+            note("biometric ok → verifying");
             setVerifying(true);
           },
         });
+        persistRefreshToken(freshTokens.refreshToken);
         markPasskeyDevice();
-        signIn(session); // → signedIn → the redirect effect above
+        setAuthed(true); // → signedIn → the redirect effect above
       } catch (err) {
         note(
           `auto-prompt failed: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`,
@@ -100,7 +102,7 @@ export function SharedProductPage() {
     })();
     // note/setDiag are stable enough for this once-guarded effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [signIn]);
+  }, []);
 
   // The auth module under the product card: progress while a session is being established; once
   // signed in, a "Go to store" button (the auto-redirect fires anyway — the button is the visible
