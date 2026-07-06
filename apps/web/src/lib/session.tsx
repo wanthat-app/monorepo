@@ -8,7 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
-import { authApi, meApi } from "./api";
+import { ApiError, authApi, meApi } from "./api";
 import { isAdminToken } from "./jwt";
 
 /**
@@ -17,6 +17,19 @@ import { isAdminToken } from "./jwt";
  * `/me`. No token is ever written to a cookie.
  */
 const REFRESH_KEY = "wanthat.refreshToken";
+
+/**
+ * Whether a session is persisted on this device (a stored refresh token), read synchronously. A page
+ * can use this before rehydration completes to decide "this is a returning member — don't ask them to
+ * log in again". It is a heuristic (the token may be expired/revoked); the actual refresh confirms it.
+ */
+export function hasStoredSession(): boolean {
+  try {
+    return !!localStorage.getItem(REFRESH_KEY);
+  } catch {
+    return false;
+  }
+}
 
 interface SessionState {
   customer: CustomerProfile | null;
@@ -60,12 +73,24 @@ export function SessionProvider({ children }: { children: ReactNode }) {
     (async () => {
       try {
         const { tokens: fresh } = await authApi.refresh(rt);
-        const { profile } = await meApi.get(fresh.accessToken);
-        setTokens(fresh);
-        setCustomer(profile);
+        // The refresh token is valid — establish the session immediately and persist the rotated token.
         localStorage.setItem(REFRESH_KEY, fresh.refreshToken);
-      } catch {
-        localStorage.removeItem(REFRESH_KEY);
+        setTokens(fresh);
+        try {
+          const { profile } = await meApi.get(fresh.accessToken);
+          setCustomer(profile);
+        } catch {
+          // Profile fetch hiccup (e.g. a cold-Aurora /me blip) — keep the valid session; the profile
+          // loads on a later navigation. Do NOT log the member out over a transient /me failure.
+        }
+      } catch (err) {
+        // Discard the stored session ONLY when the refresh token is actually rejected (expired/revoked,
+        // 401). A network error or a 5xx must NOT log a member out — they stay signed in and retry.
+        if (err instanceof ApiError && err.status === 401) {
+          localStorage.removeItem(REFRESH_KEY);
+          setTokens(null);
+          setCustomer(null);
+        }
       } finally {
         setLoading(false);
       }

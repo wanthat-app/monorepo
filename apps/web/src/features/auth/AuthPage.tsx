@@ -13,7 +13,7 @@ import {
   passkeyAutofillSupported,
   passkeysSupported,
 } from "../../lib/passkey";
-import { useSession } from "../../lib/session";
+import { hasStoredSession, useSession } from "../../lib/session";
 import {
   BackButton,
   Button,
@@ -23,6 +23,7 @@ import {
   OtpInput,
   Screen,
   Segmented,
+  Spinner,
   TextField,
 } from "../../ui/components";
 
@@ -46,11 +47,17 @@ export function AuthPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { signIn, accessToken } = useSession();
+  const { signIn, accessToken, customer, loading } = useSession();
 
   // Where to go once authenticated. The referral landing sends members here with `?next=/go/{id}`
   // (the mock store hand-off); a plain login defaults home.
   const dest = safeNext(searchParams.get("next")) ?? "/home";
+
+  // Already logged in (e.g. a returning member the referral landing routed here) → don't ask them to
+  // authenticate again; go straight to the destination once the session has rehydrated.
+  useEffect(() => {
+    if (!loading && customer) navigate(dest, { replace: true });
+  }, [loading, customer, dest, navigate]);
 
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -100,6 +107,9 @@ export function AuthPage() {
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
+    // A returning member with a stored session is being rehydrated — the effect above will forward
+    // them; don't pop a passkey prompt at someone who's already logged in.
+    if (hasStoredSession()) return;
     if (!passkeysSupported()) {
       setAutofillSupported(false);
       return;
@@ -211,6 +221,16 @@ export function AuthPage() {
       markPasskeyDevice(); // next visit on this device auto-prompts Face ID on load
       goHome();
     });
+
+  // Rehydrating a returning member's session — show a spinner (not the login form) until it resolves,
+  // then the effect above forwards them. `loading` is only true while a stored session is refreshing.
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <Spinner />
+      </div>
+    );
+  }
 
   return (
     <Screen>

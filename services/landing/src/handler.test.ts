@@ -38,6 +38,12 @@ describe("renderLanding", () => {
     expect(html).toContain('href="/go/rec_123?guest=1"');
   });
 
+  it("carries a client-side session resolve: a hidden Continue CTA + the refresh-token check", () => {
+    expect(html).toContain('id="cta-continue"');
+    expect(html).toContain('href="/go/rec_123"'); // Continue skips auth, straight to the store hand-off
+    expect(html).toContain('localStorage.getItem("wanthat.refreshToken")');
+  });
+
   it("renders RTL for Hebrew", () => {
     const he = renderLanding({
       product: MOCK_PRODUCT,
