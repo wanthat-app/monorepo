@@ -174,7 +174,7 @@ const en = {
     loginCta: "I already have an account",
     guestCta: "Continue as guest — no cashback",
     signingIn: "Signing you in…",
-    toStore: "You're in — taking you to the store…",
+    goToStore: "Go to store",
   },
 };
 
@@ -350,7 +350,7 @@ const he: typeof en = {
     loginCta: "כבר יש לי חשבון",
     guestCta: "המשך כאורח — בלי קאשבק",
     signingIn: "מחברים אתכם…",
-    toStore: "מחוברים — ממשיכים לחנות…",
+    goToStore: "מעבר לחנות",
   },
 };
 

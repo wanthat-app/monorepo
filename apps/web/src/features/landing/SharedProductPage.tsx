@@ -98,14 +98,18 @@ export function SharedProductPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signIn]);
 
-  // The auth module under the product card: progress while a session is being established, CTAs
-  // otherwise. The product content above is NEVER gated by any of this.
+  // The auth module under the product card: progress while a session is being established; once
+  // signed in, a "Go to store" button (the auto-redirect fires anyway — the button is the visible
+  // affordance while it does, and the recovery if the member comes BACK from the store via bfcache).
+  // CTAs otherwise. The product content above is NEVER gated by any of this.
   const authModule =
-    loading || verifying || signedIn ? (
+    loading || verifying ? (
       <div className="flex items-center justify-center gap-2 py-2 text-[13.5px] text-muted">
         <Spinner />
-        <span>{t(signedIn ? "shared.toStore" : "shared.signingIn")}</span>
+        <span>{t("shared.signingIn")}</span>
       </div>
+    ) : signedIn ? (
+      <Button onClick={toStore}>{t("shared.goToStore")}</Button>
     ) : (
       <>
         <Button onClick={() => window.location.assign(`/auth?intent=signup&ref=${id}`)}>
