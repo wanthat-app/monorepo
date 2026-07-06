@@ -1,4 +1,4 @@
-import { CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
+import { CfnOutput, CustomResource, Duration, Stack, type StackProps } from "aws-cdk-lib";
 import { CorsHttpMethod, HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -11,6 +11,7 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import type * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
+import { Provider } from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import {
   applyThrottle,
@@ -75,12 +76,37 @@ export class ApiStack extends Stack {
     super(scope, id, props);
     const { wanthatEnv } = props;
 
-    // HMAC key for registration tickets (ADR-0020/0021) - generated, never in the repo. Both
-    // functions grantRead it: app-auth signs, app-core verifies.
+    // Ed25519 keypair for registration tickets (ADR-0020/0021, asymmetric) - generated at deploy
+    // by the ticket-keygen custom resource below, never in the repo. Only app-auth (the SIGNER)
+    // reads this secret - over the free public Secrets Manager endpoint, since it is non-VPC.
+    // app-core verifies with the PUBLIC key via plain env, so the VPC needs no secretsmanager
+    // interface endpoint. (The secret NAME still says ticket-hmac - renaming would REPLACE the
+    // secret; the generateSecretString placeholder value is overwritten by the keygen on first run.)
     const ticketSecret = new secretsmanager.Secret(this, "AuthTicketSecret", {
       secretName: `wanthat/${wanthatEnv.name}/auth/ticket-hmac`,
       description: "HMAC key signing /auth registration tickets",
       generateSecretString: { passwordLength: 48, excludePunctuation: true },
+    });
+
+    // ticket-keygen (custom resource): on first run generates the Ed25519 pair into the secret and
+    // returns the public key(s); on every later run it returns the EXISTING public keys untouched
+    // (idempotent - a deploy must never silently rotate the signing key). Non-VPC; sourceMap off so
+    // the asset hash does not churn per deploy (the db-migrator lesson).
+    const keygenFn = new NodejsFunction(this, "TicketKeygen", {
+      functionName: `wanthat-${wanthatEnv.name}-ticket-keygen`,
+      entry: serviceEntry("ticket-keygen"),
+      handler: "handler",
+      runtime: LAMBDA_RUNTIME,
+      memorySize: 256,
+      timeout: Duration.seconds(30),
+      bundling: { minify: true, sourceMap: false },
+    });
+    ticketSecret.grantRead(keygenFn);
+    ticketSecret.grantWrite(keygenFn);
+    const keygenProvider = new Provider(this, "TicketKeygenProvider", { onEventHandler: keygenFn });
+    const ticketKeys = new CustomResource(this, "TicketKeypair", {
+      serviceToken: keygenProvider.serviceToken,
+      properties: { secretArn: ticketSecret.secretArn },
     });
 
     // --- app-auth: NON-VPC auth edge (Cognito + DynamoDB) ---
@@ -116,6 +142,9 @@ export class ApiStack extends Stack {
       bundling: { minify: true, sourceMap: true },
     });
     this.appAuthFn = appAuthFn;
+    // The signer expects keypair material in the secret - make sure the keygen CR has run (and
+    // overwritten the legacy HMAC placeholder) before this function's new code goes live.
+    appAuthFn.node.addDependency(ticketKeys);
 
     // DynamoDB: auth working tables RW, guest attribution RW, config read.
     props.authChallengeTable.grantReadWriteData(appAuthFn);
@@ -167,7 +196,9 @@ export class ApiStack extends Stack {
         WANTHAT_ENV: wanthatEnv.name,
         GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
-        AUTH_TICKET_SECRET_ARN: ticketSecret.secretArn,
+        // PUBLIC verification keys (JSON array) from the keygen custom resource - not a secret, so
+        // the in-VPC core needs no Secrets Manager access at all.
+        AUTH_TICKET_PUBLIC_KEYS: ticketKeys.getAttString("publicKeys"),
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_rw",
@@ -187,7 +218,7 @@ export class ApiStack extends Stack {
     // DynamoDB: guest attribution RW (attribution claim), config read.
     props.guestAttributionTable.grantReadWriteData(appCoreFn);
     props.runtimeConfigTable.grantReadData(appCoreFn);
-    ticketSecret.grantRead(appCoreFn);
+    // (No ticketSecret grant: verification is secretless - Ed25519 public keys via env.)
     // Outbox producer: write-only (no read grant) - the dispatcher owns status updates (ADR-0023).
     props.notificationOutboxTable.grantWriteData(appCoreFn);
 

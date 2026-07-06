@@ -366,6 +366,12 @@ importers:
         specifier: workspace:*
         version: link:../../packages/contracts
 
+  services/ticket-keygen:
+    dependencies:
+      '@aws-sdk/client-secrets-manager':
+        specifier: ^3.600.0
+        version: 3.1076.0
+
   services/whatsapp-dispatcher:
     dependencies:
       '@aws-lambda-powertools/logger':

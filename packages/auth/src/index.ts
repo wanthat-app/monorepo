@@ -1,8 +1,14 @@
 /**
- * `@wanthat/auth` — shared HMAC handoff tokens (ADR-0020, ADR-0021).
+ * `@wanthat/auth` — the registration-ticket handoff (ADR-0020, ADR-0021), Ed25519-signed.
  *
- * {@link TicketSigner} signs/verifies the registration ticket: non-VPC `app-auth` (signs at
- * `/auth/verify`) <-> in-VPC `app-core` (verifies at `/auth/register`). Same `<payload>.<hmac>`
- * base64url wire form and Secrets Manager-keyed HMAC crypto as the rest of the handoff tokens.
+ * {@link TicketSigner} (non-VPC `app-auth`, private key from Secrets Manager over the free public
+ * endpoint) signs at `/auth/verify`; {@link TicketVerifier} (in-VPC `app-core`, PUBLIC key from a
+ * plain env var — no Secrets Manager, no interface endpoint) verifies at `/auth/session` +
+ * `/auth/register`. Wire form: `<base64url payload>.<base64url Ed25519 signature>`.
  */
-export { type RegistrationTicket, TicketSigner } from "./tickets";
+export {
+  type RegistrationTicket,
+  type TicketKeyMaterial,
+  TicketSigner,
+  TicketVerifier,
+} from "./tickets";

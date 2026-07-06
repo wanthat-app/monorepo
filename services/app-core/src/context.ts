@@ -1,4 +1,4 @@
-import { TicketSigner } from "@wanthat/auth";
+import { TicketVerifier } from "@wanthat/auth";
 import { createDb } from "@wanthat/db";
 import { GuestAttributionRepo, getDocClient, NotificationOutboxRepo } from "@wanthat/dynamo";
 
@@ -15,7 +15,7 @@ export interface CoreContext {
   region: string;
   db: Db;
   guests: GuestAttributionRepo;
-  tickets: TicketSigner;
+  tickets: TicketVerifier;
   outbox: NotificationOutboxRepo;
   /** Canonical SPA origin for links in outbound messages (env APP_URL). */
   appUrl: string;
@@ -43,7 +43,9 @@ export function getContext(): CoreContext {
       caCerts: process.env.DB_CA_CERT,
     }),
     guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
-    tickets: new TicketSigner(requireEnv("AUTH_TICKET_SECRET_ARN"), region),
+    // Verification is secretless (Ed25519 PUBLIC keys via env) - app-core reads NO Secrets Manager,
+    // which is what lets the VPC drop its secretsmanager interface endpoint.
+    tickets: new TicketVerifier(requireEnv("AUTH_TICKET_PUBLIC_KEYS")),
     outbox: new NotificationOutboxRepo(doc, requireEnv("NOTIFICATION_OUTBOX_TABLE")),
     appUrl: requireEnv("APP_URL"),
   };
