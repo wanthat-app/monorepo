@@ -1,22 +1,22 @@
 /**
- * Server-rendered referral landing (ADR-0007/0018/0019) — the entry when someone opens a shared
- * product link. It is deliberately server-rendered (not the SPA) so social/crawler bots get real
- * Open Graph tags and a rich link preview; humans get a product card + the earn pitch and are sent
- * into the REAL auth (the SPA `/auth` flow) to sign up / log in, or on to the store as a guest.
+ * Referral landing rendering (ADR-0007/0018/0019). The landing is a DYNAMIC SPA page (`/p/{id}`,
+ * `SharedProductPage`) — it runs the same session + passkey mechanism as the rest of the app. The only
+ * thing this service must server-render is the bot-facing content: real Open Graph tags + a product
+ * snapshot injected into the SPA shell, so a shared link previews richly for crawlers. Humans get the
+ * shell, the SPA boots, and the React page takes over.
  *
  * MOCK phase: the product is hardcoded from the design handoff (the DynamoDB recommendation resolve +
- * the real affiliate redirect land with the full-landing slice). The auth it hands off to is real.
+ * the real attributed redirect land with the full-landing slice).
  */
 
 export type Locale = "he" | "en";
 
-/** The shared product (mock — design handoff `Wanthat Shared Product - Flow`). */
 export interface LandingProduct {
   title: string;
-  priceIls: string; // display string, ₪ leading
+  priceIls: string;
   cashbackIls: string;
   merchant: string;
-  imagePath: string; // served by the SPA origin, same domain (bot-fetchable absolute URL for OG)
+  imagePath: string; // served by the SPA origin (same domain) — a bot-fetchable absolute URL for OG
 }
 
 export const MOCK_PRODUCT: LandingProduct = {
@@ -27,47 +27,10 @@ export const MOCK_PRODUCT: LandingProduct = {
   imagePath: "/product-feeder.jpg",
 };
 
-/**
- * Mock affiliate store URL — where the acquisition flow lands directly (member continue, guest, and
- * post-auth). The real per-product attributed affiliate redirect lands with the full-landing slice.
- */
-export const MOCK_STORE_URL = "https://www.aliexpress.com/";
-
-const COPY: Record<Locale, Record<string, string>> = {
-  he: {
-    dir: "rtl",
-    lang: "he",
-    tagline: "קאשבק אמיתי על קניות באינטרנט",
-    onMerchant: "ב-{merchant}",
-    earnLabel: "מקבלים בחזרה",
-    earnPitch: "קונים דרך wanthat ומקבלים קאשבק אמיתי לארנק כשהעסקה מאושרת.",
-    signupCta: "הרשמה וקבלת קאשבק",
-    signupTrust: "חינם לגמרי · הצטרפות ב-30 שניות",
-    loginCta: "כבר יש לי חשבון",
-    guestCta: "המשך כאורח — בלי קאשבק",
-    continueCta: "המשך לחנות",
-    loggedInNote: "אתם מחוברים — הקאשבק פעיל על הרכישה הזו",
-    ogDescription: "קנו את המוצר הזה ב-{merchant} וקבלו {cashback} קאשבק עם wanthat.",
-  },
-  en: {
-    dir: "ltr",
-    lang: "en",
-    tagline: "Real cashback on your online shopping",
-    onMerchant: "on {merchant}",
-    earnLabel: "You earn back",
-    earnPitch: "Buy through wanthat and get real cashback to your wallet once the order confirms.",
-    signupCta: "Sign up to earn",
-    signupTrust: "Free · takes 30 seconds",
-    loginCta: "I already have an account",
-    guestCta: "Continue as guest — no cashback",
-    continueCta: "Continue to store",
-    loggedInNote: "You're logged in — cashback is on for this purchase",
-    ogDescription: "Buy this on {merchant} and earn {cashback} cashback with wanthat.",
-  },
+const OG_DESC: Record<Locale, string> = {
+  he: "קנו את המוצר הזה ב-{merchant} וקבלו {cashback} קאשבק עם wanthat.",
+  en: "Buy this on {merchant} and earn {cashback} cashback with wanthat.",
 };
-
-const fill = (s: string, p: LandingProduct) =>
-  s.replace("{merchant}", p.merchant).replace("{cashback}", p.cashbackIls);
 
 const esc = (s: string) =>
   s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -80,119 +43,62 @@ export function pickLocale(lang: string | undefined, acceptLanguage: string | un
   return (acceptLanguage ?? "").toLowerCase().startsWith("en") ? "en" : "he";
 }
 
-/**
- * Render the full landing HTML. `origin` is the request's scheme+host (for absolute OG URLs); `recId`
- * is the shared recommendation id (used only for the funnel + the post-auth `next` in this mock).
- */
-export function renderLanding(args: {
-  product: LandingProduct;
-  locale: Locale;
-  origin: string;
-  recId: string;
-}): string {
-  const { product: p, locale, origin, recId } = args;
-  const t = (k: string) => fill(COPY[locale][k] ?? k, p);
-  const imageUrl = `${origin}${p.imagePath}`;
+/** The Open Graph / Twitter meta block + a matching <title>, absolute URLs from `origin`. */
+export function ogHead(
+  product: LandingProduct,
+  origin: string,
+  recId: string,
+  locale: Locale,
+): string {
+  const desc = OG_DESC[locale]
+    .replace("{merchant}", product.merchant)
+    .replace("{cashback}", product.cashbackIls);
+  const imageUrl = `${origin}${product.imagePath}`;
   const pageUrl = `${origin}/p/${encodeURIComponent(recId)}`;
-  // Auth CTAs carry `?ref={id}` — the SPA sends the member straight to the store after signing in.
-  const ref = encodeURIComponent(recId);
-  const ogDesc = t("ogDescription");
-  const isRtl = locale === "he";
+  return [
+    `<title>${esc(product.title)} · wanthat</title>`,
+    `<meta name="description" content="${esc(desc)}" />`,
+    `<meta property="og:type" content="product" />`,
+    `<meta property="og:site_name" content="wanthat" />`,
+    `<meta property="og:title" content="${esc(product.title)}" />`,
+    `<meta property="og:description" content="${esc(desc)}" />`,
+    `<meta property="og:image" content="${esc(imageUrl)}" />`,
+    `<meta property="og:url" content="${esc(pageUrl)}" />`,
+    `<meta name="twitter:card" content="summary_large_image" />`,
+    `<meta name="twitter:title" content="${esc(product.title)}" />`,
+    `<meta name="twitter:description" content="${esc(desc)}" />`,
+    `<meta name="twitter:image" content="${esc(imageUrl)}" />`,
+  ].join("\n");
+}
 
-  return `<!doctype html>
-<html lang="${COPY[locale].lang}" dir="${COPY[locale].dir}">
-<head>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${esc(p.title)} · wanthat</title>
-<meta name="description" content="${esc(ogDesc)}" />
-<meta property="og:type" content="product" />
-<meta property="og:site_name" content="wanthat" />
-<meta property="og:title" content="${esc(p.title)}" />
-<meta property="og:description" content="${esc(ogDesc)}" />
-<meta property="og:image" content="${esc(imageUrl)}" />
-<meta property="og:url" content="${esc(pageUrl)}" />
-<meta name="twitter:card" content="summary_large_image" />
-<meta name="twitter:title" content="${esc(p.title)}" />
-<meta name="twitter:description" content="${esc(ogDesc)}" />
-<meta name="twitter:image" content="${esc(imageUrl)}" />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link href="https://fonts.googleapis.com/css2?family=Hanken+Grotesk:wght@400;500;600;700&family=Space+Grotesk:wght@500;600;700&family=Heebo:wght@400;500;600;700&display=swap" rel="stylesheet" />
-<style>
-  :root{--bg:#e9edeb;--surface:#fff;--ink:#15201c;--muted:#6b7b73;--line:#e6ebe8;--accent:#1f7a57;--accent-soft:#e7f1ec;--accent-soft-border:#d2e3d9}
-  *{box-sizing:border-box}
-  body{margin:0;background:var(--bg);color:var(--ink);font-family:${isRtl ? '"Heebo"' : '"Hanken Grotesk"'},system-ui,sans-serif;-webkit-font-smoothing:antialiased;line-height:1.5}
-  .wrap{max-width:440px;margin:0 auto;min-height:100dvh;display:flex;flex-direction:column;padding:24px 20px 32px}
-  .brand{font-family:"Space Grotesk",sans-serif;font-weight:700;font-size:22px;letter-spacing:-0.03em;color:var(--ink);text-align:center;margin-bottom:6px}
-  .tagline{color:var(--muted);font-size:13.5px;text-align:center;margin-bottom:22px}
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:20px;overflow:hidden;box-shadow:0 1px 2px rgba(21,32,28,.04)}
-  .photo{width:100%;aspect-ratio:16/10;object-fit:cover;display:block;background:var(--accent-soft)}
-  .body{padding:18px 18px 20px}
-  .title{font-family:"Space Grotesk",sans-serif;font-weight:600;font-size:19px;letter-spacing:-0.02em;margin:0 0 6px}
-  .price{display:flex;align-items:baseline;gap:8px;margin-bottom:16px}
-  .price b{font-size:20px}
-  .price span{color:var(--muted);font-size:13px}
-  .money{direction:ltr;font-variant-numeric:tabular-nums;unicode-bidi:isolate}
-  .earn{display:flex;align-items:center;justify-content:space-between;gap:12px;background:var(--accent-soft);border:1px solid var(--accent-soft-border);border-radius:14px;padding:12px 14px;margin-bottom:14px}
-  .earn .lbl{font-size:12.5px;color:var(--accent);font-weight:600}
-  .earn .amt{font-size:22px;font-weight:700;color:var(--accent)}
-  .pitch{color:var(--muted);font-size:13.5px;margin:0 0 18px}
-  .btn{display:block;width:100%;text-align:center;text-decoration:none;font-weight:700;font-size:15.5px;border-radius:14px;padding:15px 16px;border:1px solid transparent}
-  .btn-primary{background:var(--accent);color:#fff}
-  .btn-secondary{background:var(--surface);color:var(--ink);border-color:var(--line);margin-top:10px;font-weight:600}
-  .trust{text-align:center;color:var(--muted);font-size:12px;margin-top:10px}
-  .guest{display:block;text-align:center;color:var(--muted);font-size:13px;text-decoration:none;margin-top:18px}
-  .guest:hover{color:var(--ink)}
-  .spacer{flex:1}
-</style>
-</head>
-<body>
-  <div class="wrap">
-    <div class="brand">wanthat</div>
-    <div class="tagline">${esc(t("tagline"))}</div>
-    <div class="card">
-      <img class="photo" src="${esc(p.imagePath)}" alt="${esc(p.title)}" />
-      <div class="body">
-        <h1 class="title">${esc(p.title)}</h1>
-        <div class="price">
-          <b class="money">${esc(p.priceIls)}</b>
-          <span>${esc(t("onMerchant"))}</span>
-        </div>
-        <div class="earn">
-          <span class="lbl">${esc(t("earnLabel"))}</span>
-          <span class="amt money">${esc(p.cashbackIls)}</span>
-        </div>
-        <p class="pitch">${esc(t("earnPitch"))}</p>
-        <a id="cta-signup" class="btn btn-primary" href="/auth?intent=signup&ref=${ref}">${esc(t("signupCta"))}</a>
-        <a id="cta-login" class="btn btn-secondary" href="/auth?ref=${ref}">${esc(t("loginCta"))}</a>
-        <div id="cta-trust" class="trust">${esc(t("signupTrust"))}</div>
-        <!-- Revealed client-side for an already-logged-in member (see the script below): skip auth and
-             go straight to the store. -->
-        <a id="cta-continue" class="btn btn-primary" href="${esc(MOCK_STORE_URL)}" style="display:none">${esc(t("continueCta"))}</a>
-        <div id="cta-loggedin" class="trust" style="display:none">${esc(t("loggedInNote"))}</div>
-      </div>
-    </div>
-    <div class="spacer"></div>
-    <a id="cta-guest" class="guest" href="${esc(MOCK_STORE_URL)}">${esc(t("guestCta"))}</a>
-  </div>
-  <script>
-    // Cookieless identity resolve (ADR-0007): the SPA and this page share the origin + localStorage,
-    // so a stored refresh token means "returning member". If present, don't ask them to log in again —
-    // swap the sign-up / log-in CTAs for a single "Continue to store" that skips auth. (Heuristic; the
-    // /go hand-off confirms the real session.)
-    try {
-      if (localStorage.getItem("wanthat.refreshToken")) {
-        var byId = function (id) { return document.getElementById(id); };
-        ["cta-signup", "cta-login", "cta-trust", "cta-guest"].forEach(function (id) {
-          var el = byId(id); if (el) el.style.display = "none";
-        });
-        ["cta-continue", "cta-loggedin"].forEach(function (id) {
-          var el = byId(id); if (el) el.style.display = "block";
-        });
-      }
-    } catch (e) {}
-  </script>
-</body>
-</html>`;
+/** A minimal product snapshot rendered into #root for bots that read the body (the SPA replaces it). */
+function botSnapshot(product: LandingProduct): string {
+  return (
+    `<div style="max-width:440px;margin:24px auto;font-family:system-ui;text-align:center">` +
+    `<img src="${esc(product.imagePath)}" alt="${esc(product.title)}" style="width:100%;border-radius:16px" />` +
+    `<h1>${esc(product.title)}</h1>` +
+    `<p>${esc(product.priceIls)} on ${esc(product.merchant)} · earn ${esc(product.cashbackIls)} cashback</p>` +
+    `</div>`
+  );
+}
+
+/**
+ * Inject the OG head + bot snapshot into the SPA's `index.html` shell. Keeps the SPA's asset tags
+ * (hashed `<script>`/`<link>`) intact so the app boots and `SharedProductPage` takes over on `/p/{id}`.
+ */
+export function injectLanding(
+  shell: string,
+  product: LandingProduct,
+  origin: string,
+  recId: string,
+  locale: Locale,
+): string {
+  const head = ogHead(product, origin, recId, locale);
+  let html = shell;
+  // Replace the generic <title> if present, then add the OG block before </head>.
+  html = html.replace(/<title>.*?<\/title>/s, "");
+  html = html.replace("</head>", `${head}\n</head>`);
+  // Seed #root with a bot-readable snapshot; the SPA replaces it on mount.
+  html = html.replace(/<div id="root">\s*<\/div>/, `<div id="root">${botSnapshot(product)}</div>`);
+  return html;
 }

@@ -165,6 +165,17 @@ const en = {
       },
     },
   },
+  shared: {
+    onMerchant: "on {{merchant}}",
+    earnLabel: "You earn back",
+    pitch: "Buy through wanthat and get real cashback to your wallet once the order confirms.",
+    signupCta: "Sign up to earn",
+    signupTrust: "Free · takes 30 seconds",
+    loginCta: "I already have an account",
+    guestCta: "Continue as guest — no cashback",
+    continueCta: "Continue to store",
+    loggedInNote: "You're logged in — cashback is on for this purchase",
+  },
 };
 
 const he: typeof en = {
@@ -329,6 +340,17 @@ const he: typeof en = {
         desc: "כמה זמן מוחזק מונה השליחות לכל טלפון.",
       },
     },
+  },
+  shared: {
+    onMerchant: "ב-{{merchant}}",
+    earnLabel: "מקבלים בחזרה",
+    pitch: "קונים דרך wanthat ומקבלים קאשבק אמיתי לארנק כשהעסקה מאושרת.",
+    signupCta: "הרשמה וקבלת קאשבק",
+    signupTrust: "חינם לגמרי · הצטרפות ב-30 שניות",
+    loginCta: "כבר יש לי חשבון",
+    guestCta: "המשך כאורח — בלי קאשבק",
+    continueCta: "המשך לחנות",
+    loggedInNote: "אתם מחוברים — הקאשבק פעיל על הרכישה הזו",
   },
 };
 
