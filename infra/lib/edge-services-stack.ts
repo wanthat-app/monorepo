@@ -70,6 +70,11 @@ export class EdgeServicesStack extends Stack {
     // --- landing (public HTTP API; Lambda Function URLs are unavailable in il-central-1, ADR-0018) ---
     const landing = makeFn("Landing", "landing");
     this.landingFn = landing;
+    // The public site origin (dev.wanthat.app / wanthat.app) for ABSOLUTE Open Graph URLs. Behind
+    // CloudFront the Lambda's Host header is the API-Gateway domain, not the site domain, so the
+    // og:image / og:url must come from the known domain, not the request.
+    if (wanthatEnv.domainName)
+      landing.addEnvironment("SITE_ORIGIN", `https://${wanthatEnv.domainName}`);
     props.recommendationTable.grantReadData(landing);
     props.runtimeConfigTable.grantReadData(landing);
     props.fxRateTable.grantReadData(landing);

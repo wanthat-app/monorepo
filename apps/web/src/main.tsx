@@ -8,6 +8,7 @@ import { AdminPage } from "./features/admin/AdminPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { CallbackPage } from "./features/auth/CallbackPage";
 import { HomePage } from "./features/home/HomePage";
+import { GoPage } from "./features/landing/GoPage";
 import "./i18n";
 import "./index.css";
 import { initConfig } from "./lib/config";
@@ -19,6 +20,8 @@ const router = createBrowserRouter([
   { path: "/auth", element: <AuthPage /> },
   { path: "/auth/callback", element: <CallbackPage /> },
   { path: "/home", element: <HomePage /> },
+  // Mock store hand-off after the referral-landing auth (the real /p/{id} landing is server-rendered).
+  { path: "/go/:id", element: <GoPage /> },
   { path: "/admin", element: <AdminPage /> },
   { path: "/admin/callback", element: <AdminCallbackPage /> },
 ]);
