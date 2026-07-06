@@ -39,6 +39,8 @@ const COPY: Record<Locale, Record<string, string>> = {
     signupTrust: "חינם לגמרי · הצטרפות ב-30 שניות",
     loginCta: "כבר יש לי חשבון",
     guestCta: "המשך כאורח — בלי קאשבק",
+    continueCta: "המשך לחנות",
+    loggedInNote: "אתם מחוברים — הקאשבק פעיל על הרכישה הזו",
     ogDescription: "קנו את המוצר הזה ב-{merchant} וקבלו {cashback} קאשבק עם wanthat.",
   },
   en: {
@@ -52,6 +54,8 @@ const COPY: Record<Locale, Record<string, string>> = {
     signupTrust: "Free · takes 30 seconds",
     loginCta: "I already have an account",
     guestCta: "Continue as guest — no cashback",
+    continueCta: "Continue to store",
+    loggedInNote: "You're logged in — cashback is on for this purchase",
     ogDescription: "Buy this on {merchant} and earn {cashback} cashback with wanthat.",
   },
 };
@@ -154,14 +158,34 @@ export function renderLanding(args: {
           <span class="amt money">${esc(p.cashbackIls)}</span>
         </div>
         <p class="pitch">${esc(t("earnPitch"))}</p>
-        <a class="btn btn-primary" href="/auth?intent=signup&next=${next}">${esc(t("signupCta"))}</a>
-        <a class="btn btn-secondary" href="/auth?next=${next}">${esc(t("loginCta"))}</a>
-        <div class="trust">${esc(t("signupTrust"))}</div>
+        <a id="cta-signup" class="btn btn-primary" href="/auth?intent=signup&next=${next}">${esc(t("signupCta"))}</a>
+        <a id="cta-login" class="btn btn-secondary" href="/auth?next=${next}">${esc(t("loginCta"))}</a>
+        <div id="cta-trust" class="trust">${esc(t("signupTrust"))}</div>
+        <!-- Revealed client-side for an already-logged-in member (see the script below): skip auth. -->
+        <a id="cta-continue" class="btn btn-primary" href="/go/${encodeURIComponent(recId)}" style="display:none">${esc(t("continueCta"))}</a>
+        <div id="cta-loggedin" class="trust" style="display:none">${esc(t("loggedInNote"))}</div>
       </div>
     </div>
     <div class="spacer"></div>
-    <a class="guest" href="/go/${encodeURIComponent(recId)}?guest=1">${esc(t("guestCta"))}</a>
+    <a id="cta-guest" class="guest" href="/go/${encodeURIComponent(recId)}?guest=1">${esc(t("guestCta"))}</a>
   </div>
+  <script>
+    // Cookieless identity resolve (ADR-0007): the SPA and this page share the origin + localStorage,
+    // so a stored refresh token means "returning member". If present, don't ask them to log in again —
+    // swap the sign-up / log-in CTAs for a single "Continue to store" that skips auth. (Heuristic; the
+    // /go hand-off confirms the real session.)
+    try {
+      if (localStorage.getItem("wanthat.refreshToken")) {
+        var byId = function (id) { return document.getElementById(id); };
+        ["cta-signup", "cta-login", "cta-trust", "cta-guest"].forEach(function (id) {
+          var el = byId(id); if (el) el.style.display = "none";
+        });
+        ["cta-continue", "cta-loggedin"].forEach(function (id) {
+          var el = byId(id); if (el) el.style.display = "block";
+        });
+      }
+    } catch (e) {}
+  </script>
 </body>
 </html>`;
 }
