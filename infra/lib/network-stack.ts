@@ -63,21 +63,10 @@ export class NetworkStack extends Stack {
       service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
     });
 
-    // Interface endpoints get their own SG that admits HTTPS from the in-VPC Lambdas only (a shared
-    // SG would need a self-referencing 443 rule).
-    const endpointSg = new ec2.SecurityGroup(this, "EndpointSg", {
-      vpc: this.vpc,
-      description: "VPC interface endpoints - HTTPS ingress from in-VPC Lambdas only",
-      allowAllOutbound: false,
-    });
-    endpointSg.addIngressRule(this.lambdaSg, ec2.Port.tcp(443), "HTTPS from in-VPC Lambdas");
-
-    // Paid interface endpoint (ADR-0021): in-VPC functions + the migrator read secrets over it (the
-    // Aurora master + the auth ticket HMAC). Terminates in the isolated subnets; reachable from the
-    // in-VPC Lambdas. The `cognito-idp` endpoint was removed - app-core no longer calls Cognito.
-    this.vpc.addInterfaceEndpoint("SecretsManagerEndpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-      securityGroups: [endpointSg],
-    });
+    // NO interface endpoints remain (they bill hourly per AZ): the `cognito-idp` one went with the
+    // ADR-0021 split (app-core stopped calling Cognito), and the `secretsmanager` one became
+    // unnecessary once nothing in the VPC read secrets - ticket verification moved to Ed25519 PUBLIC
+    // keys in plain env (app-core) and the migrator moved to IAM DB auth as wanthat_migrator. The
+    // in-VPC functions' only AWS dependencies are Aurora (in-VPC) + DynamoDB (free gateway endpoint).
   }
 }
