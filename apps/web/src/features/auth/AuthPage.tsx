@@ -2,7 +2,7 @@ import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ApiError, authApi } from "../../lib/api";
+import { ApiError, authApi, warmDb } from "../../lib/api";
 import {
   biometricLabelKey,
   deviceHasPasskey,
@@ -90,6 +90,9 @@ export function AuthPage() {
   const armed = useRef(false);
 
   useEffect(() => {
+    // Kick the Aurora resume early — every successful auth ends in /auth/session (Aurora), so the
+    // scale-to-zero resume overlaps the member typing/biometric instead of the post-auth wait.
+    warmDb();
     void authApi
       .config()
       .then((cfg) => {
