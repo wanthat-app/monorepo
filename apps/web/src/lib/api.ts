@@ -11,6 +11,7 @@ import type {
   MessageLanguage,
   OtpChannel,
   PasskeyLoginChallengeResponse,
+  PasskeyLoginVerifyResponse,
   PasskeyRegisterOptionsResponse,
   PasskeyRegisterVerifyResponse,
 } from "@wanthat/contracts";
@@ -98,7 +99,7 @@ export const authApi = {
   passkeyLoginChallenge: () =>
     request<PasskeyLoginChallengeResponse>("/auth/passkey/login/challenge"),
   passkeyLoginVerify: (challengeId: string, credential: unknown) =>
-    request<AuthVerifyResponse>("/auth/passkey/login/verify", {
+    request<PasskeyLoginVerifyResponse>("/auth/passkey/login/verify", {
       method: "POST",
       body: { challengeId, credential },
     }),

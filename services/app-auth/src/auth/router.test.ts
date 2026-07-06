@@ -611,7 +611,18 @@ describe("POST /auth/passkey/login/verify (ADR-0024)", () => {
 
     const res = await post("/auth/passkey/login/verify", { challengeId: "c1", credential: cred });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ registrationTicket: "signed-ticket" });
+    // Tokens ride along so an Aurora-free caller (the /p/ landing, ADR-0007) can persist the session
+    // and redirect without /auth/session; /auth keeps exchanging the ticket.
+    expect(await res.json()).toEqual({
+      registrationTicket: "signed-ticket",
+      tokens: {
+        accessToken: "a",
+        idToken: "i",
+        refreshToken: "r",
+        expiresIn: 3600,
+        tokenType: "Bearer",
+      },
+    });
 
     expect(fake.challenges.consumePasskeyChallenge).toHaveBeenCalledWith("c1"); // single-use
     expect(webauthnMock.verifyAuthentication).toHaveBeenCalledWith(
