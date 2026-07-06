@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-29
-- **Related:** [ADR-0016](0016-frontend-stack.md) (static SPA on S3/CloudFront), [ADR-0007](0007-landing-path-and-latency.md) (landing path) / [ADR-0018](0018-landing-front-door-http-api.md) (landing HTTP API), [ADR-0008](0008-consumer-attribution-model.md) (cookieless Bearer), [ADR-0004](0004-network-topology-nat-free-egress.md) (non-VPC)
+- **Related:** [ADR-0016](0016-frontend-stack.md) (static SPA on S3/CloudFront), [ADR-0007](0007-landing-path-and-latency.md) (landing path) / [ADR-0007](0007-landing-path-and-latency.md) (landing HTTP API), [ADR-0008](0008-consumer-attribution-model.md) (cookieless Bearer), [ADR-0004](0004-network-topology-nat-free-egress.md) (non-VPC)
 
 ## Context
 
@@ -28,7 +28,7 @@ Constraints in play:
 1. **default behavior → private S3 bucket (Origin Access Control).** Holds the Vite/React SPA build
    (ADR-0016). The bucket blocks all public access; only CloudFront (OAC) can read it. SPA
    client-side routing is served by rewriting **403/404 → `/index.html` (200)**.
-2. **`/p/*` behavior → the landing HTTP API** (ADR-0018), cache disabled, `Host` stripped
+2. **`/p/*` behavior → the landing HTTP API** (ADR-0007), cache disabled, `Host` stripped
    (`ALL_VIEWER_EXCEPT_HOST_HEADER`) so the API receives its own host. This is a **cross-region**
    origin (CloudFront/us-east-1 → HTTP API/il-central-1); the CDK app sets
    `crossRegionReferences: true` on both the producing (`EdgeServicesStack`) and consuming

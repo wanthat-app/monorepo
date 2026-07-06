@@ -37,7 +37,7 @@ const CHALLENGE_TTL_SEC = 600;
 const TICKET_TTL_SEC = 600;
 const MAX_OTP_ATTEMPTS = 5;
 // WebAuthn ceremonies are a single round trip; a generous-but-bounded window in case the platform
-// authenticator prompt sits open for a while (ADR-0024).
+// authenticator prompt sits open for a while (ADR-0022).
 const PASSKEY_CHALLENGE_TTL_SEC = 300;
 
 const nowEpoch = (): number => Math.floor(Date.now() / 1000);
@@ -55,7 +55,7 @@ function bearerToken(c: { req: { header: (n: string) => string | undefined } }):
 
 /**
  * Decode (NOT re-verify) an access token's `sub` + `username` claims. Safe ONLY because the passkey
- * enrol routes sit behind the JWT authorizer (ADR-0024): API Gateway has already verified the token's
+ * enrol routes sit behind the JWT authorizer (ADR-0022): API Gateway has already verified the token's
  * signature/expiry before this Lambda runs, so re-verifying here would be redundant — we just need to
  * read the claims it already vetted.
  */
@@ -98,7 +98,7 @@ const isSenderFailure = (err: unknown): boolean =>
   err instanceof Error && SENDER_FAILURE_ERRORS.has(err.name);
 
 /**
- * The `app-auth` router (ADR-0021): the Cognito + DynamoDB endpoints of the auth flow, served from
+ * The `app-auth` router (ADR-0020): the Cognito + DynamoDB endpoints of the auth flow, served from
  * the non-VPC edge. It never touches Aurora — the customer row (and the login-or-register decision)
  * lives behind `/auth/register` on `app-core`, so `/auth/verify` here always hands off a signed,
  * self-contained ticket rather than resolving customer existence itself.
@@ -250,7 +250,7 @@ export function authRouter(): Hono {
   });
 
   // POST /auth/verify — verify the OTP, then hand off a signed self-contained ticket. Being
-  // Cognito-only (no Aurora, ADR-0021), this edge cannot resolve whether a customer row exists, so it
+  // Cognito-only (no Aurora, ADR-0020), this edge cannot resolve whether a customer row exists, so it
   // just returns the ticket; the client calls `app-core`'s `/auth/session` to resolve login vs
   // register. The ticket carries the freshly minted tokens, so nothing is parked.
   auth.post("/verify", async (c) => {
@@ -331,7 +331,7 @@ export function authRouter(): Hono {
     return c.json({ ok: true } as const);
   });
 
-  // --- Passkeys (ADR-0024) ---
+  // --- Passkeys (ADR-0022) ---
   // We now own the whole WebAuthn ceremony ourselves (via @wanthat/webauthn), verifying against our
   // own `passkey_credential` store rather than delegating to Cognito's WEB_AUTHN challenge. Cognito
   // is only re-entered at the very end of login, to mint tokens via the admin bridge (see
@@ -341,7 +341,7 @@ export function authRouter(): Hono {
   // signature/expiry-verified by API Gateway — is decoded (not re-verified) via `tokenClaims` to read
   // `sub`/`username`.
   //
-  // Login (login/*) is PUBLIC and userless/discoverable (ADR-0024): no phone/username is ever sent;
+  // Login (login/*) is PUBLIC and userless/discoverable (ADR-0022): no phone/username is ever sent;
   // the platform authenticator resolves the resident credential and the assertion's credentialId
   // resolves the member server-side.
 
@@ -355,7 +355,7 @@ export function authRouter(): Hono {
     const ctx = getContext();
     const { sub, username } = claims;
 
-    // Friendly label for the OS / passkey-manager picker (ADR-0024): the member's phone, not the
+    // Friendly label for the OS / passkey-manager picker (ADR-0022): the member's phone, not the
     // opaque `sub` UUID. This sets ONLY the WebAuthn `user.name`/`displayName` (display strings) — the
     // userHandle stays the immutable `sub` and the stored credential still keys on it, so a
     // phone-number change can never break login. Fall back to `sub` if Cognito has no phone.
@@ -419,7 +419,7 @@ export function authRouter(): Hono {
     return c.json(PasskeyRegisterVerifyResponse.parse({ passkey: { credentialId, createdAt } }));
   });
 
-  // GET /auth/passkey/login/challenge — begin a USERLESS discoverable passkey login (ADR-0024).
+  // GET /auth/passkey/login/challenge — begin a USERLESS discoverable passkey login (ADR-0022).
   // Public. No user is resolved yet — the assertion's credentialId does that at verify.
   auth.get("/passkey/login/challenge", async (c) => {
     const ctx = getContext();
@@ -439,7 +439,7 @@ export function authRouter(): Hono {
   });
 
   // POST /auth/passkey/login/verify — verify the assertion against OUR stored public key, resolve
-  // the member from the credential, bridge into Cognito (the admin token exchange, ADR-0024 decision
+  // the member from the credential, bridge into Cognito (the admin token exchange, ADR-0022 decision
   // 3) to mint tokens, then hand off the SAME signed ticket as /auth/verify so /auth/session
   // (app-core) resolves the member. Public.
   auth.post("/passkey/login/verify", async (c) => {
@@ -477,7 +477,7 @@ export function authRouter(): Hono {
     await ctx.passkeys.updateSignCount(cred.credentialId, newCounter);
 
     // We verified the assertion ourselves — Cognito never sees it. Exchange that trust for real
-    // Cognito tokens via the admin bridge (ephemeral server-set password, ADR-0024 decision 3). The
+    // Cognito tokens via the admin bridge (ephemeral server-set password, ADR-0022 decision 3). The
     // password never leaves app-auth and the member stays passwordless.
     const result = await ctx.cognito.passkeyAdminAuth(cred.cognitoUsername);
     const tokens = toAuthTokens(result);
@@ -485,7 +485,7 @@ export function authRouter(): Hono {
     // The ticket carries the REAL phone (from Cognito, the sign-in alias) — never an empty string:
     // if `/auth/register`'s new-customer branch were ever reached from a passkey ticket it writes
     // `ticket.phone` verbatim to Aurora, so an empty phone would corrupt the row. Fetch it here and
-    // refuse to mint a ticket without one. (app-auth reads Cognito, not Aurora — ADR-0021.)
+    // refuse to mint a ticket without one. (app-auth reads Cognito, not Aurora — ADR-0020.)
     const phone = await ctx.cognito.getPhone(cred.cognitoUsername);
     if (!phone) return c.json({ error: "invalid_passkey" }, 401);
     const registrationTicket = await ctx.tickets.sign({

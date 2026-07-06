@@ -36,7 +36,7 @@ export interface EdgeStackProps extends StackProps {
 }
 
 /**
- * EdgeStack — the public front door (ADR-0007, ADR-0016, ADR-0018, ADR-0019). **Must be us-east-1**:
+ * EdgeStack — the public front door (ADR-0007, ADR-0016, ADR-0007, ADR-0019). **Must be us-east-1**:
  * CloudFront's ACM cert and the `CLOUDFRONT`-scoped WAF web ACL are control-plane resources that
  * only live there (traffic still terminates at the edge near the user — Israel via the
  * PRICE_CLASS_200 footprint).

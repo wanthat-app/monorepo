@@ -118,7 +118,7 @@ export class DataStack extends Stack {
       ...common,
     });
 
-    // ADR-0024: passkey public keys we store + verify ourselves (Cognito no longer holds them).
+    // ADR-0022: passkey public keys we store + verify ourselves (Cognito no longer holds them).
     // PK credentialId; byCustomerSub GSI lists a member's passkeys. Non-PII (sub + public key).
     this.passkeyCredentialTable = new dynamodb.Table(this, "PasskeyCredential", {
       partitionKey: { name: "credentialId", type: dynamodb.AttributeType.STRING },

@@ -1,108 +1,138 @@
-# ADR 0020 — Auth foundation: registration provisioning, in-VPC Cognito egress, kill switch, unified flow
+# ADR 0020 — Auth foundation: provisioning, kill switch, unified flow, and the auth-edge/core split
 
-- **Status:** Accepted *(decision 2 superseded in part by [ADR-0021](0021-auth-split-vpc-edge-and-core.md))*
-- **Date:** 2026-06-29
-- **Refines (in part):** [ADR-0004](0004-network-topology-nat-free-egress.md) (adds one in-VPC
-  interface endpoint), [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (kill-switch substrate +
+- **Status:** Accepted *(consolidated 2026-07-07: former ADR-0021 — the `app-api` split into a
+  non-VPC auth edge + in-VPC core — is merged into this record; the original in-VPC `cognito-idp`
+  endpoint decision it replaced is preserved under Alternatives)*
+- **Date:** 2026-06-29 (split decided 2026-07-01; ticket signature asymmetric since 2026-07-07;
+  consolidated 2026-07-07)
+- **Refines (in part):** [ADR-0002](0002-app-compute-topology.md) (app-api becomes two functions),
+  [ADR-0004](0004-network-topology-nat-free-egress.md) (non-VPC-edge pattern reused; no interface
+  endpoints remain), [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (kill-switch substrate +
   unknown-number handling)
-- **Related:** [ADR-0002](0002-app-compute-topology.md), [ADR-0003](0003-datastore-aurora-and-dynamodb.md),
-  [ADR-0007](0007-landing-path-and-latency.md) (cookieless Bearer)
+- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md),
+  [ADR-0007](0007-landing-path-and-latency.md) (cookieless Bearer),
+  [ADR-0022](0022-faceid-passkey-authentication.md) (passkeys)
 
 ## Context
 
-Building UC1 (Onboard) and UC2 (Sign-in) turns the `app-api` `/auth/*` stubs into the real flow
-against Cognito + Aurora and stands up the deferred Aurora/VPC. Implementation surfaced five
-decisions that refine assumptions baked into the locked architecture ADRs. ADRs are immutable once
-accepted, so these are recorded here and the affected records cross-link back; the refinements are
-narrow (one VPC endpoint, the kill-switch substrate, and the unknown-number handling) so ADR-0004
-and ADR-0006 stay **Accepted** rather than fully superseded.
+Building UC1 (Onboard) and UC2 (Sign-in) turned the `/auth/*` stubs into the real flow against
+Cognito + Aurora and stood up the deferred Aurora/VPC. Two forces shaped the final design:
+
+1. Implementation surfaced decisions that refine assumptions baked into the locked architecture
+   ADRs (provisioning timing, kill-switch substrate, unknown-number handling, identity join key,
+   admin separation).
+2. The first real `POST /auth/start` on dev failed at the Cognito lookup:
+   > `InvalidParameterException: PrivateLink access is disabled for the user pool that has
+   > ManagedLogin configured.`
+   Three separately-accepted choices were **mutually exclusive on AWS**: an in-VPC NAT-free
+   `app-api` reaching Cognito over PrivateLink; the customer pool using the new Managed Login
+   (then believed required for discoverable passkeys); and AWS disabling PrivateLink on any
+   Managed-Login pool. The auth flow already separated cleanly along a Cognito/Aurora seam, which
+   the fix exploits.
 
 ## Decision
 
 1. **No Cognito Post-Confirmation trigger; provision `customer` in `/auth/register`.**
    `customer.first_name`/`last_name` are `NOT NULL` and are only collected at `POST /auth/register`
    (after OTP verify), so a confirmation-time trigger fires too early to write a valid row. The
-   `customer` row is instead inserted inside the `/auth/register` handler (single Aurora txn). The
-   "authenticated vs registration_required" branch in `/auth/verify` is therefore decided by **"does
-   a `customer` row exist for this Cognito `sub`?"**, removing the trigger→Aurora coupling and the
-   VPC-attached-trigger cold-path entirely.
+   `customer` row is inserted inside the `/auth/register` handler (single Aurora txn). The
+   "authenticated vs registration_required" branch is decided by **"does a `customer` row exist for
+   this Cognito `sub`?"**, removing the trigger→Aurora coupling entirely.
 
-2. **The in-VPC Lambdalith calls Cognito over a `cognito-idp` interface VPC endpoint.**
-   > **Superseded by [ADR-0021](0021-auth-split-vpc-edge-and-core.md).** The customer pool's Managed
-   > Login disables PrivateLink, so the in-VPC function cannot reach Cognito this way. `app-api` is
-   > split into a non-VPC auth edge (calls Cognito publicly) + an in-VPC core (Aurora); the
-   > `cognito-idp` endpoint is removed.
+2. **`app-api` is split into two functions behind the one HTTP API, along its Cognito-vs-Aurora
+   seam** (formerly ADR-0021):
+   - **`app-auth` — a non-VPC "auth edge."** Serves everything that touches **only Cognito +
+     DynamoDB**: `/auth/start|resend|verify|refresh|signout` and the passkey endpoints. Outside the
+     VPC it reaches the Cognito control plane over the **public AWS endpoint** (no PrivateLink
+     conflict) and DynamoDB (auth challenges, phone velocity, guest attribution, runtime config,
+     passkey credentials) likewise. Holds scoped `cognito-idp` permissions; **no** Aurora access.
+   - **`app-core` — the in-VPC "core."** Serves everything that touches **Aurora**:
+     `/auth/session`, `/auth/register`, `/me`, `/me/*`, (later) wallet. IAM DB auth (ADR-0003). It
+     calls **no** Cognito control-plane API and reads **no** secrets, so the VPC needs no interface
+     endpoints at all; DynamoDB rides the free gateway endpoint. Profile edits that must propagate
+     to a Cognito attribute are delegated to `app-auth`.
 
-   ADR-0004
-   reasoned that nothing in-VPC needs egress; it did not anticipate `app-api` (in-VPC for Aurora)
-   calling the Cognito control plane. This adds **one** interface endpoint (`com.amazonaws.
-   il-central-1.cognito-idp`, already present in-region) — the only new paid endpoint. Aurora and
-   DynamoDB remain reached via IAM auth and the free gateway endpoint respectively; no NAT.
+3. **The two are bridged statelessly by a signed registration ticket — Ed25519, asymmetric.**
+   `/auth/verify` (`app-auth`) issues a self-contained ticket `{sub, phone, tokens, exp}` on OTP
+   success — it does not decide login-vs-register, because that check needs an Aurora read the edge
+   cannot do. The client exchanges it at **`/auth/session`** (`app-core`) for `authenticated` or
+   `registration_required` (→ `/auth/register`). **No inter-Lambda invoke, no shared session
+   store.** The signature is **asymmetric by design**: `app-auth` signs with the private key (a
+   Secrets Manager secret it reads over the free public endpoint; the keypair is generated at
+   deploy by an idempotent custom resource), while `app-core` verifies with the **public** key from
+   a plain env var — verification needs no secret, which is what lets the VPC run with **zero paid
+   interface endpoints**.
 
-3. **SMS kill switch lives in the DynamoDB `config` store, not SSM/AppConfig.** ADR-0006 proposed an
-   SSM Parameter / AppConfig flag; reading SSM from the in-VPC Lambdalith would need a second
-   interface endpoint. Instead a new runtime-config key **`auth.smsEnabled`** (`@wanthat/contracts`
-   `CONFIG_SCHEMAS`/`CONFIG_DEFAULTS`) is read via `RuntimeConfigRepo` over the existing DynamoDB
-   gateway endpoint before any Cognito SMS send. `@wanthat/config` `OTP_SMS_ENABLED` remains the
-   boot-time default applied until the key is first written. The detect-alarm and manual ops flip
-   target this key; the SNS `MonthlySpendLimit` hard cap (ADR-0006 layer 4) is unchanged.
+4. **SMS kill switch lives in the DynamoDB `config` store, not SSM/AppConfig.** A runtime-config
+   key **`auth.smsEnabled`** (`@wanthat/contracts` `CONFIG_SCHEMAS`/`CONFIG_DEFAULTS`) is read via
+   `RuntimeConfigRepo` before any Cognito SMS send — over infrastructure the app already uses. The
+   detect-alarm and manual ops flip this key; the SNS `MonthlySpendLimit` hard cap (ADR-0006
+   layer 4) is unchanged.
 
-4. **The unified flow may SMS a previously-unseen number** (refines ADR-0006's "no OTP to unknown
-   numbers"). A phone with no Cognito user is created on the fly — `AdminCreateUser(MessageAction:
-   SUPPRESS)` + `AdminSetUserPassword(random, Permanent)` → CONFIRMED — then the OTP is initiated, so
-   `/auth/start` behaves identically for new and returning numbers. Enumeration-safety is preserved
-   by a **uniform response shape and timing** rather than by withholding the SMS; abuse stays
-   contained by the per-phone velocity counter, the `auth.smsEnabled` kill switch, the WAF rate rules
-   on `/auth/*`, and the SNS spend cap (ADR-0006 layers 1–4, all retained). A scheduled cleanup
-   removes profile-less CONFIRMED users (created by `/auth/start` probes that never registered).
+5. **The unified flow may SMS a previously-unseen number** (refines ADR-0006's "no OTP to unknown
+   numbers"). A phone with no Cognito user is created on the fly (`AdminCreateUser(SUPPRESS)` +
+   `AdminSetUserPassword(random, Permanent)`) and the OTP initiated, so `/auth/start` behaves
+   identically for new and returning numbers. Enumeration-safety is preserved by **uniform response
+   shape and timing** rather than by withholding the SMS; abuse stays contained by the per-phone
+   velocity counter, the kill switch, WAF rate rules, and the SNS spend cap. A scheduled cleanup
+   removes profile-less CONFIRMED users.
 
-5. **`customer.cognito_sub` is the stable Cognito↔customer link.** Phone is mutable and is the
-   Cognito sign-in alias, so it is unsuitable as the join key. Migration `0002_auth.sql` adds
-   `cognito_sub text NOT NULL` + a unique index; `/auth/register` inserts with `ON CONFLICT
-   (cognito_sub) DO NOTHING` for idempotency under retries. **NOT NULL is deliberate (fail-fast):** a
-   customer is always provisioned with its sub, so a missing one is a bug the DB rejects at INSERT
-   (registration retries) rather than persisting an unlinkable PII row. Safe with no backfill because
-   `0001` creates `customer` empty.
+6. **`customer.cognito_sub` is the stable Cognito↔customer link.** Phone is mutable (it is the
+   sign-in alias), so it is unsuitable as the join key. `cognito_sub text NOT NULL` + unique index;
+   `/auth/register` inserts with `ON CONFLICT (cognito_sub) DO NOTHING` for idempotency. NOT NULL
+   is deliberate fail-fast: a missing sub is a bug the DB rejects at INSERT rather than persisting
+   an unlinkable PII row.
 
-6. **Two Cognito pools, split by population — customers vs. employees.** Admins are company staff, not
-   customers: different trust level, lifecycle, and auth method. Rather than one pool split by an
-   `admin` group, staff get a **separate `employeePool`** — **no self-signup** (provisioned via
-   `admin-create-user`), **email + mandatory TOTP MFA** (no SMS, so staff auth sits off the SMS-abuse
-   surface the customer pool is hardened against), and its own Managed Login hosted UI. The admin API
-   authorizer points at this pool, so a customer token **structurally cannot** reach `/admin` — a
-   boundary, not just an in-handler group check (the in-handler `admin`-group check is kept as
-   defence-in-depth). **First-admin bootstrap:** an operator with AWS access runs `admin-create-user`
-   for the employee's email once, then `admin-add-user-to-group --group-name admin`; the employee sets
-   a password and enrols TOTP on first hosted-UI login. No standing privilege, CloudTrail-audited.
-   Doing this now (zero admins exist) avoids a later pool migration.
+7. **Two Cognito pools, split by population — customers vs. employees.** Staff get a separate
+   `employeePool`: no self-signup, email + mandatory TOTP MFA (off the SMS-abuse surface), its own
+   hosted UI. The admin API authorizer points at this pool, so a customer token **structurally
+   cannot** reach `/admin` (the in-handler `admin`-group check stays as defence-in-depth).
+   First-admin bootstrap is one audited `admin-create-user` + `admin-add-user-to-group`.
 
 ## Alternatives considered
 
-- **Post-Confirmation trigger writing a placeholder `customer`** — would need nullable name columns
-  or placeholder values, polluting the PII table and complicating the registered/unregistered
-  distinction; rejected in favour of provisioning at `/auth/register`.
-- **SSM/AppConfig kill switch (as ADR-0006 sketched)** — costs a second in-VPC interface endpoint for
-  no functional gain over a DynamoDB key the app already reads; rejected on cost/simplicity.
-- **Withholding OTP from unknown numbers** — leaks which numbers are registered via response/timing
-  differences unless carefully equalised anyway, and complicates the single-call onboarding; rejected
-  in favour of uniform responses + the existing abuse controls.
+- **In-VPC Lambdalith calling Cognito over a `cognito-idp` interface endpoint** — the original
+  design. Failed on a hard platform rule: PrivateLink is disabled for Managed-Login pools (the
+  error above), and Managed Login was then required for discoverable passkeys. Even setting that
+  aside it carried a standing per-AZ endpoint cost. Replaced by the split (decision 2).
+- **Drop Managed Login from the customer pool** — would have restored PrivateLink and kept one
+  in-VPC Lambdalith, but was believed to forfeit discoverable passkey login, a product requirement.
+  (Later, ADR-0022's custom WebAuthn removed the Managed-Login dependency anyway — but the split
+  stands on its own merits: least privilege, no interface endpoints, no NAT.)
+- **A non-VPC `cognito-proxy` invoked by the in-VPC Lambdalith** — keeps the Lambdalith whole but
+  adds a Lambda interface endpoint, a per-call invoke hop, and reverses the established
+  non-VPC-edge pattern. Rejected.
+- **NAT Gateway** — simplest code, but abandons the NAT-free principle (ADR-0004) and adds standing
+  cost. Rejected.
+- **Symmetric HMAC ticket (both functions read the shared key)** — the original bridge. Worked, but
+  forced the in-VPC verifier onto a paid Secrets Manager interface endpoint just to read a key
+  whose only job is verification. Replaced by Ed25519: the verifying key is public material and
+  ships as env config; only the non-VPC signer holds a secret.
+- **Post-Confirmation trigger writing a placeholder `customer`** — needs nullable/placeholder PII
+  columns and complicates the registered/unregistered distinction; rejected.
+- **SSM/AppConfig kill switch (as ADR-0006 sketched)** — would have cost another in-VPC interface
+  endpoint for no functional gain over a DynamoDB key. Rejected.
+- **Withholding OTP from unknown numbers** — leaks which numbers are registered via
+  response/timing differences unless carefully equalised anyway; rejected in favour of uniform
+  responses + abuse controls.
 - **One pool, admins as an `admin` group** — couples privileged staff access to the customer pool's
-  abuse surface, forces consumer SMS-OTP onto staff, and reduces the boundary to an in-handler claim
-  check; rejected in favour of a separate employee pool (decision 6). Cheapest to split now, before
-  any admin exists.
+  abuse surface and reduces the boundary to an in-handler claim check; rejected.
 
 ## Consequences
 
-- One new paid VPC interface endpoint (`cognito-idp`); Aurora/DynamoDB access unchanged.
-- `/auth/start` can create Cognito users → user-pool pollution from probing; mitigated by the
-  scheduled profile-less-user cleanup and the velocity counter.
-- The kill switch is now one `RuntimeConfigRepo` read on the hot `/auth/start` path (cheap, cached
-  per-container) and is flippable from the admin config panel with no redeploy.
-- `customer.cognito_sub` is the canonical identity join key for `/me` and all member-scoped reads.
-- **Passkeys split by flow.** Enrolment is API-driven (`/auth/passkey/register/*`, authorised by the
-  access token via Cognito `Start/CompleteWebAuthnRegistration`). Discoverable (userless) *login*
-  cannot be done through the raw Cognito API — the `WEB_AUTHN` challenge in `USER_AUTH` requires a
-  username — so it is served by **Managed Login** (hosted UI); the SPA opens it and completes the
-  OAuth code + PKCE exchange in the browser, then carries the Bearer token like any other session.
-  This keeps the in-VPC Lambdalith off the hosted-UI token endpoint (which the NAT-free network can't
-  reach) and is the resolution of the PR4 reconciliation spike.
+- `app-api` is **two functions** — `app-auth` (non-VPC) and `app-core` (in-VPC) — behind one HTTP
+  API; the JWT authorizer and CORS span both route groups.
+- **Zero paid VPC interface endpoints**: `cognito-idp` was never re-added after the split, and the
+  `secretsmanager` endpoint was removed once ticket verification went asymmetric and the
+  db-migrator moved to IAM DB auth (`wanthat_migrator`, migration `0003`). The VPC's only AWS
+  dependencies are Aurora (in-VPC) and DynamoDB (free gateway endpoint).
+- **Tighter least privilege**: `app-auth` = Cognito + DynamoDB + the private signing key, no
+  Aurora; `app-core` = Aurora + DynamoDB, no Cognito, no secrets.
+- The registration ticket is the sole cross-function contract; key rotation is a three-step deploy
+  (add new public key to the verifier's array → flip the signer → drop the old key). Tickets are
+  seconds-lived.
+- `/auth/start` can create Cognito users → pool pollution from probing; mitigated by the scheduled
+  cleanup + velocity counter. The kill switch is one cached DynamoDB read on `/auth/start`.
+- `customer.cognito_sub` is the canonical identity join key for `/me` and member-scoped reads.
+- Passkey enrolment/login evolved separately — see [ADR-0022](0022-faceid-passkey-authentication.md)
+  (custom WebAuthn on `app-auth`; the Managed-Login dependency this ADR originally assumed is gone).

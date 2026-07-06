@@ -25,7 +25,7 @@ let cached: CoreContext | undefined;
 
 /**
  * Build the per-container dependency graph once and reuse it across warm invocations. The in-VPC core
- * (ADR-0021) reaches Aurora as `app_rw` via IAM auth (no RDS Proxy) and DynamoDB over the gateway
+ * (ADR-0020) reaches Aurora as `app_rw` via IAM auth (no RDS Proxy) and DynamoDB over the gateway
  * endpoint; it verifies the registration ticket but calls NO Cognito control-plane API.
  */
 export function getContext(): CoreContext {

@@ -7,7 +7,7 @@ import {
 } from "@aws-sdk/lib-dynamodb";
 
 /**
- * Repository over `passkey_credential` (ADR-0024) — the public keys of members' discoverable passkeys,
+ * Repository over `passkey_credential` (ADR-0022) — the public keys of members' discoverable passkeys,
  * which WE store and verify (Cognito is no longer in the passkey verification path). Non-PII
  * (ADR-0003): a Cognito `sub` + a WebAuthn public key, no name/phone/email. PK is the WebAuthn
  * `credentialId`; the `byCustomerSub` GSI lists a member's credentials (enrol exclude-list, future
@@ -17,7 +17,7 @@ export interface PasskeyCredentialItem {
   credentialId: string;
   customerSub: string;
   /** Cognito username (opaque UUID) for this credential's holder — the passkey-login bridge
-   * (ADR-0024) mints tokens via `Cognito.passkeyCustomAuth(cognitoUsername, proof)`, so we carry
+   * (ADR-0022) mints tokens via `Cognito.passkeyCustomAuth(cognitoUsername, proof)`, so we carry
    * it alongside `customerSub` rather than re-resolving it from Cognito on every login. */
   cognitoUsername: string;
   /** base64url of the COSE public key (see @wanthat/webauthn StoredCredential). */

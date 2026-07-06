@@ -1,5 +1,5 @@
 /**
- * Landing service (ADR-0001, ADR-0007, ADR-0018/0019). Cookieless; behind CloudFront `/p/*`. The
+ * Landing service (ADR-0001, ADR-0007, ADR-0007/0019). Cookieless; behind CloudFront `/p/*`. The
  * landing is a DYNAMIC SPA page — this service only server-renders the bot-facing bits: it fetches the
  * SPA's `index.html` shell, injects per-product Open Graph tags + a product snapshot, and returns it.
  * Bots get a rich preview; humans get the shell, the SPA boots, and `SharedProductPage` runs the real

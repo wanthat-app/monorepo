@@ -1,9 +1,9 @@
 /**
- * app-auth — the non-VPC "auth edge" (ADR-0021), behind the shared app HTTP API.
+ * app-auth — the non-VPC "auth edge" (ADR-0020), behind the shared app HTTP API.
  *
  * Serves the endpoints that touch only Cognito + DynamoDB: the `/auth/*` OTP flow and passkey
  * enrolment. Runs OUTSIDE the VPC so it reaches the Managed-Login customer pool over Cognito's public
- * endpoint (PrivateLink is disabled for Managed-Login pools, ADR-0021). Holds no Aurora access; the
+ * endpoint (PrivateLink is disabled for Managed-Login pools, ADR-0020). Holds no Aurora access; the
  * Aurora seam (`/auth/register`, `/me`) is served by `app-core`. HTTP routing via Hono (ADR-0011);
  * request bodies validated with the shared Zod contracts at the boundary.
  */

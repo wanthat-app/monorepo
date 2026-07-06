@@ -1,82 +1,131 @@
-# ADR 0022 — FaceID authentication: complete the WebAuthn passkey story (enroll + login)
+# ADR 0022 — FaceID authentication: passkeys — enrolment, automatic biometric login, Cognito bridge
 
-- **Status:** Accepted *(login design superseded in part by [ADR-0024](0024-automatic-biometric-login-webauthn-conditional-ui.md): Flow B/C and the "one-tap button is the ceiling" consequence are replaced by on-page conditional-UI autofill on a custom WebAuthn + Cognito CUSTOM_AUTH flow. Enrolment intent and the RP-ID/labels decisions still stand.)*
-- **Date:** 2026-07-01
+- **Status:** Accepted *(consolidated 2026-07-07: former ADR-0024 — custom discoverable WebAuthn +
+  automatic login + the admin token exchange — is merged into this record; the Cognito-native login
+  flows it replaced are preserved under Alternatives)*
+- **Date:** 2026-07-01 (login redesigned 2026-07-05; auto-prompt + focus-arming shipped 2026-07-06;
+  consolidated 2026-07-07)
 - **Refines:** [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (passkeys as a first-auth factor),
-  [ADR-0020](0020-auth-foundation.md) (passkey enrolment API-driven; discoverable login via Managed
-  Login), [ADR-0021](0021-auth-split-vpc-edge-and-core.md) (passkey endpoints live on `app-auth`)
-- **Related:** [ADR-0007](0007-landing-path-and-latency.md) (cookieless Bearer), [ADR-0016](0016-frontend-stack.md)
+  [ADR-0020](0020-auth-foundation.md) (passkey endpoints on the non-VPC `app-auth`),
+  [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (non-PII DynamoDB table)
+- **Related:** [ADR-0007](0007-landing-path-and-latency.md) (cookieless; the `/p/` landing is a
+  login surface), [ADR-0016](0016-frontend-stack.md)
 
 ## Context
 
-"FaceID" is not a new auth channel — it is the **platform-authenticator** variant of WebAuthn: the OS
-biometric (Face ID / Touch ID / Windows Hello / Android fingerprint) unlocks a **passkey** bound to the
-site origin. The pool is already configured for it (passkey as a first-auth factor,
-`passkeyUserVerification: REQUIRED` — the biometric gesture — and `passkeyRelyingPartyId` = the site
-domain). ADR-0020 landed API-driven **enrolment** and browser-based **discoverable** login (Managed
-Login); ADR-0021 put the passkey endpoints on the non-VPC `app-auth`. This ADR **completes** the story
-for MVP against a product vision: *visit → biometric → in; an "enable" prompt when not enrolled; the
-label matches the device.*
+"FaceID" is not a new auth channel — it is the **platform-authenticator** variant of WebAuthn: the
+OS biometric (Face ID / Touch ID / Windows Hello / Android fingerprint) unlocks a **passkey** bound
+to the site origin. The product vision: *visit → biometric → in; an "enable" prompt when not
+enrolled; the label matches the device.*
 
-A hard platform constraint shapes the design: Cognito's **raw** `USER_AUTH` / `WEB_AUTHN` challenge
-**requires a username**, so a truly username-less assertion cannot be completed against the API — the
-only userless/discoverable path is **Managed Login** (hosted UI). And WebAuthn binds each passkey to a
-single RP-ID (origin), so passkeys do not work on `localhost` and do not migrate between environments.
+Getting there surfaced three hard platform facts:
+
+1. **Cognito cannot start a userless ceremony.** Its raw `USER_AUTH`/`WEB_AUTHN` challenge requires
+   a username first, but WebAuthn **conditional UI** (the passkey offering itself) and any userless
+   modal `get()` need a challenge **before** the username is known — and Cognito never exposes the
+   stored public key, so it cannot verify an assertion it didn't challenge. Cognito-native
+   verification and automatic login are mutually exclusive.
+2. **Our pool tier rejects `CUSTOM_AUTH`.** The customer pool is ESSENTIALS with choice-based
+   sign-in (required for the passwordless OTP + WebAuthn factors); Cognito's own validation:
+   *"CUSTOM_AUTH is not a valid auth factor. Valid: [PASSWORD, EMAIL_OTP, SMS_OTP, WEB_AUTHN]."*
+3. **Browsers do allow a gesture-free modal `get()` on load** — one per page load on iOS 16 (its
+   "freebie"), unrestricted on iOS 17.4+ — **but only once the document has focus** (an unfocused
+   ceremony throws `NotAllowedError: The document is not focused`, observed on-device on external
+   navigations like a shared link). An early "zero-tap is impossible on the web" conclusion was
+   wrong; the real constraints are the focus rule and the one-freebie budget.
 
 ## Decision
 
 1. **"FaceID" = platform WebAuthn passkey, user-verification required.** Options request
    `authenticatorAttachment: "platform"`, `userVerification: "required"`, `residentKey: "required"`
    (discoverable), attestation `none`. The mechanism is always "passkey"; only the **label** is
-   device-matched: **Face ID / Touch ID / Windows Hello / fingerprint**, neutral fallback
-   **"passkey" / "biometric sign-in"**, detected client-side, per-locale (he/en).
+   device-matched — Face ID / Touch ID / Windows Hello / fingerprint, neutral fallback, detected
+   client-side, per-locale (he/en).
 
-2. **Flow A — enrol (API-driven, `app-auth`).** After sign-in, a **logged-in member with no passkey**
-   sees an "Enable <biometric>" button → `Start/CompleteWebAuthnRegistration`. Already substantially
-   present; kept.
+2. **Own the passkey ceremony; Cognito owns only the session.** Enrolment and login run on an
+   app-managed WebAuthn flow on `app-auth` (not Cognito's native
+   `Start/CompleteWebAuthnRegistration` / `WEB_AUTHN`): passkeys are enrolled as discoverable
+   platform credentials with `userHandle = customer.cognito_sub`; the public key (+ credential id,
+   sign counter, transports) lives in the **non-PII DynamoDB table `passkey_credential`**
+   (PK `credentialId`, `byCustomerSub` GSI). Assertions are verified by us — `@wanthat/webauthn`
+   (wrapping `@simplewebauthn/server`) — against an app-issued random, short-TTL, single-use
+   challenge with an **empty** `allowCredentials`. The friendly display name is the phone; the
+   stored username/userHandle stays the immutable sub (phone is a mutable alias).
 
-3. **Flow B — username-hinted login (NEW, `app-auth`) — the primary on-page path.** With the username
-   (phone) known — the user typed it, **or it is remembered from last login** (localStorage) — the SPA
-   calls `/auth/passkey/login/options { phone }` → Cognito `InitiateAuth(USER_AUTH,
-   PREFERRED_CHALLENGE: WEB_AUTHN)`, runs `navigator.credentials.get()` (biometric), then
-   `/auth/passkey/login/verify` → `RespondToAuthChallenge` → tokens → `/auth/session` resolves the
-   member. **No hosted-UI redirect.** The remembered-phone hint is what realizes "visit → biometric →
-   in" on a returning device.
+3. **Automatic login, per device state (the shipped UX):**
+   - **Returning passkey device** (a localStorage flag set on any successful passkey use) → an
+     **automatic modal prompt**: the ceremony **arms on load and fires the moment the document
+     gains focus** (no timeout racing the OS — worst case it pops on the first touch). Face ID
+     appears with zero taps.
+   - **First-time device** → the gentle **conditional-UI autofill** (the passkey offers itself in
+     the phone field, `autocomplete="tel webauthn"`); using it sets the returning-device flag.
+     The two never run together (the #64 lesson: a pending conditional `get()` collides with a
+     modal `get()` on iOS).
+   - **Explicit "Sign in with <biometric>" button** only where autofill is unsupported or after a
+     cancelled auto-prompt (the gesture fallback).
+   - **OTP is the universal fallback and account recovery** — no session, no passkey, unsupported
+     browser, or a lost device all fall back to phone + OTP; passkeys never lock anyone out.
 
-4. **Flow C — discoverable / userless login via Managed Login (hosted UI redirect) — the fallback.**
-   The only Cognito-supported path when we have **no** username (fresh device / cleared storage). The
-   SPA redirects to Managed Login, which runs the discoverable ceremony and returns via OAuth
-   code + PKCE. Already wired (`managed-login.ts`); finalized here.
+4. **Bridge the verified assertion to Cognito tokens via a server-side admin token exchange.**
+   `app-auth` verifies the assertion (challenge single-use, signature against the stored key,
+   RP-ID + origin bound to the site, sign-count monotonic), resolves the credential to its
+   immutable Cognito username, then mints real tokens server-side: `AdminSetUserPassword` (fresh
+   random 40+ chars, permanent) immediately consumed via `ADMIN_USER_PASSWORD_AUTH` — rotated every
+   login, never returned or logged; the member stays passwordless. Downstream is unchanged: the
+   JWT authorizer, `/me`, refresh all see ordinary Cognito tokens, and `app-core` stays
+   Cognito-free (ADR-0020).
 
-5. **OTP is the universal fallback and account recovery.** No session, no passkey, unsupported browser,
-   `localhost`, or a lost device all fall back to phone + OTP; a recovered user re-enrols a passkey.
-   Passkeys therefore **never lock anyone out**. The "sign in with a code" affordance is always visible.
+5. **Login surfaces: `/auth` and the `/p/{id}` referral landing** — the same reusable client module
+   on both. On `/p/`, the verify response's tokens are used **directly** (persist refresh →
+   redirect to store) so the landing stays Aurora-free (ADR-0007): a passkey credential is an
+   existing member by construction, so no login-vs-register resolve is needed there.
 
-6. **Accepted platform constraints** (inherent, documented, not bugs): no passkeys on `localhost`
-   (RP-ID mismatch); passkeys do **not** migrate dev (`dev.wanthat.app`) ↔ prod (`wanthat.app`);
-   userless login is redirect-based (Flow C), never on-page.
+6. **Accepted platform constraints:** RP-ID = the site domain (`dev.wanthat.app` / `wanthat.app`,
+   set via `SetUserPoolMfaConfig` — the L2 prop does not apply to an existing pool); per-RP-ID
+   binding means no passkeys on `localhost` and no dev↔prod migration. Native apps later reuse the
+   same passkeys via `.well-known` association on the apex RP-ID.
 
 ## Alternatives considered
 
-- **OTP-only, no biometric** — simplest, but forfeits the core product vision (fast, passwordless
-  returning-user sign-in). Rejected.
-- **Userless conditional-UI login on our own SPA page (no redirect)** — not possible: Cognito's raw API
-  needs a username to issue the WebAuthn challenge, so a username-less assertion has nowhere to go.
-  Userless therefore requires Managed Login (Flow C). Rejected as infeasible.
-- **Passkey management (list/rename/delete) in MVP** — deferred: it belongs on the (out-of-scope)
-  profile page, and enrolment + login + OTP-recovery cover MVP without it.
+- **Cognito-native username-hinted login ("Flow B")** — shipped first: the SPA sent the remembered
+  phone to `InitiateAuth(USER_AUTH, WEB_AUTHN)` and completed the challenge. Worked, but could
+  never be automatic (username before challenge → no conditional UI, no userless modal), and
+  bolting conditional UI onto it failed outright (populated `allowCredentials` → no autofill chip +
+  colliding ceremonies). Replaced by the custom ceremony (decision 2).
+- **Managed Login hosted UI for userless login ("Flow C")** — the only Cognito-supported
+  discoverable path, but it never functioned: the hosted UI's origin is the Cognito domain, not a
+  registrable suffix of the site, so a site-RP passkey cannot be exercised there without a custom
+  auth domain — plus a full-page redirect UX. Rejected.
+- **`CUSTOM_AUTH` trigger trio + short-lived HMAC proof** — the bridge this design originally
+  specified: `app-auth` proves its verification to Define/Create/VerifyAuthChallenge triggers via a
+  single-use HMAC proof. Fully built and security-reviewed, then found dead-on-arrival on-device:
+  ESSENTIALS choice-based pools reject `AuthFlow=CUSTOM_AUTH` (fact 2). Replaced by the admin token
+  exchange (decision 4); the trigger trio + proof secret were removed.
+- **Mint our own (non-Cognito) session JWTs after verifying** — bypasses the API-Gateway Cognito
+  authorizer and forces a second validation path across the whole API. Rejected — bridge to Cognito
+  so downstream is untouched.
+- **OTP-only, no biometric** — forfeits the core product vision. Rejected.
+- **Conditional-UI-only "automatic" (no auto-modal)** — the interim position after the early
+  "zero-tap impossible" conclusion. On-device testing disproved that conclusion (fact 3); the
+  auto-modal on focus is strictly better for returning devices, with conditional UI kept for
+  first-timers.
+- **Passkey management (list/rename/delete) in MVP** — deferred to the profile page; enrolment +
+  login + OTP recovery cover MVP. When built it lives on `app-auth` (Cognito calls).
 
 ## Consequences
 
-- **New API surface on `app-auth`:** `/auth/passkey/login/{options,verify}` (Flow B). IAM is already
-  sufficient (`InitiateAuth` / `RespondToAuthChallenge` are granted to `app-auth` from ADR-0021); the
-  routes sit behind the same HTTP API (public — the passkey assertion is the credential).
-- **SPA work:** the `navigator.credentials.get()` ceremony, a remembered-phone hint, device-matched
-  labels (he/en), the enable-when-unenrolled button, and OTP fallback on any passkey failure/cancel.
-- **A spike precedes the auto-on-load UX:** whether the biometric can be offered *near-automatically*
-  on load (vs one explicit tap) depends on WebAuthn conditional mediation + browser user-activation
-  rules + Cognito challenge interop. The guaranteed fallback is a one-tap "Sign in with <biometric>".
-- **`/me/passkeys` management is deferred** to the profile-page slice; when built it must live on
-  `app-auth` (Cognito calls), keeping `app-core` Cognito-free (ADR-0021).
-- **Native apps later** reuse the same passkeys via `.well-known` association on the apex RP-ID
-  (already correct in prod) — designed-for, not built.
+- **Owned security surface** (review as security-critical): assertion verification — challenge
+  single-use, origin + RP-ID binding, signature, sign-count regression (clone detection). The token
+  exchange trusts that verification; the ephemeral password exists only server-side.
+- **API surface on `app-auth`:** `POST /auth/passkey/register/{options,verify}` (authorized),
+  `GET /auth/passkey/login/challenge` + `POST /auth/passkey/login/verify` (public — the assertion
+  is the credential; enumeration-safe: no-user and no-passkey collapse to one 401). The verify
+  response carries both the registration ticket (for `/auth`'s session resolve) and the tokens
+  (for the Aurora-free landing).
+- **SPA:** a reusable passkey module — arm-on-focus auto-modal, conditional-UI autofill, the
+  returning-device flag, device-matched labels (he/en), enable-when-unenrolled step after signup,
+  OTP fallback on any failure/cancel.
+- Existing Cognito-native passkeys did not carry over (their keys live in Cognito, unreadable);
+  members re-enrolled once. Cognito-native passkey flows for the customer pool are retired.
+- iOS 16's single gesture-free `get()` per page load is a real budget: exactly one automatic
+  ceremony is armed per load, and nothing may consume it first.

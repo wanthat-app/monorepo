@@ -1,5 +1,5 @@
 /**
- * app-core — the in-VPC "core" (ADR-0021), behind the shared app HTTP API.
+ * app-core — the in-VPC "core" (ADR-0020), behind the shared app HTTP API.
  *
  * Serves the endpoints that touch Aurora: `/auth/register`, `/me`, `/me/*` (and later wallet). Stays
  * IN-VPC with IAM DB auth (ADR-0003) and reserved concurrency; DynamoDB over the free gateway

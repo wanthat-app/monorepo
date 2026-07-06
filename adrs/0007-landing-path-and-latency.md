@@ -1,46 +1,51 @@
-# ADR 0007 — Landing path & latency
+# ADR 0007 — Landing path, latency & front door
 
-- **Status:** Accepted — the **front-door mechanism is superseded by [ADR-0018](0018-landing-front-door-http-api.md)** (Function URL → public HTTP API, because Lambda Function URLs are unavailable in il-central-1). Everything else in this ADR stands.
-- **Date:** 2026-06-28
-- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (redirect projection), [ADR-0004](0004-network-topology-nat-free-egress.md) (non-VPC), [ADR-0008](0008-consumer-attribution-model.md) (attribution at click), [ADR-0018](0018-landing-front-door-http-api.md) (front-door supersession)
+- **Status:** Accepted *(consolidated 2026-07-07: former ADR-0018 — the HTTP-API front door — is
+  merged into this record; the Function-URL mechanism it replaced is preserved under Alternatives)*
+- **Date:** 2026-06-28 (front door revised 2026-06-29; consolidated 2026-07-07)
+- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (redirect projection),
+  [ADR-0004](0004-network-topology-nat-free-egress.md) (non-VPC),
+  [ADR-0008](0008-consumer-attribution-model.md) (attribution at click),
+  [ADR-0011](0011-backend-service-stack.md) (HTTP API),
+  [ADR-0019](0019-edge-front-door-cloudfront.md) (CloudFront)
 
 ## Context
 
-The public `/p/{recommendation_id}` redirect is the consumer entry point and the one viral-spiky surface:
-the scenario the architecture exists to serve is a link going viral after a quiet period. The
-product target is **p95 < 500ms**. It must resolve `recommendation_id → affiliate_url`, decide attribution,
-and emit funnel events — fast.
+The public `/p/{recommendation_id}` landing is the consumer entry point and the one viral-spiky
+surface: the scenario the architecture exists to serve is a link going viral after a quiet period.
+The product target is **p95 < 500ms**. It must resolve `recommendation_id → affiliate_url`, decide
+attribution, and emit funnel events — fast.
 
 The app is **cookieless** (ADR-0008): the SPA holds the Cognito JWT in JS and sends it as a Bearer
-header on `/api/*`. But a click on `/p/{recommendation_id}` is a **top-level navigation**, which carries
-neither a Bearer header (those only ride XHR/fetch) nor a cookie — so the server **cannot** know
-the consumer's identity from that request. The identity decision therefore happens **client-side**.
-That also fits OG unfurling: social crawlers run no JS, so the landing HTML must be server-rendered
-with product-specific OG tags regardless.
+header on API calls. But a click on `/p/{recommendation_id}` is a **top-level navigation**, which
+carries neither a Bearer header (those only ride XHR/fetch) nor a cookie — so the server **cannot**
+know the consumer's identity from that request. The identity decision therefore happens
+**client-side**. That also fits OG unfurling: social crawlers run no JS, so the landing HTML must be
+server-rendered with product-specific OG tags regardless.
 
 ## Decision
 
-**The landing service is a non-VPC Lambda fronted by a CloudFront → Lambda Function URL (`/p/*`), not API
-Gateway.** Two steps:
+**The landing service is a non-VPC Lambda fronted by a public API Gateway HTTP API (no JWT
+authorizer), behind CloudFront on `/p/*`.** Two parts:
 
-1. **`GET /p/{recommendation_id}`** → resolve `recommendation_id` in DynamoDB (ADR-0003) and return a minimal
-   **OG-tagged landing page + bootstrap JS**. Emit an **impression** event.
-2. **Client-side identity + resolve** — the bootstrap JS, on our origin, inspects the SPA's token
-   store and calls a **resolve** endpoint that assembles `custom_parameters` — `ref` (the
-   `recommendation_id`, always) plus a consumer key — onto the **product-level** affiliate URL and
-   returns it:
-   - **member** → sends the Bearer token; the endpoint validates it **offline against cached
-     Cognito JWKS** (no Cognito call) and injects `customer_id` (`c`) → JS redirects. Automatic,
-     no interaction — the logged-in "auto-redirect", done in the browser.
-   - **guest** → sends the `guestId` from **localStorage** (ADR-0008); the endpoint injects `g` →
-     JS redirects.
-   - **neither** → render login / signup / continue-as-guest.
-   The resolve emits the **click** event.
+1. **Server side — bots and first paint.** `GET /p/{recommendation_id}` resolves the
+   recommendation (DynamoDB, ADR-0003), injects product-specific **OG/Twitter tags + a content
+   snapshot** into the SPA shell, and returns it. Crawlers get a rich preview without running JS;
+   humans boot the SPA. An **impression** event is emitted. Absolute URLs and the shell fetch use a
+   configured `SITE_ORIGIN`, never request headers (SSRF/cache-poisoning guard).
+2. **Client side — identity + resolve.** The SPA page runs the same session/passkey machinery as
+   the rest of the app and is **Aurora-free** (a member is recognised by a valid Cognito refresh —
+   tokens, not profile):
+   - **member** (stored session) → recognised → redirect to the store with attribution;
+   - **returning passkey device, no session** → automatic biometric login (ADR-0022) → redirect;
+   - **neither** → signup / login / continue-as-guest (`guestId` in localStorage, ADR-0008).
+   The resolve step assembles `custom_parameters` — `ref` (the `recommendation_id`) plus the
+   consumer key (`c` customer / `g` guest) — onto the product-level affiliate URL and emits the
+   **click** event.
 
-It is **not** behind API Gateway's JWT authorizer: that authorizer rejects missing/invalid tokens,
-which would break the anonymous landing — and the viral hot path wants the leanest front, not an
-extra hop. Token validation is offline JWKS signature verification, so redirect/resolve never call
-Cognito at request time.
+It is **not** behind the JWT authorizer: that authorizer rejects missing/invalid tokens, which would
+break the anonymous landing. Token checks are offline (JWKS signature / refresh exchange), so the
+hot path never calls Cognito synchronously.
 
 DynamoDB on the hot path means single-digit-ms reads, $0 idle, no scale-to-zero resume, no VPC
 cold-start, and it absorbs the burst natively. The projection is written through at link generation
@@ -50,32 +55,40 @@ Both funnel events (**impression**, **click**) are emitted as structured `consol
 **CloudWatch Logs subscription filter → Firehose → S3** ships — never an un-awaited `PutRecord`
 (Lambda freezes after the response and can silently drop it, losing attribution).
 
-With the DB resume and VPC cold-start gone, latency is dominated by the Node cold start, the OG
-landing render, and one client→resolve round-trip. The relaxed target absorbs that round-trip; the
-original 500ms is approachable and reachable with provisioned concurrency if real traffic warrants.
+Per-surface **request throttling** is configured centrally (`infra/lib/config.ts` → `THROTTLING`)
+and applied to each HTTP API's `$default` stage: `landing` (viral, high headroom), `userWallet`
+(the authenticated app API, moderate), `admin` (internal, low).
 
 ## Alternatives considered
 
-- **Postgres on the hot path** — a scale-to-zero database wake (~0.5–3s) plus VPC cold start
-  blows the budget at exactly the p90–p95 percentile a burst lands on, and forces RDS Proxy to
-  survive the connection storm. DynamoDB removes both the latency and the burst.
-- **Provisioned concurrency to hide cold starts** — ~$27–110+/mo standing, which defeats
-  scale-to-zero; kept as a later lever only if real traffic warrants it.
+- **Lambda Function URL as the front door** — the original decision, and **not available in
+  il-central-1** (confirmed in-account: `AWS::Lambda::Url` → `TypeNotFoundException`;
+  `CreateFunctionUrlConfig` → `AccessDeniedException` on the regional endpoint). A custom resource
+  can't create one either (the API operations themselves are absent), and relocating the landing to
+  us-east-1 splits the viral path across regions for no gain. Replaced by the HTTP API — same proxy
+  event shape, handler unchanged; costs ~$1/M origin requests where a Function URL is free
+  (mitigated by CloudFront caching; small at MVP scale), and one front-door pattern now spans
+  app / admin / landing. Revisit only if Function URLs reach il-central-1.
+- **Postgres on the hot path** — a scale-to-zero database wake (~20s) plus VPC cold start blows the
+  budget at exactly the p90–p95 percentile a burst lands on, and forces RDS Proxy to survive the
+  connection storm. DynamoDB removes both.
+- **Provisioned concurrency to hide cold starts** — ~$27–110+/mo standing, defeats scale-to-zero;
+  kept as a later lever only if real traffic warrants it.
 - **CloudFront KeyValueStore at the edge** — cheaper still and resolves inside a CloudFront
-  Function (the origin Lambda may not run at all); kept as the next escalation if the cold-start
-  tail ever hurts conversion.
-- **API Gateway with a permissive Lambda authorizer** (to allow anonymous) — an extra hop + cost
-  on the viral path for no gain; rejected in favour of the Function URL + offline JWKS validation.
+  Function; kept as the next escalation if the cold-start tail ever hurts conversion.
+- **API Gateway with a permissive Lambda authorizer** (to allow anonymous) — an extra hop + cost on
+  the viral path for no gain; rejected in favour of a public HTTP API + offline validation.
 - **Cookie-based session, server-side redirect decision** — a server `301` keyed off a session
-  cookie is simpler, but rejected: the app is cookieless (ADR-0008) and cookie-based flows are
-  fragile under Safari ITP / third-party-cookie deprecation, and still couldn't carry identity on
-  a cross-person shared link without the client step.
+  cookie is simpler, but the app is cookieless (ADR-0008), cookie flows are fragile under Safari
+  ITP / third-party-cookie deprecation, and identity still couldn't ride a cross-person shared link
+  without the client step.
 
 ## Consequences
 
-- Hot path: `GET /p/{id}` → OG landing (+impression) → client resolve (+click) → redirect. Standing
-  redirect + CDN + stream cost stays under ~$8/mo.
-- The logged-in case is a client-driven redirect (one resolve call), not a server `301` — the price
-  of cookieless + correct OG unfurling, absorbed by the relaxed target.
-- The viral burst lands on DynamoDB, which is also why no RDS Proxy is needed (ADR-0002/0003).
+- Hot path: `GET /p/{id}` → OG-injected shell (+impression) → client identity + resolve (+click) →
+  redirect. Standing redirect + CDN + stream cost stays small (~$8/mo + ~$1/M origin requests).
+- The logged-in case is a client-driven redirect, not a server `301` — the price of cookieless +
+  correct OG unfurling, absorbed by the relaxed target.
+- The landing never touches Aurora (recognition = token validity, not profile) — the viral burst
+  lands on DynamoDB only, which is also why no RDS Proxy is needed (ADR-0002/0003).
 - Redirect-p95 monitoring is the trigger to escalate to provisioned concurrency or an edge KVS.

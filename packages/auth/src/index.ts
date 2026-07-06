@@ -1,5 +1,5 @@
 /**
- * `@wanthat/auth` — the registration-ticket handoff (ADR-0020, ADR-0021), Ed25519-signed.
+ * `@wanthat/auth` — the registration-ticket handoff (ADR-0020, ADR-0020), Ed25519-signed.
  *
  * {@link TicketSigner} (non-VPC `app-auth`, private key from Secrets Manager over the free public
  * endpoint) signs at `/auth/verify`; {@link TicketVerifier} (in-VPC `app-core`, PUBLIC key from a
