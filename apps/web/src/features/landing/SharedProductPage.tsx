@@ -29,8 +29,12 @@ export function SharedProductPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const { customer, loading, signIn } = useSession();
-  // `pending` covers the window where we're auto-attempting a passkey login before showing the CTAs.
-  const [pending, setPending] = useState(hasStoredSession() || deviceHasPasskey());
+  // `pending` = we're auto-attempting a passkey login (logged-out + passkey device) — hold the CTAs
+  // behind a spinner until it resolves. When there IS a session, `loading` (rehydration) gates instead,
+  // so `pending` must be false there or the spinner would never clear.
+  const [pending, setPending] = useState(
+    !hasStoredSession() && passkeysSupported() && deviceHasPasskey(),
+  );
   const armed = useRef(false);
 
   const toStore = () => window.location.assign(MOCK_STORE_URL);
