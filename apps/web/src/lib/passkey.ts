@@ -112,6 +112,7 @@ export async function loginWithPasskey(): Promise<AuthSession> {
  * abort/cancel/failure; the caller falls back to OTP silently.
  */
 export async function loginWithPasskeyAutofill(): Promise<AuthSession> {
+  await waitForDocumentFocus();
   const { challengeId, options } = await authApi.passkeyLoginChallenge();
   const credential = await startAuthentication({
     // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
