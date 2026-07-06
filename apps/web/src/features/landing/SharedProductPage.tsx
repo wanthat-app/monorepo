@@ -1,7 +1,12 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams } from "react-router-dom";
-import { deviceHasPasskey, loginWithPasskey, passkeysSupported } from "../../lib/passkey";
+import { useParams, useSearchParams } from "react-router-dom";
+import {
+  deviceHasPasskey,
+  loginWithPasskey,
+  markPasskeyDevice,
+  passkeysSupported,
+} from "../../lib/passkey";
 import { hasStoredSession, useSession } from "../../lib/session";
 import { Button, Screen, Spinner } from "../../ui/components";
 
@@ -28,6 +33,7 @@ const MOCK_STORE_URL = "https://www.aliexpress.com/";
 export function SharedProductPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
+  const [searchParams] = useSearchParams();
   const { customer, loading, signIn } = useSession();
   // `pending` = we're auto-attempting a passkey login (logged-out + passkey device) — hold the CTAs
   // behind a spinner until it resolves. When there IS a session, `loading` (rehydration) gates instead,
@@ -36,6 +42,14 @@ export function SharedProductPage() {
     !hasStoredSession() && passkeysSupported() && deviceHasPasskey(),
   );
   const armed = useRef(false);
+  // On-device diagnosis of the auto-prompt gates (`?debug=1` renders it): phones have no console, so
+  // when the Face ID sheet doesn't appear this names WHICH gate suppressed it or what the ceremony threw.
+  const debug = searchParams.get("debug") !== null;
+  const [diag, setDiag] = useState<string[]>([]);
+  const note = (line: string) => {
+    console.log(`[landing-auth] ${line}`);
+    setDiag((d) => [...d, line]);
+  };
 
   const toStore = () => window.location.assign(MOCK_STORE_URL);
 
@@ -44,29 +58,49 @@ export function SharedProductPage() {
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
-    if (hasStoredSession()) return; // rehydrating → the effect below forwards them
+    if (hasStoredSession()) {
+      note("gate: stored session → rehydrating, no prompt");
+      return; // rehydrating → the session effect below forwards them
+    }
     if (!passkeysSupported() || !deviceHasPasskey()) {
+      note(
+        `gate: webauthn=${passkeysSupported()} returningDevice=${deviceHasPasskey()} → no prompt`,
+      );
       setPending(false);
       return;
     }
+    note("auto-prompt: firing the passkey ceremony");
     void (async () => {
       try {
         const session = await loginWithPasskey(); // auto-modal Face ID on load
+        markPasskeyDevice();
         signIn(session);
         toStore();
-      } catch {
+      } catch (err) {
+        note(
+          `auto-prompt failed: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`,
+        );
         setPending(false); // cancelled / no passkey → fall back to the CTAs
       }
     })();
+    // note/setDiag are stable enough for this once-guarded effect.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signIn]);
+
+  const diagPanel = debug ? (
+    <pre className="mx-auto mt-3 w-full max-w-[440px] overflow-x-auto rounded-lg bg-ink p-3 text-[11px] text-white">
+      {diag.length ? diag.join("\n") : "(no auth events yet)"}
+    </pre>
+  ) : null;
 
   // A recognised (or just-authenticated) member → go straight to the store.
   const signedIn = !loading && !!customer;
 
   if (loading || pending) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
+      <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-4">
         <Spinner />
+        {diagPanel}
       </div>
     );
   }
@@ -132,6 +166,7 @@ export function SharedProductPage() {
             {t("shared.guestCta")}
           </button>
         )}
+        {diagPanel}
       </div>
     </Screen>
   );
