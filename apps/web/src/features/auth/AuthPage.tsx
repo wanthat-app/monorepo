@@ -1,7 +1,7 @@
 import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, authApi } from "../../lib/api";
 import {
   biometricLabelKey,
@@ -37,10 +37,20 @@ const LOCALE_BY_LANG: Record<string, string> = { he: "he-IL", en: "en-US" };
  * discoverable passkey login button is offered up front, above the phone form — the OS shows a
  * modal picker of the member's passkeys for this origin; OTP is always the fallback.
  */
+/** Only accept an internal same-origin path as a post-auth destination (no open-redirect). */
+function safeNext(v: string | null): string | null {
+  return v && v.startsWith("/") && !v.startsWith("//") ? v : null;
+}
+
 export function AuthPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { signIn, accessToken } = useSession();
+
+  // Where to go once authenticated. The referral landing sends members here with `?next=/go/{id}`
+  // (the mock store hand-off); a plain login defaults home.
+  const dest = safeNext(searchParams.get("next")) ?? "/home";
 
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -100,7 +110,7 @@ export function AuthPage() {
           const session = await loginWithPasskey(); // modal; auto-prompts on load
           markPasskeyDevice();
           signIn(session);
-          navigate("/home", { replace: true });
+          navigate(dest, { replace: true });
           return;
         } catch {
           setAutoTried(true); // cancelled / no passkey → show the manual button (freebie is spent)
@@ -114,7 +124,7 @@ export function AuthPage() {
         const session = await loginWithPasskeyAutofill();
         markPasskeyDevice();
         signIn(session);
-        navigate("/home", { replace: true });
+        navigate(dest, { replace: true });
       } catch {
         // aborted / not used — stay on the form; OTP or the manual button continues.
       }
@@ -145,7 +155,7 @@ export function AuthPage() {
     }
   };
 
-  const goHome = () => navigate("/home", { replace: true });
+  const goHome = () => navigate(dest, { replace: true });
 
   const onStart = (ch: OtpChannel = channel) =>
     run(async () => {
@@ -161,7 +171,7 @@ export function AuthPage() {
       const session = await loginWithPasskey();
       markPasskeyDevice();
       signIn(session);
-      navigate("/home", { replace: true });
+      navigate(dest, { replace: true });
     });
 
   const onVerify = () =>
@@ -172,7 +182,7 @@ export function AuthPage() {
       const res = await authApi.session(registrationTicket);
       if (res.status === "authenticated") {
         signIn(res);
-        navigate("/home");
+        navigate(dest);
       } else {
         setTicket(res.registrationTicket);
         setStep("register");
@@ -191,7 +201,7 @@ export function AuthPage() {
       signIn(session);
       // Offer Face ID enrolment as its own step (only where passkeys are possible), then land home.
       if (passkeysSupported()) setStep("face");
-      else navigate("/home");
+      else navigate(dest);
     });
 
   const onEnableFace = () =>
