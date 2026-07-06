@@ -47,23 +47,39 @@ describe("injectLanding", () => {
 });
 
 describe("handler", () => {
-  afterEach(() => vi.unstubAllGlobals());
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.unstubAllEnvs();
+  });
 
-  it("fetches the SPA shell, injects OG, serves 200 HTML for /p/{id}", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async () => ({ ok: true, text: async () => SHELL })),
+  it("fetches the SPA shell from SITE_ORIGIN, injects OG, serves 200 HTML for /p/{id}", async () => {
+    vi.stubEnv("SITE_ORIGIN", "https://dev.wanthat.app");
+    const fetchMock = vi.fn((_url: string, _init?: unknown) =>
+      Promise.resolve({ ok: true, text: async () => SHELL }),
     );
+    vi.stubGlobal("fetch", fetchMock);
     const { handler } = await import("./handler");
+    // The shell fetch targets SITE_ORIGIN — never a request-derived host (SSRF guard).
     const res = await handler({
       rawPath: "/p/rec_abc",
-      headers: { host: "dev.wanthat.app" },
+      headers: { host: "attacker.example" },
     } as never);
     expect(res.statusCode).toBe(200);
-    expect(res.headers["content-type"]).toContain("text/html");
     expect(res.body).toContain("og:title");
     expect(res.body).toContain("/p/rec_abc");
     expect(res.body).toContain("/assets/index-abc123.js");
+    // The malicious Host header did NOT influence where we fetched from.
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://dev.wanthat.app/index.html");
+  });
+
+  it("500s when SITE_ORIGIN is unset (fails closed, no header fallback)", async () => {
+    vi.stubEnv("SITE_ORIGIN", "");
+    const { handler } = await import("./handler");
+    const res = await handler({
+      rawPath: "/p/rec_abc",
+      headers: { host: "attacker.example" },
+    } as never);
+    expect(res.statusCode).toBe(500);
   });
 
   it("404s a non-/p path", async () => {

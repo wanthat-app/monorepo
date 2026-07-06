@@ -56,11 +56,18 @@ export const handler = async (event: LandingEvent): Promise<LandingResult> => {
   }
 
   const headers = event.headers ?? {};
-  // Absolute OG URLs + the shell fetch use the real site origin (behind CloudFront the Host header is
-  // the API-Gateway domain, so prefer SITE_ORIGIN).
-  const host = headers.host ?? headers.Host ?? "dev.wanthat.app";
-  const proto = headers["x-forwarded-proto"] ?? "https";
-  const origin = process.env.SITE_ORIGIN ?? `${proto}://${host}`;
+  // The site origin MUST come from config, NEVER the request. It drives both the shell fetch and the
+  // absolute OG URLs, so a request-derived (Host header) origin would be an SSRF + cache-poisoning
+  // vector: an attacker could point the fetch at their own HTML and have CloudFront cache it.
+  const origin = process.env.SITE_ORIGIN;
+  if (!origin || !/^https:\/\/[a-z0-9.-]+$/i.test(origin)) {
+    console.error("landing_config_error", "SITE_ORIGIN missing or malformed");
+    return {
+      statusCode: 500,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ error: "misconfigured", service: SERVICE }),
+    };
+  }
   const locale = pickLocale(
     event.queryStringParameters?.lang ?? undefined,
     headers["accept-language"] ?? headers["Accept-Language"] ?? undefined,
