@@ -34,7 +34,7 @@ const LOCALE_BY_LANG: Record<string, string> = { he: "he-IL", en: "en-US" };
 /**
  * UC1 Onboard + UC2 Sign-in. One unified phone-OTP flow: a phone that has no profile yet branches to
  * the registration step (name + email + language + Terms), then a Face ID enrolment step; a known
- * phone signs straight in. Wherever this browser supports passkeys (ADR-0024), a userless
+ * phone signs straight in. Wherever this browser supports passkeys (ADR-0022), a userless
  * discoverable passkey login button is offered up front, above the phone form — the OS shows a
  * modal picker of the member's passkeys for this origin; OTP is always the fallback.
  */
@@ -82,7 +82,7 @@ export function AuthPage() {
 
   const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
 
-  // Passkey login affordance (ADR-0024). `autofillSupported` is null while we probe conditional-UI
+  // Passkey login affordance (ADR-0022). `autofillSupported` is null while we probe conditional-UI
   // support (used only for first-time devices). `autoTried` flips true after an auto-modal prompt was
   // fired and did NOT sign the member in (cancelled / no passkey) — then we surface the manual button.
   const [autofillSupported, setAutofillSupported] = useState<boolean | null>(null);
@@ -102,7 +102,7 @@ export function AuthPage() {
       .catch(() => {}); // advisory only — the server re-checks on /auth/start
   }, []);
 
-  // Passkey login on load (ADR-0024). Two regimes, chosen once per mount:
+  // Passkey login on load (ADR-0022). Two regimes, chosen once per mount:
   //  - Returning passkey device → fire an AUTOMATIC modal prompt: the Face ID sheet pops with no tap
   //    (iOS 16 spends its one gesture-free get() here; iOS 17.4+ has no gesture limit). This is the
   //    fully-automatic path. On cancel/no-passkey we fall back to the manual button.
@@ -193,7 +193,7 @@ export function AuthPage() {
   const onVerify = () =>
     run(async () => {
       // /auth/verify (app-auth) only hands back a ticket; /auth/session (app-core) resolves it to a
-      // login or a registration prompt, since that decision needs Aurora (ADR-0021).
+      // login or a registration prompt, since that decision needs Aurora (ADR-0020).
       const { registrationTicket } = await authApi.verify(challengeId, code);
       const res = await authApi.session(registrationTicket);
       if (res.status === "authenticated") {
@@ -275,7 +275,7 @@ export function AuthPage() {
                   type="tel"
                   inputMode="tel"
                   // `webauthn` makes this field the conditional-UI autofill target: focusing it surfaces
-                  // the member's passkeys for this origin (ADR-0024 Slice 2), armed in the effect above.
+                  // the member's passkeys for this origin (ADR-0022 Slice 2), armed in the effect above.
                   autoComplete="tel webauthn"
                   placeholder="50 123 4567"
                   value={phone}

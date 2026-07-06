@@ -49,7 +49,7 @@ function ticketTokens(ticket: {
 }
 
 /**
- * The Aurora seam of onboarding (ADR-0021), served in-VPC by `app-core`. Both routes validate the
+ * The Aurora seam of onboarding (ADR-0020), served in-VPC by `app-core`. Both routes validate the
  * self-contained HMAC ticket minted by `app-auth`'s `/auth/verify` independently (no inter-Lambda
  * invoke, no shared session store) and call NO Cognito control-plane API.
  *
@@ -117,7 +117,7 @@ export function authRouter(): Hono {
     // ADR-0023: queue the optin_welcome WhatsApp message through the transactional outbox (a
     // DynamoDB write over the gateway endpoint; the NON-VPC dispatcher does the egress). The
     // producer owns WHAT to send and in which language; best-effort — a failed enqueue is logged,
-    // never fails registration. No Cognito call here (in-VPC, ADR-0021).
+    // never fails registration. No Cognito call here (in-VPC, ADR-0020).
     const outboxId = randomUUID();
     try {
       await ctx.outbox.put({

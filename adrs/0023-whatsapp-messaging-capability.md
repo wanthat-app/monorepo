@@ -4,7 +4,7 @@
 - **Date:** 2026-07-01
 - **Refines:** [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (delivers the deferred alternate OTP
   channel it told us to leave room for)
-- **Related:** [ADR-0020](0020-auth-foundation.md), [ADR-0021](0021-auth-split-vpc-edge-and-core.md)
+- **Related:** [ADR-0020](0020-auth-foundation.md), [ADR-0020](0020-auth-foundation.md)
   (Custom SMS Sender is a separate Cognito-invoked non-VPC Lambda), [ADR-0003](0003-datastore-aurora-and-dynamodb.md),
   [ADR-0004](0004-network-topology-nat-free-egress.md)
 
@@ -53,7 +53,7 @@ explicitly left the OTP send-channel abstractable for exactly this.
 - **Full Custom Auth Challenge flow** — more control but a bigger rewrite; the Custom SMS Sender keeps
   the native `SMS_OTP` flow and just swaps delivery. Accepted the optimistic-send tradeoff.
 - **SQS + interface VPC endpoint** for the in-VPC->non-VPC notification bridge — native DLQ/retry but a
-  paid endpoint against ADR-0021's "remove endpoints" direction; DynamoDB-Streams outbox chosen.
+  paid endpoint against ADR-0020's "remove endpoints" direction; DynamoDB-Streams outbox chosen.
 - **Twilio Verify** — turnkey but ~$0.05/verification markup and a third-party PII processor.
 
 ## Consequences

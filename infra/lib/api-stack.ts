@@ -50,9 +50,9 @@ export interface ApiStackProps extends StackProps {
 
 /**
  * ApiStack — the app-api compute, split into two functions behind one HTTP API (ADR-0002, ADR-0006,
- * ADR-0011, ADR-0020, ADR-0021).
+ * ADR-0011, ADR-0020, ADR-0020).
  *
- * ADR-0021 resolves Managed Login vs PrivateLink by slicing the Lambdalith along its Cognito/Aurora
+ * ADR-0020 resolves Managed Login vs PrivateLink by slicing the Lambdalith along its Cognito/Aurora
  * seam:
  *  - `app-auth` (NON-VPC "auth edge"): the `/auth/*` OTP + passkey flow. Reaches the Managed-Login
  *    customer pool over Cognito's public endpoint (PrivateLink is disabled for such pools) and
@@ -134,7 +134,7 @@ export class ApiStack extends Stack {
         USER_POOL_ID: props.userPool.userPoolId,
         USER_POOL_CLIENT_ID: props.userPoolClient.userPoolClientId,
         AUTH_TICKET_SECRET_ARN: ticketSecret.secretArn,
-        // ADR-0024: pins the WebAuthn ceremony to this site (rpId is the registrable domain; origins
+        // ADR-0022: pins the WebAuthn ceremony to this site (rpId is the registrable domain; origins
         // are the exact SPA origins) so an assertion for another origin/RP is rejected.
         WEBAUTHN_RP_ID: wanthatEnv.domainName ?? "",
         WEBAUTHN_ORIGINS: webOrigins(wanthatEnv).join(","),
@@ -151,7 +151,7 @@ export class ApiStack extends Stack {
     props.phoneVelocityTable.grantReadWriteData(appAuthFn);
     props.guestAttributionTable.grantReadWriteData(appAuthFn);
     props.runtimeConfigTable.grantReadData(appAuthFn);
-    // ADR-0024: put on enrol, get on login, updateSignCount after login, query for exclude-list.
+    // ADR-0022: put on enrol, get on login, updateSignCount after login, query for exclude-list.
     props.passkeyCredentialTable.grantReadWriteData(appAuthFn);
     ticketSecret.grantRead(appAuthFn);
 
@@ -278,7 +278,7 @@ export class ApiStack extends Stack {
       this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: authIntegration });
     }
 
-    // Passkey LOGIN (ADR-0024, userless discoverable) -> app-auth, PUBLIC (the assertion is the
+    // Passkey LOGIN (ADR-0022, userless discoverable) -> app-auth, PUBLIC (the assertion is the
     // credential; the user is not signed in yet). Explicit static routes so they take precedence over
     // the authorizer-protected /auth/passkey/{proxy+} enrolment route below. GET issues a single-use
     // challenge; POST verifies the assertion and bridges to Cognito tokens.
@@ -332,7 +332,7 @@ export class ApiStack extends Stack {
     new CfnOutput(this, "UserPoolId", { value: props.userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: props.userPoolClient.userPoolClientId });
 
-    // TRANSITIONAL (ADR-0021 split) - REMOVE in a follow-up once every env's observability stack has
+    // TRANSITIONAL (ADR-0020 split) - REMOVE in a follow-up once every env's observability stack has
     // redeployed. The old `AppApi` Lambda was deleted, but wanthat-{env}-observability still imports its
     // ref in the currently-deployed template. CloudFormation deploys `api` before `observability`, so
     // `api` would try to delete this export while it is still in use -> "cannot delete export ... in

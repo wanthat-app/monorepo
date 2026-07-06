@@ -2,7 +2,7 @@ import { createPublicKey, sign as edSign, verify as edVerify, type KeyObject } f
 import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 
 /**
- * Self-contained registration ticket (ADR-0021 decision 3). The client carries it from `/auth/verify`
+ * Self-contained registration ticket (ADR-0020 decision 3). The client carries it from `/auth/verify`
  * (signed by `app-auth`) to `/auth/register` (verified by `app-core`). Everything `/auth/register`
  * needs to provision the customer and return a session is inside the ticket, so the two functions
  * share no session store and never invoke each other: the signed ticket is the only handoff.

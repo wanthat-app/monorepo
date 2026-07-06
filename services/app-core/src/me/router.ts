@@ -53,7 +53,7 @@ export function meRouter(): Hono<{ Bindings: Bindings }> {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
-    // TODO(app-auth): cognito attribute sync. app-core is Cognito-free (ADR-0021), so an email change
+    // TODO(app-auth): cognito attribute sync. app-core is Cognito-free (ADR-0020), so an email change
     // that must propagate to the Cognito attribute is delegated to app-auth; dropped here for now.
     const profile = await updateProfile(ctx.db, sub, body);
     if (!profile) return c.json({ error: "not_found" }, 404);

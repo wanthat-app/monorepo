@@ -25,9 +25,9 @@ export interface AuthContext {
   guests: GuestAttributionRepo;
   cognito: Cognito;
   tickets: TicketSigner;
-  /** Own-store passkey credentials (ADR-0024) — `app-auth` verifies WebAuthn itself, not Cognito. */
+  /** Own-store passkey credentials (ADR-0022) — `app-auth` verifies WebAuthn itself, not Cognito. */
   passkeys: PasskeyCredentialRepo;
-  /** WebAuthn Relying Party identity (ADR-0024): `rpId` is the site's registrable domain;
+  /** WebAuthn Relying Party identity (ADR-0022): `rpId` is the site's registrable domain;
    * `origins` are the exact origins the SPA is served from. Both pin `verifyRegistration`/
    * `verifyAuthentication` to this site so an assertion for another origin/RP is rejected. */
   webauthn: { rpId: string; origins: string[] };
@@ -37,7 +37,7 @@ let cached: AuthContext | undefined;
 
 /**
  * Build the per-container dependency graph once and reuse it across warm invocations. The non-VPC
- * auth edge (ADR-0021) reaches Cognito + DynamoDB over public AWS endpoints; the ticket signing key
+ * auth edge (ADR-0020) reaches Cognito + DynamoDB over public AWS endpoints; the ticket signing key
  * is lazy/cached inside {@link TicketSigner}. No Aurora — that seam belongs to `app-core`.
  */
 export function getContext(): AuthContext {

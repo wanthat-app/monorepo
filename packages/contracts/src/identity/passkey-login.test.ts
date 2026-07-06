@@ -6,7 +6,7 @@ import {
   PasskeyRegisterVerifyBody,
 } from "./auth";
 
-describe("passkey login/register contracts (ADR-0024 — userless discoverable)", () => {
+describe("passkey login/register contracts (ADR-0022 — userless discoverable)", () => {
   it("login challenge response carries a challengeId + options (no username)", () => {
     const ok = PasskeyLoginChallengeResponse.safeParse({
       challengeId: "c1",

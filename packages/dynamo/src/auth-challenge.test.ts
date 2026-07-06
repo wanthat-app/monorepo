@@ -7,7 +7,7 @@ function repo() {
   return { repo: new AuthChallengeRepo({ send } as never, "auth"), send };
 }
 
-describe("AuthChallengeRepo.consumePasskeyChallenge (atomic single-use, ADR-0024)", () => {
+describe("AuthChallengeRepo.consumePasskeyChallenge (atomic single-use, ADR-0022)", () => {
   it("conditionally deletes and returns the prior pk-challenge record", async () => {
     const { repo: r, send } = repo();
     const rec = { challengeId: "c1", kind: "login", sub: "", username: "", challenge: "x", ttl: 9 };

@@ -30,8 +30,8 @@ export interface EdgeServicesStackProps extends StackProps {
  * EdgeServicesStack — the non-VPC functions (ADR-0004, ADR-0007, ADR-0008, ADR-0009).
  *
  * - `landing`: public, cookieless; behind a **public HTTP API** (no authorizer), reads the DynamoDB
- *   projection. (CloudFront fronts this in the EdgeStack.) ADR-0007 specified a Lambda Function URL,
- *   but those are unavailable in il-central-1 — superseded by ADR-0018 (HTTP API instead).
+ *   projection. (CloudFront fronts this in the EdgeStack.) A Lambda Function URL was the original
+ *   front door, but those are unavailable in il-central-1 — ADR-0007 settled on the HTTP API.
  * - `retailer-proxy`: the sole egress to retailer APIs; holds the secret-scoped credential.
  * - `conversion-poller` / `fx-rates`: scheduled. The EventBridge schedules are created **disabled**
  *   (the handlers are 501 stubs); they're enabled and made admin-tunable with their real slices.
@@ -67,7 +67,7 @@ export class EdgeServicesStack extends Stack {
         bundling: { minify: true, sourceMap: true },
       });
 
-    // --- landing (public HTTP API; Lambda Function URLs are unavailable in il-central-1, ADR-0018) ---
+    // --- landing (public HTTP API; Lambda Function URLs are unavailable in il-central-1, ADR-0007) ---
     const landing = makeFn("Landing", "landing");
     this.landingFn = landing;
     // The public site origin (dev.wanthat.app / wanthat.app) for ABSOLUTE Open Graph URLs. Behind

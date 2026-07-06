@@ -38,7 +38,7 @@ export function deviceHasPasskey(): boolean {
 
 /**
  * Whether this browser supports WebAuthn *conditional UI* (autofill) — the passkey offering itself in
- * a field's autofill (ADR-0024 Slice 2). When true we arm {@link loginWithPasskeyAutofill} instead of
+ * a field's autofill (ADR-0022 Slice 2). When true we arm {@link loginWithPasskeyAutofill} instead of
  * showing an explicit button; when false the explicit modal button ({@link loginWithPasskey}) is the
  * path. Never throws.
  */
@@ -89,7 +89,7 @@ async function waitForDocumentFocus(): Promise<void> {
 }
 
 /**
- * Userless discoverable passkey login (ADR-0024): no phone/username anywhere. The server's login
+ * Userless discoverable passkey login (ADR-0022): no phone/username anywhere. The server's login
  * challenge carries an empty allowCredentials, so the OS shows a modal picker with the member's
  * passkeys registered for this origin; the member taps one and authenticates biometrically. Same
  * origin as enrolment, so the passkey's RP-ID matches — no hosted-UI redirect. Throws on
@@ -130,7 +130,7 @@ export async function loginWithPasskeyTokens(opts?: {
 }
 
 /**
- * Arm WebAuthn *conditional UI* (autofill) for userless discoverable login (ADR-0024 Slice 2). The
+ * Arm WebAuthn *conditional UI* (autofill) for userless discoverable login (ADR-0022 Slice 2). The
  * passkey offers itself in the autofill of a field marked `autocomplete="… webauthn"`; this promise
  * stays pending until the member picks it and authenticates biometrically, then resolves a session.
  * Same empty-allowCredentials challenge as the modal path — only `useBrowserAutofill` differs. Only

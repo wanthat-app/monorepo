@@ -18,7 +18,7 @@ import type { OtpChannel } from "@wanthat/contracts";
  *  - **ticket** — issued by `/auth/verify` for a not-yet-registered user: the freshly minted tokens
  *    are parked here (never handed to the client until `/auth/register`), keyed by an unguessable id
  *    that `/auth/register` presents back as an HMAC-signed registration ticket.
- *  - **pk-challenge** (ADR-0024) — one per passkey register/login ceremony: the single-use WebAuthn
+ *  - **pk-challenge** (ADR-0022) — one per passkey register/login ceremony: the single-use WebAuthn
  *    `challenge` we issued, so `app-auth` (which now owns the WebAuthn verification itself, not
  *    Cognito) can check it at verify time. Registration challenges carry the caller's `sub`/`username`
  *    (from the access token); login challenges are issued userless (`sub`/`username` empty) since the
@@ -55,7 +55,7 @@ export interface TicketRecord {
   ttl: number;
 }
 
-/** A single-use WebAuthn ceremony challenge (ADR-0024). `sub`/`username` are empty for a userless
+/** A single-use WebAuthn ceremony challenge (ADR-0022). `sub`/`username` are empty for a userless
  * login challenge — the assertion resolves the credential, not the challenge record. */
 export interface PasskeyChallengeRecord {
   challengeId: string;
@@ -124,7 +124,7 @@ export class AuthChallengeRepo {
    * ATOMICALLY consume a passkey challenge: delete it and return its prior value, or `undefined` if
    * already consumed / never existed. The conditional delete IS the single-use guarantee — two
    * requests replaying the same assertion (same challengeId) race here and exactly one wins, so a
-   * captured assertion can't be redeemed twice (ADR-0024 security review). Non-pk records → undefined.
+   * captured assertion can't be redeemed twice (ADR-0022 security review). Non-pk records → undefined.
    */
   async consumePasskeyChallenge(challengeId: string): Promise<PasskeyChallengeRecord | undefined> {
     try {

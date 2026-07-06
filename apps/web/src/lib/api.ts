@@ -94,7 +94,7 @@ export const authApi = {
       body: { challengeId, credential },
       token,
     }),
-  // Userless discoverable passkey login (ADR-0024): no phone/username, the server sends an empty
+  // Userless discoverable passkey login (ADR-0022): no phone/username, the server sends an empty
   // allowCredentials so the OS shows the member's passkeys for this origin.
   passkeyLoginChallenge: () =>
     request<PasskeyLoginChallengeResponse>("/auth/passkey/login/challenge"),

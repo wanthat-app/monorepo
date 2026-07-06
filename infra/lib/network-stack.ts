@@ -16,7 +16,7 @@ export interface NetworkStackProps extends StackProps {
  * SG — not EC2 instances.)
  *
  * NAT-free (ADR-0004): `natGateways: 0`, a single PRIVATE_ISOLATED subnet group. DynamoDB is reached
- * through a free gateway endpoint. Per ADR-0021 the in-VPC `app-core` no longer calls Cognito (the
+ * through a free gateway endpoint. Per ADR-0020 the in-VPC `app-core` no longer calls Cognito (the
  * `/auth/*` flow moved to the non-VPC `app-auth` edge), so the `cognito-idp` interface endpoint is
  * removed; only `secretsmanager` remains (the in-VPC functions + one-shot migrator read secrets over
  * it) — the sole paid endpoint. Everything else stays out of the VPC.
@@ -64,7 +64,7 @@ export class NetworkStack extends Stack {
     });
 
     // NO interface endpoints remain (they bill hourly per AZ): the `cognito-idp` one went with the
-    // ADR-0021 split (app-core stopped calling Cognito), and the `secretsmanager` one became
+    // ADR-0020 split (app-core stopped calling Cognito), and the `secretsmanager` one became
     // unnecessary once nothing in the VPC read secrets - ticket verification moved to Ed25519 PUBLIC
     // keys in plain env (app-core) and the migrator moved to IAM DB auth as wanthat_migrator. The
     // in-VPC functions' only AWS dependencies are Aurora (in-VPC) + DynamoDB (free gateway endpoint).

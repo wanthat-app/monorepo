@@ -5,7 +5,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 `wanthat` (repo: `wanthat-mono`) is the monorepo for **Wanthat** — an Israeli two-sided
 affiliate-cashback MVP on AWS, serverless-first, **AWS CDK + TypeScript**, region
 **il-central-1 (Tel Aviv)**. Architecture decisions are recorded in [`adrs/`](./adrs)
-(ADR-0001–0009; see [`adrs/README.md`](./adrs/README.md)) — **read those before changing
+(see [`adrs/README.md`](./adrs/README.md) for the full index) — **read those before changing
 structure, compute topology, datastore, network, attribution, or auth.** ADRs are locked:
 change a decision by adding a new superseding ADR, not by editing an accepted one in place.
 
