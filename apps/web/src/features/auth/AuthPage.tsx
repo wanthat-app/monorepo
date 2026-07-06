@@ -1,5 +1,5 @@
 import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, authApi } from "../../lib/api";
@@ -38,10 +38,9 @@ const LOCALE_BY_LANG: Record<string, string> = { he: "he-IL", en: "en-US" };
  * discoverable passkey login button is offered up front, above the phone form — the OS shows a
  * modal picker of the member's passkeys for this origin; OTP is always the fallback.
  */
-/** Only accept an internal same-origin path as a post-auth destination (no open-redirect). */
-function safeNext(v: string | null): string | null {
-  return v && v.startsWith("/") && !v.startsWith("//") ? v : null;
-}
+// Mock affiliate store — where the acquisition flow lands after auth (the real per-product affiliate
+// redirect lands with the full-landing slice). A hardcoded constant, so `?ref` can never open-redirect.
+const MOCK_STORE_URL = "https://www.aliexpress.com/";
 
 export function AuthPage() {
   const { t, i18n } = useTranslation();
@@ -49,15 +48,19 @@ export function AuthPage() {
   const [searchParams] = useSearchParams();
   const { signIn, accessToken, customer, loading } = useSession();
 
-  // Where to go once authenticated. The referral landing sends members here with `?next=/go/{id}`
-  // (the mock store hand-off); a plain login defaults home.
-  const dest = safeNext(searchParams.get("next")) ?? "/home";
+  // A `?ref={id}` means the member came from a referral landing — on success send them straight to the
+  // store (the acquisition destination), a full navigation out of the SPA. A plain login goes home.
+  const referral = searchParams.get("ref") !== null;
+  const complete = useCallback(() => {
+    if (referral) window.location.assign(MOCK_STORE_URL);
+    else navigate("/home", { replace: true });
+  }, [referral, navigate]);
 
   // Already logged in (e.g. a returning member the referral landing routed here) → don't ask them to
-  // authenticate again; go straight to the destination once the session has rehydrated.
+  // authenticate again; go straight on once the session has rehydrated.
   useEffect(() => {
-    if (!loading && customer) navigate(dest, { replace: true });
-  }, [loading, customer, dest, navigate]);
+    if (!loading && customer) complete();
+  }, [loading, customer, complete]);
 
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -120,7 +123,7 @@ export function AuthPage() {
           const session = await loginWithPasskey(); // modal; auto-prompts on load
           markPasskeyDevice();
           signIn(session);
-          navigate(dest, { replace: true });
+          complete();
           return;
         } catch {
           setAutoTried(true); // cancelled / no passkey → show the manual button (freebie is spent)
@@ -134,12 +137,12 @@ export function AuthPage() {
         const session = await loginWithPasskeyAutofill();
         markPasskeyDevice();
         signIn(session);
-        navigate(dest, { replace: true });
+        complete();
       } catch {
         // aborted / not used — stay on the form; OTP or the manual button continues.
       }
     })();
-  }, [navigate, signIn]);
+  }, [complete, signIn]);
 
   // The country affordance is IL (+972); the field carries the local part. Normalize + validate to
   // E.164 (null until it's a valid number); the API re-normalizes defensively. A country picker would
@@ -165,7 +168,7 @@ export function AuthPage() {
     }
   };
 
-  const goHome = () => navigate(dest, { replace: true });
+  const goHome = () => complete();
 
   const onStart = (ch: OtpChannel = channel) =>
     run(async () => {
@@ -181,7 +184,7 @@ export function AuthPage() {
       const session = await loginWithPasskey();
       markPasskeyDevice();
       signIn(session);
-      navigate(dest, { replace: true });
+      complete();
     });
 
   const onVerify = () =>
@@ -192,7 +195,7 @@ export function AuthPage() {
       const res = await authApi.session(registrationTicket);
       if (res.status === "authenticated") {
         signIn(res);
-        navigate(dest);
+        complete();
       } else {
         setTicket(res.registrationTicket);
         setStep("register");
@@ -211,7 +214,7 @@ export function AuthPage() {
       signIn(session);
       // Offer Face ID enrolment as its own step (only where passkeys are possible), then land home.
       if (passkeysSupported()) setStep("face");
-      else navigate(dest);
+      else complete();
     });
 
   const onEnableFace = () =>
