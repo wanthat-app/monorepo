@@ -165,15 +165,6 @@ const en = {
       },
     },
   },
-  go: {
-    signedIn: "You're all set",
-    cashbackOn: "Cashback is active on this purchase.",
-    guestTitle: "Continuing as guest",
-    guestNote: "Guests don't earn cashback on this purchase.",
-    signupInstead: "Sign up to earn instead",
-    redirecting: "Taking you to the store…",
-    continueToStore: "Continue to store",
-  },
 };
 
 const he: typeof en = {
@@ -338,15 +329,6 @@ const he: typeof en = {
         desc: "כמה זמן מוחזק מונה השליחות לכל טלפון.",
       },
     },
-  },
-  go: {
-    signedIn: "הכול מוכן",
-    cashbackOn: "הקאשבק פעיל על הרכישה הזו.",
-    guestTitle: "ממשיכים כאורח",
-    guestNote: "אורחים לא צוברים קאשבק על הרכישה הזו.",
-    signupInstead: "הרשמה כדי לצבור קאשבק",
-    redirecting: "מעבירים אותך לחנות…",
-    continueToStore: "המשך לחנות",
   },
 };
 

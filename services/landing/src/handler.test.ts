@@ -32,15 +32,17 @@ describe("renderLanding", () => {
     expect(html).toContain("₪12.40"); // the earn amount
   });
 
-  it("links the CTAs into the real auth flow with a safe internal next, plus a guest path", () => {
-    expect(html).toContain('href="/auth?intent=signup&next=%2Fgo%2Frec_123"');
-    expect(html).toContain('href="/auth?next=%2Fgo%2Frec_123"');
-    expect(html).toContain('href="/go/rec_123?guest=1"');
+  it("links the auth CTAs with ?ref (→ store after auth) and sends the guest straight to the store", () => {
+    expect(html).toContain('href="/auth?intent=signup&ref=rec_123"');
+    expect(html).toContain('href="/auth?ref=rec_123"');
+    // Guest goes directly to the (mock) store — no interstitial.
+    expect(html).toContain('id="cta-guest" class="guest" href="https://www.aliexpress.com/"');
   });
 
-  it("carries a client-side session resolve: a hidden Continue CTA + the refresh-token check", () => {
+  it("carries a client-side session resolve: a Continue CTA straight to the store + the refresh check", () => {
     expect(html).toContain('id="cta-continue"');
-    expect(html).toContain('href="/go/rec_123"'); // Continue skips auth, straight to the store hand-off
+    // Continue skips auth AND goes directly to the store (no /go interstitial).
+    expect(html).toContain('href="https://www.aliexpress.com/"');
     expect(html).toContain('localStorage.getItem("wanthat.refreshToken")');
   });
 

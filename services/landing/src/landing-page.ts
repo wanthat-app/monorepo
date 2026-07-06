@@ -27,6 +27,12 @@ export const MOCK_PRODUCT: LandingProduct = {
   imagePath: "/product-feeder.jpg",
 };
 
+/**
+ * Mock affiliate store URL — where the acquisition flow lands directly (member continue, guest, and
+ * post-auth). The real per-product attributed affiliate redirect lands with the full-landing slice.
+ */
+export const MOCK_STORE_URL = "https://www.aliexpress.com/";
+
 const COPY: Record<Locale, Record<string, string>> = {
   he: {
     dir: "rtl",
@@ -88,8 +94,8 @@ export function renderLanding(args: {
   const t = (k: string) => fill(COPY[locale][k] ?? k, p);
   const imageUrl = `${origin}${p.imagePath}`;
   const pageUrl = `${origin}/p/${encodeURIComponent(recId)}`;
-  // After auth, return to the mock store interstitial (an SPA route). `next` is an internal path only.
-  const next = encodeURIComponent(`/go/${encodeURIComponent(recId)}`);
+  // Auth CTAs carry `?ref={id}` — the SPA sends the member straight to the store after signing in.
+  const ref = encodeURIComponent(recId);
   const ogDesc = t("ogDescription");
   const isRtl = locale === "he";
 
@@ -158,16 +164,17 @@ export function renderLanding(args: {
           <span class="amt money">${esc(p.cashbackIls)}</span>
         </div>
         <p class="pitch">${esc(t("earnPitch"))}</p>
-        <a id="cta-signup" class="btn btn-primary" href="/auth?intent=signup&next=${next}">${esc(t("signupCta"))}</a>
-        <a id="cta-login" class="btn btn-secondary" href="/auth?next=${next}">${esc(t("loginCta"))}</a>
+        <a id="cta-signup" class="btn btn-primary" href="/auth?intent=signup&ref=${ref}">${esc(t("signupCta"))}</a>
+        <a id="cta-login" class="btn btn-secondary" href="/auth?ref=${ref}">${esc(t("loginCta"))}</a>
         <div id="cta-trust" class="trust">${esc(t("signupTrust"))}</div>
-        <!-- Revealed client-side for an already-logged-in member (see the script below): skip auth. -->
-        <a id="cta-continue" class="btn btn-primary" href="/go/${encodeURIComponent(recId)}" style="display:none">${esc(t("continueCta"))}</a>
+        <!-- Revealed client-side for an already-logged-in member (see the script below): skip auth and
+             go straight to the store. -->
+        <a id="cta-continue" class="btn btn-primary" href="${esc(MOCK_STORE_URL)}" style="display:none">${esc(t("continueCta"))}</a>
         <div id="cta-loggedin" class="trust" style="display:none">${esc(t("loggedInNote"))}</div>
       </div>
     </div>
     <div class="spacer"></div>
-    <a id="cta-guest" class="guest" href="/go/${encodeURIComponent(recId)}?guest=1">${esc(t("guestCta"))}</a>
+    <a id="cta-guest" class="guest" href="${esc(MOCK_STORE_URL)}">${esc(t("guestCta"))}</a>
   </div>
   <script>
     // Cookieless identity resolve (ADR-0007): the SPA and this page share the origin + localStorage,
