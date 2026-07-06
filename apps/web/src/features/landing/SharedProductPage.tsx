@@ -12,12 +12,16 @@ import { Button, Screen, Spinner } from "../../ui/components";
 
 /**
  * Referral landing (ADR-0007/0024) — the dynamic, SPA-rendered `/p/{id}` page. The landing SERVICE
- * server-renders only the OG tags + a content snapshot for bots, then boots the SPA into this page,
- * which runs the SAME session + passkey mechanism as the rest of the app:
- *  - a returning member (stored session) is recognised → straight to the store, no re-auth;
- *  - a returning passkey device with no active session gets the AUTOMATIC Face ID prompt on load
- *    (the same `loginWithPasskey` auto-modal as `/auth`);
- *  - a new visitor sees the product + Sign up / Log in / Continue-as-guest.
+ * server-renders only the OG tags + a content snapshot for bots; this page is what humans get.
+ *
+ * Design rule: CONTENT FIRST — the product card renders immediately and unconditionally; auth is a
+ * small module under it and never gates rendering. The module walks the same states as /auth:
+ *  - logged in (stored session) → "signing you in…" while rehydrating → auto-redirect to the store;
+ *  - logged out + returning passkey device → the Face ID prompt is ARMED and fires when the document
+ *    gains focus (iOS Safari rejects an unfocused get(); worst case it pops on the first tap) — the
+ *    CTAs stay visible underneath; on success → auto-redirect;
+ *  - logged out / unknown device → Sign up / Log in (→ /auth?ref, which redirects to the store after
+ *    auth) + a direct guest link.
  * MOCK: hardcoded product + a placeholder store URL (the real resolve + attributed redirect land with
  * the full-landing slice). The auth is real.
  */
@@ -35,12 +39,9 @@ export function SharedProductPage() {
   const { id = "" } = useParams();
   const [searchParams] = useSearchParams();
   const { customer, loading, signIn } = useSession();
-  // `pending` = we're auto-attempting a passkey login (logged-out + passkey device) — hold the CTAs
-  // behind a spinner until it resolves. When there IS a session, `loading` (rehydration) gates instead,
-  // so `pending` must be false there or the spinner would never clear.
-  const [pending, setPending] = useState(
-    !hasStoredSession() && passkeysSupported() && deviceHasPasskey(),
-  );
+  // True from the moment the biometric succeeds until the session resolves (verify + /auth/session can
+  // ride a cold-Aurora resume) — the module shows "signing you in…" instead of looking hung.
+  const [verifying, setVerifying] = useState(false);
   const armed = useRef(false);
   // On-device diagnosis of the auto-prompt gates (`?debug=1` renders it): phones have no console, so
   // when the Face ID sheet doesn't appear this names WHICH gate suppressed it or what the ceremony threw.
@@ -53,57 +54,69 @@ export function SharedProductPage() {
 
   const toStore = () => window.location.assign(MOCK_STORE_URL);
 
-  // On load: a stored session rehydrates via useSession; a passkey device with no session gets the
-  // auto Face ID prompt (same mechanism as /auth). The passkey ceremony is the first async op (Safari).
+  // A recognised (or just-authenticated) member goes straight to the store — the acquisition
+  // destination. No button, no interstitial.
+  const signedIn = !loading && !!customer;
+  useEffect(() => {
+    if (signedIn) toStore();
+  }, [signedIn]);
+
+  // Arm the auto passkey prompt for a returning device with no session. It fires when the document
+  // gains focus (not on a timer — see waitForDocumentFocus); rendering is never blocked on it.
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
     if (hasStoredSession()) {
       note("gate: stored session → rehydrating, no prompt");
-      return; // rehydrating → the session effect below forwards them
+      return; // the session effect above redirects once rehydration lands
     }
     if (!passkeysSupported() || !deviceHasPasskey()) {
       note(
         `gate: webauthn=${passkeysSupported()} returningDevice=${deviceHasPasskey()} → no prompt`,
       );
-      setPending(false);
       return;
     }
-    note("auto-prompt: firing the passkey ceremony");
+    note("auto-prompt: armed — fires on document focus");
     void (async () => {
       try {
-        const session = await loginWithPasskey(); // auto-modal Face ID on load
+        const session = await loginWithPasskey({
+          onCredential: () => {
+            note("biometric ok → resolving session");
+            setVerifying(true);
+          },
+        });
         markPasskeyDevice();
-        signIn(session);
-        toStore();
+        signIn(session); // → signedIn → the redirect effect above
       } catch (err) {
         note(
           `auto-prompt failed: ${err instanceof Error ? `${err.name}: ${err.message}` : String(err)}`,
         );
-        setPending(false); // cancelled / no passkey → fall back to the CTAs
+        setVerifying(false); // the CTAs are already on screen — nothing else to do
       }
     })();
     // note/setDiag are stable enough for this once-guarded effect.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [signIn]);
 
-  const diagPanel = debug ? (
-    <pre className="mx-auto mt-3 w-full max-w-[440px] overflow-x-auto rounded-lg bg-ink p-3 text-[11px] text-white">
-      {diag.length ? diag.join("\n") : "(no auth events yet)"}
-    </pre>
-  ) : null;
-
-  // A recognised (or just-authenticated) member → go straight to the store.
-  const signedIn = !loading && !!customer;
-
-  if (loading || pending) {
-    return (
-      <div className="flex min-h-screen flex-col items-center justify-center gap-3 px-4">
+  // The auth module under the product card: progress while a session is being established, CTAs
+  // otherwise. The product content above is NEVER gated by any of this.
+  const authModule =
+    loading || verifying || signedIn ? (
+      <div className="flex items-center justify-center gap-2 py-2 text-[13.5px] text-muted">
         <Spinner />
-        {diagPanel}
+        <span>{t(signedIn ? "shared.toStore" : "shared.signingIn")}</span>
       </div>
+    ) : (
+      <>
+        <Button onClick={() => window.location.assign(`/auth?intent=signup&ref=${id}`)}>
+          {t("shared.signupCta")}
+        </Button>
+        <Button variant="ghost" onClick={() => window.location.assign(`/auth?ref=${id}`)}>
+          {t("shared.loginCta")}
+        </Button>
+        <p className="text-center text-[12px] text-muted">{t("shared.signupTrust")}</p>
+      </>
     );
-  }
 
   return (
     <Screen>
@@ -138,26 +151,10 @@ export function SharedProductPage() {
               </span>
             </div>
             <p className="text-[13.5px] text-muted">{t("shared.pitch")}</p>
-
-            {signedIn ? (
-              <>
-                <Button onClick={toStore}>{t("shared.continueCta")}</Button>
-                <p className="text-center text-[12px] text-muted">{t("shared.loggedInNote")}</p>
-              </>
-            ) : (
-              <>
-                <Button onClick={() => window.location.assign(`/auth?intent=signup&ref=${id}`)}>
-                  {t("shared.signupCta")}
-                </Button>
-                <Button variant="ghost" onClick={() => window.location.assign(`/auth?ref=${id}`)}>
-                  {t("shared.loginCta")}
-                </Button>
-                <p className="text-center text-[12px] text-muted">{t("shared.signupTrust")}</p>
-              </>
-            )}
+            {authModule}
           </div>
         </div>
-        {!signedIn && (
+        {!signedIn && !loading && !verifying && (
           <button
             type="button"
             onClick={toStore}
@@ -166,7 +163,11 @@ export function SharedProductPage() {
             {t("shared.guestCta")}
           </button>
         )}
-        {diagPanel}
+        {debug && (
+          <pre className="mx-auto mt-3 w-full max-w-[440px] overflow-x-auto rounded-lg bg-ink p-3 text-[11px] text-white">
+            {diag.length ? diag.join("\n") : "(no auth events yet)"}
+          </pre>
+        )}
       </div>
     </Screen>
   );
