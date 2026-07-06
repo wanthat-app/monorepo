@@ -173,8 +173,8 @@ const en = {
     signupTrust: "Free · takes 30 seconds",
     loginCta: "I already have an account",
     guestCta: "Continue as guest — no cashback",
-    continueCta: "Continue to store",
-    loggedInNote: "You're logged in — cashback is on for this purchase",
+    signingIn: "Signing you in…",
+    toStore: "You're in — taking you to the store…",
   },
 };
 
@@ -349,8 +349,8 @@ const he: typeof en = {
     signupTrust: "חינם לגמרי · הצטרפות ב-30 שניות",
     loginCta: "כבר יש לי חשבון",
     guestCta: "המשך כאורח — בלי קאשבק",
-    continueCta: "המשך לחנות",
-    loggedInNote: "אתם מחוברים — הקאשבק פעיל על הרכישה הזו",
+    signingIn: "מחברים אתכם…",
+    toStore: "מחוברים — ממשיכים לחנות…",
   },
 };
 

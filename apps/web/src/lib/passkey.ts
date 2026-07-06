@@ -68,20 +68,23 @@ export async function enrollPasskey(accessToken: string): Promise<string> {
 /**
  * A load-time (auto-prompt) `get()` races the page actually gaining focus: arriving from the URL bar
  * or an external link (how every shared /p/ link opens), iOS Safari rejects the ceremony immediately
- * with `NotAllowedError: The document is not focused.` — observed on-device. Wait briefly for focus
- * before starting; on timeout proceed anyway (the ceremony then fails exactly as it does today and
- * the caller's fallback runs).
+ * with `NotAllowedError: The document is not focused.` — observed on-device. So the ceremony ARMS on
+ * focus: it waits (indefinitely — no timeout racing the OS into a guaranteed failure; observed
+ * on-device that 3s can pass without focus) and fires the moment the document gains focus — often
+ * right after load, at worst on the member's first tap anywhere. Callers must not block rendering on
+ * this promise. `pointerdown` is the belt-and-braces companion signal for engines whose `focus`
+ * delivery is unreliable on load.
  */
-async function waitForDocumentFocus(timeoutMs = 3000): Promise<void> {
+async function waitForDocumentFocus(): Promise<void> {
   if (typeof document === "undefined" || document.hasFocus()) return;
   await new Promise<void>((resolve) => {
     const done = () => {
-      clearTimeout(timer);
       window.removeEventListener("focus", done);
+      window.removeEventListener("pointerdown", done);
       resolve();
     };
-    const timer = setTimeout(done, timeoutMs);
     window.addEventListener("focus", done, { once: true });
+    window.addEventListener("pointerdown", done, { once: true });
   });
 }
 
@@ -92,13 +95,18 @@ async function waitForDocumentFocus(timeoutMs = 3000): Promise<void> {
  * origin as enrolment, so the passkey's RP-ID matches — no hosted-UI redirect. Throws on
  * cancel/failure; the caller falls back to OTP.
  */
-export async function loginWithPasskey(): Promise<AuthSession> {
+export async function loginWithPasskey(opts?: {
+  /** Fires right after the biometric succeeds, BEFORE the server round-trips (verify + session
+   * resolve — which can ride a cold-Aurora resume). Lets the caller show "signing you in…". */
+  onCredential?: () => void;
+}): Promise<AuthSession> {
   await waitForDocumentFocus();
   const { challengeId, options } = await authApi.passkeyLoginChallenge();
   // Modal discoverable get(): the server sent an empty allowCredentials, so the OS shows the
   // member's passkeys for this origin. Used only where conditional UI is unsupported.
   // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
   const credential = await startAuthentication({ optionsJSON: options as any });
+  opts?.onCredential?.();
   return finishPasskeyLogin(challengeId, credential);
 }
 
