@@ -8,6 +8,7 @@ import { AdminPage } from "./features/admin/AdminPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { CallbackPage } from "./features/auth/CallbackPage";
 import { HomePage } from "./features/home/HomePage";
+import { SharedProductPage } from "./features/landing/SharedProductPage";
 import "./i18n";
 import "./index.css";
 import { initConfig } from "./lib/config";
@@ -19,6 +20,8 @@ const router = createBrowserRouter([
   { path: "/auth", element: <AuthPage /> },
   { path: "/auth/callback", element: <CallbackPage /> },
   { path: "/home", element: <HomePage /> },
+  // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).
+  { path: "/p/:id", element: <SharedProductPage /> },
   { path: "/admin", element: <AdminPage /> },
   { path: "/admin/callback", element: <AdminCallbackPage /> },
 ]);
