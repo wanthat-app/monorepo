@@ -8,10 +8,11 @@ import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react
 import { useTranslation } from "react-i18next";
 import { adminApi, type UsersStats } from "../../lib/admin-api";
 import {
+  type AdminTokens,
   beginAdminLogin,
   clearAdminTokens,
+  ensureFreshAdminTokens,
   isAdminSession,
-  loadAdminTokens,
 } from "../../lib/admin-login";
 import { identityFromIdToken } from "../../lib/jwt";
 import { Button, RangeSlider, Segmented, Spinner, Switch } from "../../ui/components";
@@ -29,13 +30,18 @@ import { AdminLayout, type AdminView } from "./AdminLayout";
  */
 export function AdminPage() {
   const { t } = useTranslation();
-  const tokens = loadAdminTokens();
+  const [tokens, setTokens] = useState<AdminTokens | null>(null);
   const [view, setView] = useState<AdminView>("dashboard");
 
-  // No admin token yet → bounce to the employee hosted UI (email + password + TOTP).
+  // Load the stored session, refreshing an expired access token first (a tab left open past the
+  // 1h token lifetime otherwise 401s on every call). No session and no refresh → bounce to the
+  // employee hosted UI (email + password + TOTP).
   useEffect(() => {
-    if (!tokens) void beginAdminLogin();
-  }, [tokens]);
+    void ensureFreshAdminTokens().then((fresh) => {
+      if (fresh) setTokens(fresh);
+      else void beginAdminLogin();
+    });
+  }, []);
 
   if (!tokens) {
     return (

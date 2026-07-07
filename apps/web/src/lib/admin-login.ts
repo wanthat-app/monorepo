@@ -110,6 +110,87 @@ export async function completeAdminLogin(code: string): Promise<AdminTokens> {
   return tokens;
 }
 
+/**
+ * Read the `exp` claim (seconds since epoch) from the access token, or null when undecodable.
+ * Unverified, like the other client-side JWT reads: it only schedules a refresh — the authorizer
+ * enforces real expiry server-side.
+ */
+function accessTokenExpSec(accessToken: string): number | null {
+  try {
+    const payload = accessToken.split(".")[1];
+    if (!payload) return null;
+    const json = JSON.parse(atob(payload.replace(/-/g, "+").replace(/_/g, "/"))) as {
+      exp?: unknown;
+    };
+    return typeof json.exp === "number" ? json.exp : null;
+  } catch {
+    return null;
+  }
+}
+
+// Refresh early so a token that expires mid-request doesn't slip through as a 401.
+const EXPIRY_SKEW_SEC = 60;
+
+// Concurrent callers (parallel API calls all hitting 401) share one refresh round-trip.
+let inflightRefresh: Promise<AdminTokens | null> | null = null;
+
+/**
+ * Exchange the stored refresh token for a new access/id token pair at the hosted token endpoint and
+ * persist it. Cognito's refresh grant returns no new refresh token (no rotation configured), so the
+ * stored one is kept. Returns null — without clearing the session — when there is nothing to refresh
+ * or the endpoint rejects/errors; callers decide whether that means sign-in.
+ */
+export function refreshAdminTokens(): Promise<AdminTokens | null> {
+  inflightRefresh ??= doRefresh().finally(() => {
+    inflightRefresh = null;
+  });
+  return inflightRefresh;
+}
+
+async function doRefresh(): Promise<AdminTokens | null> {
+  const stored = loadAdminTokens();
+  if (!stored?.refreshToken) return null;
+  const { adminManagedLoginUrl, adminPoolClientId } = getConfig();
+  try {
+    const res = await fetch(`${adminManagedLoginUrl}/oauth2/token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        grant_type: "refresh_token",
+        client_id: adminPoolClientId,
+        refresh_token: stored.refreshToken,
+      }).toString(),
+    });
+    if (!res.ok) return null;
+    const t = (await res.json()) as { access_token: string; id_token: string; expires_in: number };
+    const tokens: AdminTokens = {
+      accessToken: t.access_token,
+      idToken: t.id_token,
+      refreshToken: stored.refreshToken,
+      expiresIn: t.expires_in,
+    };
+    sessionStorage.setItem(TOKENS_KEY, JSON.stringify(tokens));
+    return tokens;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The session entry point for /admin: stored tokens if still fresh, a refreshed pair if the access
+ * token is expired (or undecodable), or null — with the session cleared — when neither works and
+ * the caller should restart the hosted-UI login.
+ */
+export async function ensureFreshAdminTokens(): Promise<AdminTokens | null> {
+  const stored = loadAdminTokens();
+  if (!stored) return null;
+  const exp = accessTokenExpSec(stored.accessToken);
+  if (exp !== null && exp - EXPIRY_SKEW_SEC > Date.now() / 1000) return stored;
+  const refreshed = await refreshAdminTokens();
+  if (!refreshed) clearAdminTokens();
+  return refreshed;
+}
+
 /** Load the stored admin tokens (e.g. on an /admin reload within the tab), or null if none. */
 export function loadAdminTokens(): AdminTokens | null {
   const raw = sessionStorage.getItem(TOKENS_KEY);

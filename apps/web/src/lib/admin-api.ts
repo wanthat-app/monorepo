@@ -8,6 +8,7 @@ import type {
   RetailerCredentialsStatus,
   UsersStats,
 } from "@wanthat/contracts";
+import { beginAdminLogin, clearAdminTokens, refreshAdminTokens } from "./admin-login";
 import { ApiError } from "./api";
 import { getConfig } from "./config";
 
@@ -28,11 +29,25 @@ async function adminRequest<T>(
   token: string,
   opts: { method?: string; body?: unknown } = {},
 ): Promise<T> {
-  const res = await fetch(`${getConfig().adminApiUrl}${path}`, {
-    method: opts.method ?? "GET",
-    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
-  });
+  const doFetch = (bearer: string) =>
+    fetch(`${getConfig().adminApiUrl}${path}`, {
+      method: opts.method ?? "GET",
+      headers: { "content-type": "application/json", authorization: `Bearer ${bearer}` },
+      body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    });
+
+  let res = await doFetch(token);
+  // 401 = the token expired (or was revoked) mid-session: refresh once and retry. If that still
+  // fails, the session is gone — clear it and restart the hosted-UI login instead of surfacing a
+  // generic load error on every panel.
+  if (res.status === 401) {
+    const fresh = await refreshAdminTokens();
+    if (fresh) res = await doFetch(fresh.accessToken);
+    if (res.status === 401) {
+      clearAdminTokens();
+      void beginAdminLogin();
+    }
+  }
   const data = (await res.json().catch(() => ({}))) as Record<string, unknown>;
   if (!res.ok) throw new ApiError(res.status, (data.error as string) ?? "request_failed");
   return data as T;
