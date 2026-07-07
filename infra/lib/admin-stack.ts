@@ -12,6 +12,7 @@ import type * as rds from "aws-cdk-lib/aws-rds";
 import type { Construct } from "constructs";
 import {
   applyThrottle,
+  LAMBDA_ARCHITECTURE,
   LAMBDA_RUNTIME,
   RDS_CA_ENV,
   rdsCaBundling,
@@ -56,6 +57,7 @@ export class AdminStack extends Stack {
       entry: serviceEntry("admin-api"),
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       memorySize: 256,
       timeout: Duration.seconds(30), // in-VPC Aurora: first connect may resume a scale-to-zero cluster
       // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).

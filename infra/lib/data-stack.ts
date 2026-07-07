@@ -9,6 +9,7 @@ import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Trigger } from "aws-cdk-lib/triggers";
 import type { Construct } from "constructs";
 import {
+  LAMBDA_ARCHITECTURE,
   LAMBDA_RUNTIME,
   MIGRATIONS_DIR_ENV,
   migratorBundling,
@@ -185,6 +186,7 @@ export class DataStack extends Stack {
       entry: serviceEntry("db-migrator"),
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       memorySize: 256,
       timeout: Duration.minutes(5), // generous for a cold scale-to-zero resume
       // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability). The

@@ -8,6 +8,7 @@ import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import {
+  LAMBDA_ARCHITECTURE,
   LAMBDA_RUNTIME,
   serviceEntry,
   serviceLogGroup,
@@ -130,6 +131,7 @@ export class IdentityStack extends Stack {
       entry: serviceEntry("message-sender"),
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       memorySize: 256,
       timeout: Duration.seconds(10),
       tracing: lambda.Tracing.ACTIVE,
