@@ -3,6 +3,15 @@
 **Date:** 2026-07-07
 **Status:** approved (Dennis)
 
+> **Amendment (2026-07-07, after deploy):** the credential routes moved from admin-api to a
+> separate **non-VPC `admin-credentials` function** on the same HTTP API/authorizer. admin-api
+> runs in the endpoint-free VPC (ADR-0004; the Secrets Manager interface endpoint was removed in
+> PR #92), so its SM calls timed out — Secrets Manager is only reachable over its public
+> endpoint. This follows the same pattern as app-auth and retailer-proxy: components that touch
+> Secrets Manager live outside the VPC. Sections below describing admin-api as the caller should
+> be read as the admin-credentials function; everything else (contracts, write-only IAM, SPA)
+> is unchanged.
+
 ## Problem
 
 The retailer credential secret `wanthat/{env}/retailer/aliexpress` is populated

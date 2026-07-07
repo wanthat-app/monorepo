@@ -14,8 +14,6 @@ import {
   ListConfigResponse,
   PutConfigBody,
   PutConfigResponse,
-  PutRetailerCredentialsBody,
-  RetailerCredentialsStatus,
 } from "@wanthat/contracts";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
@@ -72,25 +70,9 @@ app.put("/admin/config/:key", async (c) => {
   return c.json(PutConfigResponse.parse({ item }));
 });
 
-// GET /admin/retailer/aliexpress/credentials — write-only credential status: whether the secret
-// has been written and when. Never returns (or can return) the credential values themselves.
-app.get("/admin/retailer/aliexpress/credentials", async (c) =>
-  c.json(RetailerCredentialsStatus.parse(await getContext().retailerSecret.status())),
-);
-
-// PUT /admin/retailer/aliexpress/credentials — replace the AliExpress AppKey/AppSecret pair in the
-// retailer secret (both fields together; PutSecretValue replaces the whole value). The body is
-// never logged and never echoed back — errors name the failing field, not its content.
-app.put("/admin/retailer/aliexpress/credentials", async (c) => {
-  const body = PutRetailerCredentialsBody.safeParse(await c.req.json().catch(() => null));
-  if (!body.success) {
-    const fields = [...new Set(body.error.issues.map((i) => i.path.join(".") || "body"))];
-    return c.json({ error: "invalid_request", fields }, 400);
-  }
-  await getContext().retailerSecret.put(body.data);
-  // Re-describe rather than fabricating a timestamp, so PUT and GET report the same clock.
-  return c.json(RetailerCredentialsStatus.parse(await getContext().retailerSecret.status()));
-});
+// NOTE: /admin/retailer/* (the write-only credential drop) is served by the separate NON-VPC
+// admin-credentials function on this same HTTP API — Secrets Manager is unreachable from the
+// endpoint-free VPC this function runs in (ADR-0004).
 
 // GET /admin/stats/overview — the live users count is real (Aurora COUNT); the rest are placeholders
 // until their slices land.

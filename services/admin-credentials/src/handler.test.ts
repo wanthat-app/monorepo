@@ -2,8 +2,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { ctx } = vi.hoisted(() => ({
   ctx: {
-    config: { getAll: vi.fn().mockResolvedValue([]), put: vi.fn() },
-    db: {},
     retailerSecret: { put: vi.fn(), status: vi.fn() },
   },
 }));
