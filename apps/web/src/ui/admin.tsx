@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { BrandMark } from "./brand";
-import { Switch } from "./components";
+import { Skeleton, Switch } from "./components";
 
 /**
  * Admin / Operations console modules (Wanthat Admin mock). This surface is desktop web,
@@ -170,15 +170,32 @@ export function KpiCard({
   value,
   delta,
   deltaNote,
+  loading = false,
 }: {
-  label: string;
-  icon: ReactNode;
+  label?: string;
+  icon?: ReactNode;
   tone?: "accent" | "pending";
-  value: string;
+  value?: string;
   delta?: string;
   deltaNote?: string;
+  loading?: boolean;
 }) {
   const tint = tone === "accent" ? "bg-accent-soft text-accent" : "bg-pending-soft text-pending";
+  if (loading) {
+    return (
+      <div className="rounded-[18px] border border-line bg-surface p-[18px]" aria-busy="true">
+        <div className="flex items-center justify-between">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-[30px] w-[30px] rounded-[9px]" />
+        </div>
+        <Skeleton className="mt-3 h-[30px] w-28" />
+        <div className="mt-2.5 flex items-center gap-1.5">
+          <Skeleton className="h-5 w-12 rounded-full" />
+          <Skeleton className="h-3 w-20" />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="rounded-[18px] border border-line bg-surface p-[18px]">
       <div className="flex items-center justify-between">
@@ -234,14 +251,35 @@ export function MerchantStatusChip({
 // Stacked status bar + legend (Confirmed / Pending / Rejected shares of tracked events).
 export function StackedStatusBar({
   items,
+  loading = false,
 }: {
-  items: { label: string; pct: number; detail?: string; tone: MerchantStatusTone }[];
+  items?: { label: string; pct: number; detail?: string; tone: MerchantStatusTone }[];
+  loading?: boolean;
 }) {
   const SWATCH: Record<MerchantStatusTone, string> = {
     confirmed: "bg-accent",
     awaiting: "bg-barpending",
     declined: "bg-barrejected",
   };
+  if (loading || !items) {
+    return (
+      <div aria-busy="true">
+        <Skeleton className="mb-5 h-3.5 w-full rounded-lg" />
+        <div className="flex flex-col gap-3.5">
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="flex items-center gap-2.5">
+              <Skeleton className="h-[11px] w-[11px] rounded-[3px]" />
+              <Skeleton className="h-3.5 w-24 flex-none" />
+              <span className="ms-auto flex items-center gap-2.5">
+                <Skeleton className="h-3.5 w-9" />
+                <Skeleton className="h-3 w-12" />
+              </span>
+            </div>
+          ))}
+        </div>
+      </div>
+    );
+  }
   return (
     <div>
       <div className="mb-5 flex h-3.5 overflow-hidden rounded-lg">
@@ -279,18 +317,43 @@ export function ApprovalRow({
   amount,
   onApprove,
   onReject,
+  loading = false,
 }: {
-  thumb: ReactNode;
-  product: string;
-  user: string;
-  when: string;
-  status: ReactNode;
-  amount: string;
+  thumb?: ReactNode;
+  product?: string;
+  user?: string;
+  when?: string;
+  status?: ReactNode;
+  amount?: string;
   onApprove?: () => void;
   onReject?: () => void;
+  loading?: boolean;
 }) {
   const ghost =
     "flex h-[30px] w-[30px] items-center justify-center rounded-[9px] border border-line bg-surface text-muted transition hover:text-ink";
+  if (loading) {
+    return (
+      <div className="flex items-center border-t border-hairrow px-4 py-3" aria-busy="true">
+        <div className="flex min-w-0 flex-[1.5] items-center gap-3">
+          <Skeleton className="h-10 w-10 rounded-tile" />
+          <span className="min-w-0">
+            <Skeleton className="mb-1.5 h-3.5 w-44" />
+            <Skeleton className="h-3 w-24" />
+          </span>
+        </div>
+        <div className="w-[172px]">
+          <Skeleton className="h-6 w-36 rounded-full" />
+        </div>
+        <div className="flex w-[84px] justify-end">
+          <Skeleton className="h-3.5 w-14" />
+        </div>
+        <div className="flex w-[84px] justify-end gap-1.5">
+          <Skeleton className="h-[30px] w-[30px] rounded-[9px]" />
+          <Skeleton className="h-[30px] w-[30px] rounded-[9px]" />
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center border-t border-hairrow px-4 py-3">
       <div className="flex min-w-0 flex-[1.5] items-center gap-3">

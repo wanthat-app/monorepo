@@ -95,3 +95,13 @@ export const ProfileSettings: Story = {
     </div>
   ),
 };
+
+export const Loading: Story = {
+  render: () => (
+    <div className="w-[460px] overflow-hidden rounded-[18px] border border-line bg-surface">
+      <SettingsRow loading />
+      <SettingsRow loading />
+      <SettingsRow loading />
+    </div>
+  ),
+};

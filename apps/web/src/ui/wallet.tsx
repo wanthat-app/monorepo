@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Logo } from "./brand";
-import { IconTile } from "./components";
+import { IconTile, Skeleton, SkeletonCircle } from "./components";
 
 /**
  * Consumer (wallet) modules of the Wanthat Design System — the balance card, activity rows,
@@ -85,20 +85,46 @@ export function ProfileChip({
 }
 
 // Soft-green attribution chip — "<Name> sent you a cashback link" — with the sender's initial.
-export function AttributionChip({ initial, children }: { initial: string; children: ReactNode }) {
+export function AttributionChip({
+  initial,
+  children,
+  loading = false,
+}: {
+  initial?: string;
+  children?: ReactNode;
+  loading?: boolean;
+}) {
   return (
-    <div className="flex items-center gap-2.5 rounded-field border border-accent-border bg-accent-soft px-3.5 py-2.5">
-      <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-white">
-        {initial}
-      </span>
-      <span className="text-[13px] leading-[1.35] text-accent-deep">{children}</span>
+    <div
+      className="flex items-center gap-2.5 rounded-field border border-accent-border bg-accent-soft px-3.5 py-2.5"
+      aria-busy={loading || undefined}
+    >
+      {loading ? (
+        <>
+          <SkeletonCircle size={32} />
+          <Skeleton className="h-3.5 w-48" />
+        </>
+      ) : (
+        <>
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent text-[13px] font-bold text-white">
+            {initial}
+          </span>
+          <span className="text-[13px] leading-[1.35] text-accent-deep">{children}</span>
+        </>
+      )}
     </div>
   );
 }
 
 // A referrer's recommendation: light quote bubble with paired quote marks and a caret pointing up
 // to the attribution chip above it. Flips for RTL via logical properties.
-export function RecommendationQuote({ children }: { children: ReactNode }) {
+export function RecommendationQuote({
+  children,
+  loading = false,
+}: {
+  children?: ReactNode;
+  loading?: boolean;
+}) {
   const quoteMark = (
     <svg width="16" height="16" viewBox="0 0 24 24" fill="#BCD3C7" stroke="none" aria-hidden="true">
       <path d="M10 11H6.5a.5.5 0 0 1-.5-.5V9c0-1.6 1.1-2.7 2.7-3.2l.5 1.3C8.4 7.4 8 8 8 8.8h2a.5.5 0 0 1 .5.5V11zm8 0h-3.5a.5.5 0 0 1-.5-.5V9c0-1.6 1.1-2.7 2.7-3.2l.5 1.3c-.8.3-1.2.9-1.2 1.7h2a.5.5 0 0 1 .5.5V11z" />
@@ -112,7 +138,14 @@ export function RecommendationQuote({ children }: { children: ReactNode }) {
         style={{ insetInlineStart: 14 }}
       />
       {quoteMark}
-      <div className="my-0.5 text-sm leading-[1.55] text-[#3A4742]">{children}</div>
+      {loading ? (
+        <div className="my-0.5 flex flex-col gap-1.5 py-0.5" aria-busy="true">
+          <Skeleton className="h-3.5 w-full" />
+          <Skeleton className="h-3.5 w-3/4" />
+        </div>
+      ) : (
+        <div className="my-0.5 text-sm leading-[1.55] text-[#3A4742]">{children}</div>
+      )}
       <div className="text-end">
         <span className="inline-block rotate-180">{quoteMark}</span>
       </div>
@@ -127,13 +160,34 @@ export function ProductCard({
   price,
   priceNote,
   meta,
+  loading = false,
 }: {
-  src: string;
-  title: string;
-  price: string;
+  src?: string;
+  title?: string;
+  price?: string;
   priceNote?: string;
   meta?: string;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div
+        className="overflow-hidden rounded-[22px] border border-line bg-surface"
+        aria-busy="true"
+      >
+        <div className="flex h-[204px] items-center justify-center border-b border-line bg-surface p-3.5">
+          <Skeleton className="h-full w-full rounded-thumb" />
+        </div>
+        <div className="px-[18px] py-4">
+          <Skeleton className="mb-2.5 h-4 w-3/4" />
+          <div className="flex items-center gap-2.5">
+            <Skeleton className="h-4 w-16" />
+            <Skeleton className="h-3 w-24" />
+          </div>
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="overflow-hidden rounded-[22px] border border-line bg-surface">
       <div className="flex h-[204px] items-center justify-center border-b border-line bg-surface p-3.5">
@@ -165,10 +219,11 @@ export function BalanceCard({
   cta,
   onCta,
   children,
+  loading = false,
 }: {
   label: string;
   chip?: ReactNode;
-  amount: string;
+  amount?: string;
   fraction?: string;
   approx?: boolean;
   holdings?: string[];
@@ -177,7 +232,25 @@ export function BalanceCard({
   cta?: string;
   onCta?: () => void;
   children?: ReactNode;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div className="rounded-feature bg-ink p-6 pb-5 text-onink" aria-busy="true">
+        <div className="mb-3.5 flex items-center justify-between">
+          <Skeleton onInk className="h-3.5 w-32" />
+          <Skeleton onInk className="h-5 w-16 rounded-full" />
+        </div>
+        <Skeleton onInk className="mb-3 h-[46px] w-44" />
+        <div className="mb-3.5 flex items-center gap-1.5">
+          <Skeleton onInk className="h-6 w-16 rounded-full" />
+          <Skeleton onInk className="h-6 w-14 rounded-full" />
+        </div>
+        <Skeleton onInk className="mb-5 h-3.5 w-52" />
+        {cta ? <Skeleton onInk className="h-[50px] w-full rounded-[14px]" /> : null}
+      </div>
+    );
+  }
   return (
     <div className="rounded-feature bg-ink p-6 pb-5 text-onink">
       <div className="mb-3.5 flex items-center justify-between">
@@ -246,16 +319,33 @@ export function ActivityRow({
   amount,
   amountSub,
   onClick,
+  loading = false,
 }: {
-  thumb: ReactNode;
-  title: string;
+  thumb?: ReactNode;
+  title?: string;
   status?: RowStatus;
   statusLabel?: string;
   meta?: string;
-  amount: string;
+  amount?: string;
   amountSub?: string;
   onClick?: () => void;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div className="flex w-full items-center gap-3 px-0.5 py-3" aria-busy="true">
+        <Skeleton className="h-11 w-11 rounded-thumb" />
+        <span className="min-w-0 flex-1">
+          <Skeleton className="mb-1.5 h-3.5 w-36" />
+          <Skeleton className="h-3 w-24" />
+        </span>
+        <span className="flex flex-col items-end">
+          <Skeleton className="mb-1.5 h-3.5 w-14" />
+          <Skeleton className="h-2.5 w-10" />
+        </span>
+      </div>
+    );
+  }
   const body = (
     <>
       {thumb}
@@ -380,14 +470,30 @@ export function MethodRow({
   detail,
   selected = false,
   onSelect,
+  loading = false,
 }: {
   brand?: MethodBrand;
   logo?: ReactNode;
-  label: string;
+  label?: string;
   detail?: string;
   selected?: boolean;
   onSelect?: () => void;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div
+        className="mb-2.5 flex w-full items-center gap-3 rounded-chip border border-line bg-surface p-3 pe-4"
+        aria-busy="true"
+      >
+        <Skeleton className="h-10 w-10 rounded-tile" />
+        <span className="min-w-0 flex-1">
+          <Skeleton className="mb-1.5 h-3.5 w-28" />
+          <Skeleton className="h-3 w-36" />
+        </span>
+      </div>
+    );
+  }
   return (
     <button
       type="button"
@@ -466,11 +572,24 @@ export function FeatureRow({
   icon,
   title,
   subtitle,
+  loading = false,
 }: {
-  icon: ReactNode;
-  title: string;
+  icon?: ReactNode;
+  title?: string;
   subtitle?: string;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div className="flex items-center gap-3" aria-busy="true">
+        <Skeleton className="h-[42px] w-[42px] rounded-input" />
+        <span className="min-w-0 flex-1">
+          <Skeleton className="mb-1.5 h-3.5 w-36" />
+          <Skeleton className="h-3 w-48" />
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="flex items-center gap-3">
       <IconTile tone="soft">{icon}</IconTile>
@@ -524,13 +643,29 @@ export function SettingsRow({
   label,
   trailing,
   onClick,
+  loading = false,
 }: {
-  icon: ReactNode;
+  icon?: ReactNode;
   tone?: "soft" | "base";
-  label: string;
+  label?: string;
   trailing?: ReactNode;
   onClick?: () => void;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div
+        className="flex w-full items-center gap-3 border-b border-hairrow p-4 last:border-b-0"
+        aria-busy="true"
+      >
+        <Skeleton className="h-[34px] w-[34px] rounded-[10px]" />
+        <Skeleton className="h-3.5 w-32 flex-none" />
+        <span className="ms-auto">
+          <Skeleton className="h-6 w-16 rounded-full" />
+        </span>
+      </div>
+    );
+  }
   const inner = (
     <>
       <IconTile tone={tone} size={34}>
@@ -565,13 +700,25 @@ export function InviteCard({
   code,
   copyLabel,
   onCopy,
+  loading = false,
 }: {
-  title: string;
+  title?: string;
   subtitle?: string;
-  code: string;
-  copyLabel: string;
+  code?: string;
+  copyLabel?: string;
   onCopy?: () => void;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div className="rounded-card bg-ink p-5 text-onink" aria-busy="true">
+        <Skeleton onInk className="mb-2 h-3.5 w-44" />
+        <Skeleton onInk className="mb-1.5 h-3 w-full" />
+        <Skeleton onInk className="mb-3.5 h-3 w-2/3" />
+        <Skeleton onInk className="h-11 w-full rounded-thumb" />
+      </div>
+    );
+  }
   return (
     <div className="rounded-card bg-ink p-5 text-onink">
       <div className="mb-1 text-sm font-bold">{title}</div>
@@ -597,11 +744,27 @@ export function ShareLinkRow({
   link,
   copyLabel,
   onCopy,
+  loading = false,
 }: {
-  link: string;
-  copyLabel: string;
+  link?: string;
+  copyLabel?: string;
   onCopy?: () => void;
+  loading?: boolean;
 }) {
+  if (loading) {
+    return (
+      <div
+        className="flex items-center gap-2.5 rounded-field border border-line bg-surface p-1.5 ps-4"
+        dir="ltr"
+        aria-busy="true"
+      >
+        <Skeleton className="h-3.5 w-32" />
+        <span className="ms-auto">
+          <Skeleton className="h-10 w-[72px] rounded-[10px]" />
+        </span>
+      </div>
+    );
+  }
   return (
     <div
       className="flex items-center gap-2.5 rounded-field border border-line bg-surface p-1.5 ps-4"

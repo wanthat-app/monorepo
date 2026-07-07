@@ -63,3 +63,13 @@ export const BuyerRow: Story = {
     amountSub: "+$3.35",
   },
 };
+
+export const Loading: Story = {
+  render: () => (
+    <div>
+      <ActivityRow loading />
+      <ActivityRow loading />
+      <ActivityRow loading />
+    </div>
+  ),
+};

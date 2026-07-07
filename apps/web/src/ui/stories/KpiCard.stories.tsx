@@ -94,3 +94,5 @@ export const ActiveUsers: Story = {
     deltaNote: "new this week",
   },
 };
+
+export const Loading: Story = { args: { loading: true } };

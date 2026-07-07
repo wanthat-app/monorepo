@@ -64,3 +64,12 @@ export const SavedBankSelected: Story = {
     selected: true,
   },
 };
+
+export const Loading: Story = {
+  render: () => (
+    <div>
+      <MethodRow loading />
+      <MethodRow loading />
+    </div>
+  ),
+};

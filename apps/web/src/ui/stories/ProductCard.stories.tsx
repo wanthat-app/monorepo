@@ -25,3 +25,5 @@ export const SharedProduct: Story = {
     meta: "★ 4.7 · 1.8k sold",
   },
 };
+
+export const Loading: Story = { args: { loading: true } };
