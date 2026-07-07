@@ -3,6 +3,7 @@
  * type is inferred via z.infer, and the same schema validates at every trust boundary
  * (API I/O, retailer payloads, custom_parameters, env). Modules are added as designed.
  */
+export * from "./activity";
 export * from "./common";
 export * from "./config";
 export * from "./conversion";
