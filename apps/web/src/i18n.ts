@@ -64,11 +64,35 @@ const en = {
     },
   },
   home: {
-    greeting: "Hi {{name}} 👋",
-    placeholder: "Your wallet is coming soon.",
-    enrollPasskey: "Set up FaceID / passkey",
+    availableCashback: "Available cashback", // (design)
+    estimated: "Estimated", // (design)
+    heldNote: "held in original currencies", // (design)
+    pendingNote: "≈{{amount}} pending confirmation", // (design, parameterised)
+    withdrawCash: "Withdraw cash", // (design: withdrawToBank)
+    recentActivity: "Recent activity", // (design)
+    seeAll: "See all", // (design)
+    noActivity: "No activity yet — cashback from your links will show up here.",
+    createLink: "Create link",
+    navHome: "Home", // (design)
+    navActivity: "Activity", // (design)
+    setupFaceId: "Set up Face ID", // (design)
+    setupFaceIdSub: "Skip SMS codes — log in instantly next time.", // (design)
+    turnOn: "Turn on", // (design)
     passkeyDone: "Passkey added.",
     signOut: "Sign out",
+    loadFailed: "Couldn't load your wallet.",
+    retry: "Retry",
+    status: {
+      confirmed: "Confirmed", // (design)
+      pending: "Pending", // (design)
+      clawback: "Returned", // (design: returned)
+    },
+    kind: {
+      referrer_cashback: "Recommendation cashback",
+      consumer_reward: "Your cashback",
+      adjustment: "Adjustment",
+      withdrawal: "Withdrawal",
+    },
   },
   admin: {
     brand: "wanthat",
@@ -281,11 +305,35 @@ const he: typeof en = {
     },
   },
   home: {
-    greeting: "היי {{name}} 👋",
-    placeholder: "הארנק שלכם בקרוב.",
-    enrollPasskey: "הגדרת FaceID / מפתח גישה",
+    availableCashback: "קאשבק זמין",
+    estimated: "משוער",
+    heldNote: "מוחזק במטבע המקורי",
+    pendingNote: "≈{{amount}} ממתין לאישור",
+    withdrawCash: "משיכת מזומן",
+    recentActivity: "פעילות אחרונה",
+    seeAll: "הצג הכל",
+    noActivity: "אין פעילות עדיין — קאשבק מהקישורים שלכם יופיע כאן.",
+    createLink: "יצירת קישור",
+    navHome: "בית",
+    navActivity: "פעילות",
+    setupFaceId: "הגדרת Face ID",
+    setupFaceIdSub: "דלגו על קודי SMS — התחברו מיד בפעם הבאה.",
+    turnOn: "הפעלה",
     passkeyDone: "מפתח הגישה נוסף.",
     signOut: "התנתקות",
+    loadFailed: "לא הצלחנו לטעון את הארנק.",
+    retry: "נסו שוב",
+    status: {
+      confirmed: "אושר",
+      pending: "ממתין",
+      clawback: "הוחזר",
+    },
+    kind: {
+      referrer_cashback: "קאשבק מהמלצה",
+      consumer_reward: "הקאשבק שלכם",
+      adjustment: "התאמה",
+      withdrawal: "משיכה",
+    },
   },
   admin: {
     brand: "wanthat",
