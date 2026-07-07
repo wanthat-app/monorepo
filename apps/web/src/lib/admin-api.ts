@@ -4,6 +4,8 @@ import type {
   GetConfigResponse,
   ListConfigResponse,
   PutConfigResponse,
+  PutRetailerCredentialsBody,
+  RetailerCredentialsStatus,
   UsersStats,
 } from "@wanthat/contracts";
 import { ApiError } from "./api";
@@ -47,6 +49,15 @@ export const adminApi = {
     }),
   statsOverview: (token: string) => adminRequest<StatsOverview>("/admin/stats/overview", token),
   usersStats: (token: string) => adminRequest<UsersStats>("/admin/stats/users", token),
+  // Write-only retailer credentials (AliExpress): PUT replaces both values; both routes answer
+  // with non-secret status only — the credential can never be read back.
+  retailerCredentialsStatus: (token: string) =>
+    adminRequest<RetailerCredentialsStatus>("/admin/retailer/aliexpress/credentials", token),
+  putRetailerCredentials: (token: string, body: PutRetailerCredentialsBody) =>
+    adminRequest<RetailerCredentialsStatus>("/admin/retailer/aliexpress/credentials", token, {
+      method: "PUT",
+      body,
+    }),
 };
 
 export type { UsersStats };

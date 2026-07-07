@@ -1,4 +1,9 @@
-import type { ConfigItem, ConfigKey, ConfigValue } from "@wanthat/contracts";
+import type {
+  ConfigItem,
+  ConfigKey,
+  ConfigValue,
+  RetailerCredentialsStatus,
+} from "@wanthat/contracts";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { adminApi, type UsersStats } from "../../lib/admin-api";
@@ -447,6 +452,8 @@ function ConfigView({ token }: { token: string | null }) {
         );
       })}
 
+      <IntegrationsCard token={token} />
+
       {dirtyKeys.length > 0 ? (
         <div
           className="sticky bottom-0 -mx-8 -mb-16 flex items-center gap-3.5 px-8 py-4"
@@ -474,6 +481,138 @@ function ConfigView({ token }: { token: string | null }) {
           </div>
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * Write-only retailer credentials (AliExpress AppKey/AppSecret). Deliberately outside the
+ * FieldMeta/dirty-batch machinery: these are not round-trippable config values — the server
+ * only ever returns non-secret status, so the fields always start empty, saving replaces the
+ * whole pair, and a successful save clears the inputs and refreshes the status line.
+ */
+function IntegrationsCard({ token }: { token: string | null }) {
+  const { t } = useTranslation();
+  // undefined = loading, null = status fetch failed.
+  const [status, setStatus] = useState<RetailerCredentialsStatus | null | undefined>(undefined);
+  const [appKey, setAppKey] = useState("");
+  const [appSecret, setAppSecret] = useState("");
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    if (!token) return;
+    adminApi
+      .retailerCredentialsStatus(token)
+      .then(setStatus)
+      .catch(() => setStatus(null));
+  }, [token]);
+
+  const canSave = appKey.trim().length > 0 && appSecret.trim().length > 0 && state !== "saving";
+
+  const save = async () => {
+    if (!token || !canSave) return;
+    setState("saving");
+    try {
+      const next = await adminApi.putRetailerCredentials(token, {
+        appKey: appKey.trim(),
+        appSecret: appSecret.trim(),
+      });
+      setAppKey("");
+      setAppSecret("");
+      setStatus(next);
+      setState("saved");
+    } catch {
+      setState("error");
+    }
+  };
+
+  const statusLine =
+    status === undefined
+      ? "…"
+      : status === null
+        ? t("admin.integrations.statusUnknown")
+        : status.configured && status.lastUpdatedAt
+          ? t("admin.integrations.configured", {
+              date: new Date(status.lastUpdatedAt).toLocaleString(),
+            })
+          : t("admin.integrations.notConfigured");
+
+  return (
+    <SectionCard title={t("admin.integrations.title")} description={t("admin.integrations.desc")}>
+      <div className="flex flex-col gap-3 border-t border-[#eef2f0] py-5">
+        <div>
+          <div className="text-sm font-semibold text-ink">
+            {t("admin.integrations.aliexpressTitle")}
+          </div>
+          <div className="mt-0.5 text-[12.5px] text-muted">
+            {t("admin.integrations.aliexpressDesc")}
+          </div>
+          <div className="mt-1.5 text-[12.5px] font-semibold text-subtle">{statusLine}</div>
+        </div>
+        <form
+          className="flex flex-col gap-2.5 sm:flex-row sm:items-center"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
+          <SecretInput
+            label={t("admin.integrations.appKey")}
+            value={appKey}
+            onChange={(v) => {
+              setState("idle");
+              setAppKey(v);
+            }}
+          />
+          <SecretInput
+            label={t("admin.integrations.appSecret")}
+            value={appSecret}
+            onChange={(v) => {
+              setState("idle");
+              setAppSecret(v);
+            }}
+          />
+          <div className="sm:w-[180px] sm:flex-shrink-0">
+            <Button type="submit" disabled={!canSave} loading={state === "saving"}>
+              {t("admin.integrations.save")}
+            </Button>
+          </div>
+        </form>
+        {state === "saved" ? (
+          <div className="text-[12.5px] font-semibold text-accent">
+            {t("admin.integrations.saved")}
+          </div>
+        ) : null}
+        {state === "error" ? (
+          <div className="text-[12.5px] font-semibold text-rejected">
+            {t("admin.integrations.error")}
+          </div>
+        ) : null}
+      </div>
+    </SectionCard>
+  );
+}
+
+function SecretInput({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="flex flex-1 items-center rounded-input border border-[#e0e6e3] bg-base px-3.5 py-2.5">
+      <input
+        type="password"
+        autoComplete="new-password"
+        aria-label={label}
+        placeholder={label}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full border-none bg-transparent text-sm font-semibold text-ink outline-none"
+      />
     </div>
   );
 }

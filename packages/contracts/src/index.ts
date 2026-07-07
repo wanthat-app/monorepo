@@ -10,5 +10,6 @@ export * from "./fx";
 export * from "./identity";
 export * from "./landing";
 export * from "./recommendations";
+export * from "./retailer";
 export * from "./stats";
 export * from "./wallet";
