@@ -156,7 +156,12 @@ export class AdminStack extends Stack {
       apiName: `wanthat-${wanthatEnv.name}-admin`,
       corsPreflight: {
         allowOrigins: webOrigins(wanthatEnv),
-        allowMethods: [CorsHttpMethod.GET, CorsHttpMethod.PUT, CorsHttpMethod.POST],
+        allowMethods: [
+          CorsHttpMethod.GET,
+          CorsHttpMethod.PUT,
+          CorsHttpMethod.POST,
+          CorsHttpMethod.DELETE,
+        ],
         allowHeaders: ["content-type", "authorization"],
         maxAge: Duration.hours(1),
       },
