@@ -16,6 +16,7 @@ import {
 } from "../../lib/admin-login";
 import { identityFromIdToken } from "../../lib/jwt";
 import { Button, RangeSlider, Segmented, Spinner, Switch } from "../../ui/components";
+import { ActivityView } from "./ActivityView";
 import { AdminLayout, type AdminView } from "./AdminLayout";
 import { UsersView } from "./UsersView";
 
@@ -68,6 +69,7 @@ export function AdminPage() {
   const heading: Record<AdminView, { title: string; subtitle: string }> = {
     dashboard: { title: t("admin.dashboard"), subtitle: t("admin.dashboardSub") },
     users: { title: t("admin.usersNav"), subtitle: t("admin.usersSub") },
+    activity: { title: t("admin.activityNav"), subtitle: t("admin.activitySub") },
     config: { title: t("admin.configuration"), subtitle: t("admin.configSub") },
   };
 
@@ -85,6 +87,8 @@ export function AdminPage() {
         <DashboardView token={tokens.accessToken} />
       ) : view === "users" ? (
         <UsersView token={tokens.accessToken} />
+      ) : view === "activity" ? (
+        <ActivityView token={tokens.accessToken} />
       ) : (
         <ConfigView token={tokens.accessToken} />
       )}
