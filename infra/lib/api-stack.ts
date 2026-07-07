@@ -332,6 +332,21 @@ export class ApiStack extends Stack {
       authorizer,
     });
 
+    // Wallet reads -> app-core, behind the JWT authorizer. The handlers are stubs this slice
+    // (member-home spec); routes and contract are final, the poller slice fills the data in.
+    this.httpApi.addRoutes({
+      path: "/wallet",
+      methods: [HttpMethod.GET],
+      integration: coreIntegration,
+      authorizer,
+    });
+    this.httpApi.addRoutes({
+      path: "/wallet/{proxy+}",
+      methods: [HttpMethod.GET],
+      integration: coreIntegration,
+      authorizer,
+    });
+
     new CfnOutput(this, "AppApiUrl", { value: this.httpApi.apiEndpoint });
     new CfnOutput(this, "UserPoolId", { value: props.userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: props.userPoolClient.userPoolClientId });

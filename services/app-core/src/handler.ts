@@ -15,6 +15,7 @@ import { handle } from "hono/aws-lambda";
 import { authRouter } from "./auth/register";
 import { getContext } from "./context";
 import { meRouter } from "./me/router";
+import { walletRouter } from "./wallet/router";
 
 const SERVICE = "app-core";
 const app = new Hono<{ Bindings: { event: LambdaEvent } }>();
@@ -37,6 +38,7 @@ app.get("/healthz/db", async (c) => {
 // `/me` sits behind the JWT authorizer at the gateway and reads the verified claims.
 app.route("/auth", authRouter());
 app.route("/me", meRouter());
+app.route("/wallet", walletRouter());
 
 // Log any uncaught handler error (otherwise Hono returns 500 with no trace) so an in-VPC connection
 // failure surfaces instead of a silent Lambda timeout.
@@ -45,7 +47,7 @@ app.onError((err, c) => {
   return c.json({ error: "internal_error", service: SERVICE }, 500);
 });
 
-// Links + wallet not yet implemented — a clean 501 rather than a 404.
+// Links not yet implemented — a clean 501 rather than a 404.
 app.all("*", (c) => c.json({ error: "not_implemented", service: SERVICE, path: c.req.path }, 501));
 
 export const handler = handle(app);

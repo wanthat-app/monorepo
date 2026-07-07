@@ -118,3 +118,45 @@ export const meApi = {
       token,
     }),
 };
+
+/**
+ * Wire types for the wallet surface: `Money.amountMinor` travels as a decimal string (JSON has
+ * no bigint). Formatting stays in lib/money.ts; nothing here converts to floats.
+ */
+export interface MoneyWire {
+  amountMinor: string;
+  currency: string;
+}
+export interface WalletEarningsWire {
+  confirmed: MoneyWire;
+  pending: MoneyWire;
+}
+export interface WalletBalanceWire {
+  asRecommender: WalletEarningsWire;
+  asBuyer: WalletEarningsWire;
+  available: MoneyWire;
+}
+export interface WalletEstimateWire {
+  available: MoneyWire;
+  pending: MoneyWire;
+}
+export interface WalletEntryWire {
+  id: string;
+  kind: "referrer_cashback" | "consumer_reward" | "adjustment" | "withdrawal";
+  amount: MoneyWire;
+  status: "pending" | "confirmed" | "clawback";
+  recommendationId: string | null;
+  createdAt: string;
+}
+
+export const walletApi = {
+  get: (token: string) =>
+    request<{ balances: WalletBalanceWire[]; estimated: WalletEstimateWire | null }>("/wallet", {
+      token,
+    }),
+  entries: (token: string, limit: number) =>
+    request<{ items: WalletEntryWire[]; nextCursor: string | null }>(
+      `/wallet/entries?limit=${limit}`,
+      { token },
+    ),
+};
