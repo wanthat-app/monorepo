@@ -87,8 +87,15 @@ export function ActivityView({ token }: { token: string | null }) {
             </div>
           ))
         ) : loadFailed ? (
-          <div className="border-t border-hairrow px-4 py-6 text-sm text-rejected">
+          <div className="flex items-center gap-3 border-t border-hairrow px-4 py-6 text-sm text-rejected">
             {t("admin.activityPage.loadError")}
+            <button
+              type="button"
+              onClick={() => void load(page)}
+              className="rounded-tile border border-edge bg-surface px-3 py-1.5 text-[12.5px] font-bold text-ink transition hover:bg-base"
+            >
+              {t("admin.activityPage.retry")}
+            </button>
           </div>
         ) : data && data.items.length === 0 ? (
           <div className="border-t border-hairrow px-4 py-6 text-sm text-muted">

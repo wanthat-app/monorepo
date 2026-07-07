@@ -36,7 +36,7 @@ The **only** append path to `audit_log`. `SECURITY DEFINER` (owner `wanthat_migr
 - `pg_advisory_xact_lock(hashtext('audit_log'))` — serialises appends so the chain never forks
   under concurrent writers (registration volume is tiny; the lock is uncontended in practice).
 - Reads the last row's `entry_hash` (by `id DESC`) as `prev_hash` (NULL for the first row).
-- `entry_hash = encode(digest(coalesce(prev_hash,'') || '|' || p_payload::text || '|' || p_at::text, 'sha256'), 'hex')`
+- `entry_hash = encode(digest(coalesce(prev_hash,'') || '|' || p_payload::text || '|' || extract(epoch from p_at)::text, 'sha256'), 'hex')`
   (pgcrypto is already enabled in 0001).
 - Inserts `(prev_hash, entry_hash, payload, created_at := p_at)` and returns the new `id`.
 
