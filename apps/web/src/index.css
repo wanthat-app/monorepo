@@ -9,7 +9,7 @@
   html {
     font-family: theme("fontFamily.body");
     color: theme("colors.ink");
-    background: theme("colors.base");
+    background: theme("colors.page");
   }
   body {
     margin: 0;
