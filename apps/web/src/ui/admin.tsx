@@ -34,7 +34,7 @@ const SIDE_THEME: Record<
 
 // Fixed left sidebar (248px): brand + grouped nav + the admin user card pinned to the bottom.
 export function Sidebar({
-  theme = "dark",
+  theme = "light",
   caption = "Operations",
   children,
   footer,
@@ -71,7 +71,7 @@ export function Sidebar({
 
 // Uppercase group label inside the sidebar ("Overview", "Settings").
 export function SidebarSection({
-  theme = "dark",
+  theme = "light",
   children,
 }: {
   theme?: SidebarTheme;
@@ -88,7 +88,7 @@ export function SidebarSection({
 
 // Sidebar nav item; the active item fills with the evergreen accent.
 export function SidebarNavItem({
-  theme = "dark",
+  theme = "light",
   icon,
   active = false,
   onClick,
@@ -117,7 +117,7 @@ export function SidebarNavItem({
 
 // The admin user card pinned to the sidebar bottom: initials tile, name, role, sign-out.
 export function AdminUserCard({
-  theme = "dark",
+  theme = "light",
   initials,
   name,
   roleLabel,

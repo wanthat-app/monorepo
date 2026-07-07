@@ -54,6 +54,19 @@ const meta: Meta<typeof Sidebar> = {
 export default meta;
 type Story = StoryObj<typeof Sidebar>;
 
+export const Light: Story = {
+  render: () => (
+    <Sidebar footer={<AdminUserCard initials="RK" name="Roni Katz" roleLabel="Platform admin" />}>
+      <SidebarSection>Overview</SidebarSection>
+      <SidebarNavItem icon={DASH} active>
+        Dashboard
+      </SidebarNavItem>
+      <SidebarSection>Settings</SidebarSection>
+      <SidebarNavItem icon={CONFIG}>Configuration</SidebarNavItem>
+    </Sidebar>
+  ),
+};
+
 export const Dark: Story = {
   render: () => (
     <Sidebar
@@ -68,26 +81,6 @@ export const Dark: Story = {
       </SidebarNavItem>
       <SidebarSection theme="dark">Settings</SidebarSection>
       <SidebarNavItem theme="dark" icon={CONFIG}>
-        Configuration
-      </SidebarNavItem>
-    </Sidebar>
-  ),
-};
-
-export const Light: Story = {
-  render: () => (
-    <Sidebar
-      theme="light"
-      footer={
-        <AdminUserCard theme="light" initials="RK" name="Roni Katz" roleLabel="Platform admin" />
-      }
-    >
-      <SidebarSection theme="light">Overview</SidebarSection>
-      <SidebarNavItem theme="light" icon={DASH} active>
-        Dashboard
-      </SidebarNavItem>
-      <SidebarSection theme="light">Settings</SidebarSection>
-      <SidebarNavItem theme="light" icon={CONFIG}>
         Configuration
       </SidebarNavItem>
     </Sidebar>
