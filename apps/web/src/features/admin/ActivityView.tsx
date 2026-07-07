@@ -50,6 +50,28 @@ export function ActivityView({ token }: { token: string | null }) {
   return (
     <div className="max-w-[960px]">
       <div className="mb-4 flex items-center gap-3">
+        <button
+          type="button"
+          disabled={loading}
+          onClick={() => void load(page)}
+          className="flex items-center gap-1.5 rounded-tile border border-edge bg-surface px-3 py-1.5 text-[12.5px] font-bold text-ink transition hover:bg-base disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          <svg
+            width="13"
+            height="13"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <path d="M21 3v6h-6" />
+          </svg>
+          {t("admin.activityPage.refresh")}
+        </button>
         {data ? (
           <span className="tabular text-[13px] text-muted">
             {t("admin.activityPage.pageOf", { page, pages, total: data.total })}
