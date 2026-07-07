@@ -15,6 +15,10 @@ const meta: Meta<typeof AdminUserCard> = {
 export default meta;
 type Story = StoryObj<typeof AdminUserCard>;
 
+export const OnLight: Story = {
+  args: { initials: "RK", name: "Roni Katz", roleLabel: "Platform admin" },
+};
+
 export const OnDark: Story = {
   args: { theme: "dark", initials: "RK", name: "Roni Katz", roleLabel: "Platform admin" },
   decorators: [
@@ -24,8 +28,4 @@ export const OnDark: Story = {
       </div>
     ),
   ],
-};
-
-export const OnLight: Story = {
-  args: { theme: "light", initials: "RK", name: "Roni Katz", roleLabel: "Platform admin" },
 };

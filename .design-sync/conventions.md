@@ -36,7 +36,7 @@ are available. `h1`–`h3` already render in Space Grotesk 600.
 - Disabled/loading buttons are soft-green (`bg-accent-soft text-accent`) — never faded.
 - Consumer screens live in a centered ~430px column (`Screen`) on `bg-page`; mobile nav is
   `TabBar`, desktop nav is `TopNav`. The admin console is desktop-only, English/LTR, with
-  `Sidebar` (248px, dark by default).
+  `Sidebar` (248px, light by default; a dark variant exists via `theme="dark"`).
 
 ## Where the truth lives
 

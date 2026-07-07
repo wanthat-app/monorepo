@@ -6,10 +6,10 @@ import { Segmented } from "../../ui/components";
 export type AdminView = "dashboard" | "config";
 
 /**
- * Admin console chrome (Wanthat Admin): a fixed dark sidebar + a topbar, with the active view rendered
+ * Admin console chrome (Wanthat Admin): a fixed light sidebar + a topbar, with the active view rendered
  * as children. Built from logical properties so the whole shell mirrors in RTL — the sidebar moves to
- * the inline-start edge and directional glyphs flip. Colours/spacing follow the design mock (dark
- * `#15201C` sidebar, evergreen active nav, 248px rail, 16/32 topbar padding).
+ * the inline-start edge and directional glyphs flip. Colours/spacing follow the design mock's light
+ * sidebar theme (surface white + hairline borders, evergreen active nav, 248px rail, 16/32 topbar padding).
  */
 export function AdminLayout({
   view,
@@ -42,20 +42,20 @@ export function AdminLayout({
   return (
     <div className="flex h-screen overflow-hidden bg-[#e9edeb] font-body text-ink">
       {/* ============ SIDEBAR ============ */}
-      <aside className="flex w-[248px] flex-shrink-0 flex-col border-e border-[#1e2c26] bg-ink px-[18px] py-6">
+      <aside className="flex w-[248px] flex-shrink-0 flex-col border-e border-line bg-surface px-[18px] py-6">
         <div className="flex items-center gap-3 px-1.5 pt-1">
           <BrandMark />
           <div>
-            <div className="font-display text-[21px] font-bold leading-none tracking-[-0.03em] text-[#f4f6f5]">
+            <div className="font-display text-[21px] font-bold leading-none tracking-[-0.03em] text-ink">
               {t("admin.brand")}
             </div>
-            <div className="mt-[3px] text-[11px] font-semibold uppercase tracking-[0.14em] text-[#7e9389]">
+            <div className="mt-[3px] text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
               {t("admin.operations")}
             </div>
           </div>
         </div>
 
-        <div className="my-5 h-px bg-[#243530]" />
+        <div className="my-5 h-px bg-line" />
 
         <NavLabel>{t("admin.overview")}</NavLabel>
         <NavItem active={view === "dashboard"} onClick={() => onNavigate("dashboard")}>
@@ -114,20 +114,20 @@ export function AdminLayout({
               { value: "he", label: "עב" },
             ]}
           />
-          <div className="flex items-center gap-2.5 rounded-[14px] border border-[#243530] bg-[#1b2924] px-3 py-2.5">
+          <div className="flex items-center gap-2.5 rounded-[14px] border border-line bg-base px-3 py-2.5">
             <span className="flex h-[34px] w-[34px] flex-shrink-0 items-center justify-center rounded-[11px] bg-accent text-sm font-bold text-white">
               {initials}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="truncate text-[13px] font-bold text-[#f4f6f5]">{user.name}</div>
-              <div className="text-[11px] text-[#7e9389]">{user.role}</div>
+              <div className="truncate text-[13px] font-bold text-ink">{user.name}</div>
+              <div className="text-[11px] text-muted">{user.role}</div>
             </div>
             <button
               type="button"
               onClick={onSignOut}
               aria-label={t("admin.signOut")}
               title={t("admin.signOut")}
-              className="flex h-7 w-7 items-center justify-center rounded-lg text-[#7e9389] transition hover:bg-[#243530] hover:text-[#f4f6f5]"
+              className="flex h-7 w-7 items-center justify-center rounded-lg text-muted transition hover:bg-line hover:text-ink"
             >
               <svg
                 width="16"
@@ -219,7 +219,7 @@ export function AdminLayout({
 
 function NavLabel({ children }: { children: ReactNode }) {
   return (
-    <div className="px-1.5 pb-2.5 text-[10.5px] font-bold uppercase tracking-[0.13em] text-[#7e9389]">
+    <div className="px-1.5 pb-2.5 text-[10.5px] font-bold uppercase tracking-[0.13em] text-muted">
       {children}
     </div>
   );
@@ -240,7 +240,9 @@ function NavItem({
       onClick={onClick}
       aria-current={active ? "page" : undefined}
       className={`flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-start text-sm font-bold transition ${
-        active ? "bg-accent text-white" : "bg-transparent text-[#b6c7bf] hover:bg-[#1b2924]"
+        active
+          ? "bg-accent text-white"
+          : "bg-transparent text-secondary hover:bg-base hover:text-ink"
       }`}
     >
       {children}
