@@ -3,7 +3,7 @@
 --
 -- audit_append is THE append path: it serialises writers with an advisory lock (the chain must
 -- never fork), reads the previous entry_hash, and chains
---   entry_hash = sha256(prev_hash | payload | created_at)
+--   entry_hash = sha256(prev_hash | payload | epoch(created_at))
 -- via pgcrypto (enabled in 0001). SECURITY DEFINER (owner: wanthat_migrator) so callers need no
 -- table-level INSERT; app_rw (registration writer) gets EXECUTE. app_ro does NOT - admin
 -- deletions go through admin_delete_customer below, which calls it in definer context.
@@ -22,8 +22,14 @@ DECLARE
 BEGIN
   PERFORM pg_advisory_xact_lock(hashtext('audit_log'));
   SELECT entry_hash INTO v_prev FROM audit_log ORDER BY id DESC LIMIT 1;
+  -- extract(epoch ...) canonicalizes the timestamp: a bare timestamptz::text formats via the
+  -- session TimeZone GUC, so the same instant could hash differently across sessions and a
+  -- future chain verifier would see false tampering. Epoch seconds are representation-stable.
   v_hash := encode(
-    digest(coalesce(v_prev, '') || '|' || p_payload::text || '|' || p_at::text, 'sha256'),
+    digest(
+      coalesce(v_prev, '') || '|' || p_payload::text || '|' || extract(epoch from p_at)::text,
+      'sha256'
+    ),
     'hex'
   );
   INSERT INTO audit_log (prev_hash, entry_hash, payload, created_at)
@@ -81,7 +87,7 @@ REVOKE ALL ON FUNCTION admin_delete_customer(uuid, text) FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION admin_delete_customer(uuid, text) TO app_ro;
 
 -- Backfill: one user_registered row per existing customer, at their true registration time,
--- in deterministic order (created_at, id) so the chain seeds identically on every environment.
+-- in deterministic order (created_at, id) so a re-run within an environment seeds the same chain.
 -- created_at carries feed ordering; chain integrity is by id order, so historical timestamps
 -- do not break it. Runs once (the migrator tracks applied migrations).
 DO $$
