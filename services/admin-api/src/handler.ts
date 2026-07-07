@@ -21,7 +21,7 @@ import {
   PutConfigResponse,
   Uuid,
 } from "@wanthat/contracts";
-import { deleteCustomer, hasWalletEntries, listCustomers } from "@wanthat/db";
+import { adminDeleteCustomer, listCustomers } from "@wanthat/db";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { getContext } from "./context";
@@ -116,18 +116,18 @@ app.get("/admin/users", async (c) => {
   return c.json(ListUsersResponse.parse({ users, total, page, pageSize }));
 });
 
-// DELETE /admin/users/:id — hard delete, guarded: refused while any wallet_entry references the
-// customer (the append-only ledger is never orphaned; the FK enforces the same at the DB layer).
-// Returns the phone so the SPA can run the Cognito cleanup step (admin-credentials, non-VPC —
-// this in-VPC function cannot reach cognito-idp; ADR-0004).
+// DELETE /admin/users/:id — hard delete via the admin_delete_customer SECURITY DEFINER function
+// (0004): the wallet-history guard and the delete run atomically in the database, so the
+// append-only ledger is never orphaned (the FK enforces the same independently). Returns the phone
+// so the SPA can run the Cognito cleanup step (admin-credentials, non-VPC — this in-VPC function
+// cannot reach cognito-idp; ADR-0004).
 app.delete("/admin/users/:id", async (c) => {
   const id = Uuid.safeParse(c.req.param("id"));
   if (!id.success) return c.json({ error: "invalid_request" }, 400);
-  const { db } = getContext();
-  if (await hasWalletEntries(db, id.data)) return c.json({ error: "has_wallet_history" }, 409);
-  const deleted = await deleteCustomer(db, id.data);
-  if (!deleted) return c.json({ error: "not_found" }, 404);
-  return c.json(DeleteUserResponse.parse({ deleted: true, id: id.data, phone: deleted.phone }));
+  const result = await adminDeleteCustomer(getContext().db, id.data);
+  if (result.outcome === "has_wallet_history") return c.json({ error: "has_wallet_history" }, 409);
+  if (result.outcome === "not_found") return c.json({ error: "not_found" }, 404);
+  return c.json(DeleteUserResponse.parse({ deleted: true, id: id.data, phone: result.phone }));
 });
 
 app.get("/admin/health", (c) => c.json({ ok: true }));
