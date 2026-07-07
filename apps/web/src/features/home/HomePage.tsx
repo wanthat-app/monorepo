@@ -45,14 +45,14 @@ export function HomePage() {
 
   const token = accessToken();
   const wallet = useQuery({
-    queryKey: ["wallet"],
+    queryKey: ["wallet", customer?.id],
     queryFn: () => walletApi.get(token as string),
-    enabled: !!token,
+    enabled: !!token && !!customer,
   });
   const entries = useQuery({
-    queryKey: ["wallet-entries", RECENT_LIMIT],
+    queryKey: ["wallet-entries", customer?.id, RECENT_LIMIT],
     queryFn: () => walletApi.entries(token as string, RECENT_LIMIT),
-    enabled: !!token,
+    enabled: !!token && !!customer,
   });
 
   if (!customer) {
