@@ -25,7 +25,7 @@ import {
   Segmented,
   Spinner,
   TextField,
-} from "../../ui/components";
+} from "../../ui";
 
 type Step = "phone" | "otp" | "register" | "face";
 
