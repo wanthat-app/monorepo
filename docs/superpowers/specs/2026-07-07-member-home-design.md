@@ -71,10 +71,11 @@ internals do.
 
 ### Infra
 
-- **No infra changes.** No FX table access, no new grants, no new packages (the
-  bundled-workspace-deps trap doesn't fire).
-- API routes: `GET /wallet` and `GET /wallet/entries` are new **GET** routes on the app HTTP
-  API — CORS `allowMethods` already includes GET (checked; the PR #103 lesson).
+- The app HTTP API uses **explicit routes** (no catch-all), so `infra/lib/api-stack.ts` gains
+  two authorized GET routes → the app-core integration: `/wallet` and `/wallet/{proxy+}`
+  (covers `/wallet/entries`), both behind the JWT authorizer like `/me`.
+- CORS `allowMethods` already includes GET (checked; the PR #103 lesson). No FX table access,
+  no new grants, no new packages (the bundled-workspace-deps trap doesn't fire).
 
 ## Frontend (`apps/web`)
 
