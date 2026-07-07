@@ -10,6 +10,7 @@ import type * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 import {
   applyThrottle,
+  LAMBDA_ARCHITECTURE,
   LAMBDA_RUNTIME,
   serviceEntry,
   serviceLogGroup,
@@ -58,6 +59,7 @@ export class EdgeServicesStack extends Stack {
         entry: serviceEntry(service),
         handler: "handler",
         runtime: LAMBDA_RUNTIME,
+        architecture: LAMBDA_ARCHITECTURE,
         memorySize: 256,
         timeout: Duration.seconds(15),
         // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).

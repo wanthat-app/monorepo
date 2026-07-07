@@ -15,6 +15,7 @@ import { Provider } from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import {
   applyThrottle,
+  LAMBDA_ARCHITECTURE,
   LAMBDA_RUNTIME,
   RDS_CA_ENV,
   rdsCaBundling,
@@ -97,6 +98,7 @@ export class ApiStack extends Stack {
       entry: serviceEntry("ticket-keygen"),
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       memorySize: 256,
       timeout: Duration.seconds(30),
       bundling: { minify: true, sourceMap: false },
@@ -115,6 +117,7 @@ export class ApiStack extends Stack {
       entry: serviceEntry("app-auth"),
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       memorySize: 256,
       timeout: Duration.seconds(15),
       // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
@@ -181,6 +184,7 @@ export class ApiStack extends Stack {
       entry: serviceEntry("app-core"),
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       memorySize: 256,
       timeout: Duration.seconds(30), // first connect may resume a scale-to-zero cluster (up to ~30s)
       tracing: lambda.Tracing.ACTIVE,

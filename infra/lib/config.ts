@@ -102,6 +102,13 @@ export function resolveEnv(name: string | undefined): WanthatEnv {
  */
 export const LAMBDA_RUNTIME = lambda.Runtime.NODEJS_24_X;
 
+/**
+ * Lambda CPU architecture for all functions, in one place. arm64 (Graviton) is ~20% cheaper per
+ * GB-second than x86_64 with equal-or-better Node performance, and the whole dependency tree is
+ * pure JavaScript after bundling (no native addons), so nothing is architecture-specific.
+ */
+export const LAMBDA_ARCHITECTURE = lambda.Architecture.ARM_64;
+
 /** A request-throttle profile for an HTTP API stage. */
 export interface Throttle {
   /** Steady-state requests per second. */

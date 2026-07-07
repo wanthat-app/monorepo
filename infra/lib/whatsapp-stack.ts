@@ -6,7 +6,13 @@ import { DynamoEventSource, SqsDlq } from "aws-cdk-lib/aws-lambda-event-sources"
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import type { Construct } from "constructs";
-import { LAMBDA_RUNTIME, serviceEntry, serviceLogGroup, type WanthatEnv } from "./config";
+import {
+  LAMBDA_ARCHITECTURE,
+  LAMBDA_RUNTIME,
+  serviceEntry,
+  serviceLogGroup,
+  type WanthatEnv,
+} from "./config";
 
 export interface WhatsAppStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -38,6 +44,7 @@ export class WhatsAppStack extends Stack {
       entry: serviceEntry("whatsapp-dispatcher"),
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
       memorySize: 256,
       timeout: Duration.seconds(30),
       tracing: lambda.Tracing.ACTIVE,
