@@ -88,6 +88,8 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   customerPool: identity.userPool,
   runtimeConfigTable: data.runtimeConfigTable,
   recommendationTable: data.recommendationTable,
+  // Dev OTP sink: activity page lists parked codes (undefined in prod - fail-closed).
+  devOtpSinkTable: data.devOtpSinkTable,
   // Write-only credential drop (PutSecretValue + DescribeSecret; never read) — see AdminStack.
   retailerSecret: data.retailerSecret,
   vpc: network.vpc,
