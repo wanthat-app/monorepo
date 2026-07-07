@@ -139,3 +139,87 @@ export async function updateProfile(
     .executeTakeFirst();
   return updated ? toProfile(updated as CustomerRow) : undefined;
 }
+
+export interface ListCustomersInput {
+  /** Free-text match against phone (E.164) and email, case-insensitive substring. */
+  search?: string;
+  /** 1-based. */
+  page: number;
+  pageSize: number;
+}
+
+export interface CustomerPage {
+  users: CustomerProfile[];
+  total: number;
+}
+
+/** Escape LIKE metacharacters so a search for "100%" doesn't become a wildcard. */
+function escapeLike(term: string): string {
+  return term.replace(/[\\%_]/g, (ch) => `\\${ch}`);
+}
+
+/**
+ * Page through customers for the admin console, newest first. `search` narrows by phone or email
+ * (substring, case-insensitive); `total` counts the same filtered set so the caller can page.
+ */
+export async function listCustomers(
+  db: Kysely<Database>,
+  input: ListCustomersInput,
+): Promise<CustomerPage> {
+  const term = input.search?.trim();
+  const filter = term ? `%${escapeLike(term)}%` : undefined;
+  const filtered = db
+    .selectFrom("customer")
+    .$if(filter !== undefined, (qb) =>
+      qb.where((eb) =>
+        eb.or([
+          eb("phone_e164", "ilike", filter as string),
+          eb("email", "ilike", filter as string),
+        ]),
+      ),
+    );
+
+  const [rows, count] = await Promise.all([
+    filtered
+      .select(COLUMNS)
+      .orderBy("created_at", "desc")
+      .orderBy("id", "desc")
+      .limit(input.pageSize)
+      .offset((input.page - 1) * input.pageSize)
+      .execute(),
+    filtered.select((eb) => eb.fn.countAll<string>().as("count")).executeTakeFirst(),
+  ]);
+
+  return {
+    users: rows.map((r) => toProfile(r as CustomerRow)),
+    total: Number(count?.count ?? 0),
+  };
+}
+
+/** True while any money-ledger row references the customer (the admin delete guard). */
+export async function hasWalletEntries(db: Kysely<Database>, customerId: string): Promise<boolean> {
+  const row = await db
+    .selectFrom("wallet_entry")
+    .select("id")
+    .where("customer_id", "=", customerId)
+    .limit(1)
+    .executeTakeFirst();
+  return row !== undefined;
+}
+
+/**
+ * Hard-delete a customer row (admin console). Returns the deleted row's phone (for the follow-up
+ * Cognito cleanup) or undefined when no row matched. Callers must run the wallet-history guard
+ * first; the wallet_entry FK also refuses the delete outright if a ledger row exists.
+ */
+export async function deleteCustomer(
+  db: Kysely<Database>,
+  customerId: string,
+): Promise<{ phone: string } | undefined> {
+  const deleted = await db
+    .deleteFrom("customer")
+    .where("id", "=", customerId)
+    .returning(["phone_e164"])
+    .executeTakeFirst();
+  return deleted ? { phone: deleted.phone_e164 } : undefined;
+}

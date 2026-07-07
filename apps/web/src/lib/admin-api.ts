@@ -1,8 +1,11 @@
 import type {
+  CognitoDeleteUserResponse,
   ConfigKey,
   ConfigValue,
+  DeleteUserResponse,
   GetConfigResponse,
   ListConfigResponse,
+  ListUsersResponse,
   PutConfigResponse,
   PutRetailerCredentialsBody,
   RetailerCredentialsStatus,
@@ -64,6 +67,23 @@ export const adminApi = {
     }),
   statsOverview: (token: string) => adminRequest<StatsOverview>("/admin/stats/overview", token),
   usersStats: (token: string) => adminRequest<UsersStats>("/admin/stats/users", token),
+  // Users page: paged list/search (admin-api), guarded hard delete (admin-api), then the Cognito
+  // account cleanup (admin-credentials, non-VPC) - the SPA orchestrates the two delete steps.
+  listUsers: (token: string, opts: { search?: string; page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.search) params.set("search", opts.search);
+    if (opts.page) params.set("page", String(opts.page));
+    if (opts.pageSize) params.set("pageSize", String(opts.pageSize));
+    const qs = params.toString();
+    return adminRequest<ListUsersResponse>(`/admin/users${qs ? `?${qs}` : ""}`, token);
+  },
+  deleteUser: (token: string, id: string) =>
+    adminRequest<DeleteUserResponse>(`/admin/users/${id}`, token, { method: "DELETE" }),
+  cognitoDeleteUser: (token: string, phone: string) =>
+    adminRequest<CognitoDeleteUserResponse>("/admin/users/cognito-delete", token, {
+      method: "POST",
+      body: { phone },
+    }),
   // Write-only retailer credentials (AliExpress): PUT replaces both values; both routes answer
   // with non-secret status only — the credential can never be read back.
   retailerCredentialsStatus: (token: string) =>

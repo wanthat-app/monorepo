@@ -7,7 +7,12 @@
  * DescribeSecret only, so the credential can be written but never read back. retailer-proxy
  * (also non-VPC) stays the sole reader.
  */
-import { PutRetailerCredentialsBody, RetailerCredentialsStatus } from "@wanthat/contracts";
+import {
+  CognitoDeleteUserBody,
+  CognitoDeleteUserResponse,
+  PutRetailerCredentialsBody,
+  RetailerCredentialsStatus,
+} from "@wanthat/contracts";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { getContext } from "./context";
@@ -37,6 +42,17 @@ app.put("/admin/retailer/aliexpress/credentials", async (c) => {
   await getContext().retailerSecret.put(body.data);
   // Re-describe rather than fabricating a timestamp, so PUT and GET report the same clock.
   return c.json(RetailerCredentialsStatus.parse(await getContext().retailerSecret.status()));
+});
+
+// POST /admin/users/cognito-delete — remove a customer's Cognito account (the cleanup step after
+// admin-api hard-deleted the Aurora row; this function runs non-VPC because the endpoint-free VPC
+// cannot reach cognito-idp, ADR-0004). Idempotent: an already-gone account is `existed: false`,
+// not an error, so the SPA can retry safely.
+app.post("/admin/users/cognito-delete", async (c) => {
+  const body = CognitoDeleteUserBody.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: "invalid_request" }, 400);
+  const existed = await getContext().cognitoUsers.remove(body.data.phone);
+  return c.json(CognitoDeleteUserResponse.parse({ ok: true, existed }));
 });
 
 app.all("*", (c) => c.json({ error: "not_implemented", service: SERVICE, path: c.req.path }, 501));

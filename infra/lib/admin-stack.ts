@@ -32,6 +32,9 @@ export interface AdminStackProps extends StackProps {
   // as defence-in-depth.
   readonly employeePool: cognito.IUserPool;
   readonly employeePoolClient: cognito.IUserPoolClient;
+  // CUSTOMER pool (the members) - the users page deletes customer accounts from it. Only the
+  // non-VPC credentials function touches it (cognito-idp is unreachable from the VPC, ADR-0004).
+  readonly customerPool: cognito.IUserPool;
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
   // Retailer credential secret — admin-api may WRITE it (credential drop from the admin panel)
@@ -45,8 +48,9 @@ export interface AdminStackProps extends StackProps {
 /**
  * AdminStack — the admin API as a separate in-VPC Lambda with its own role and exposure (ADR-0002,
  * ADR-0020). Behind its own HTTP API + JWT authorizer; the admin-group check is re-enforced
- * in-handler. Reaches Aurora read-only as `app_ro` (live users count) and writes the runtime
- * `config` table (the admin panel). `/healthz` is the only unauthenticated route (deploy probe).
+ * in-handler. Reaches Aurora as `admin_api` (0004: app_ro's read surface + DELETE on customer for
+ * the users page; money tables stay immutable) and writes the runtime `config` table (the admin
+ * panel). `/healthz` is the only unauthenticated route (deploy probe).
  */
 export class AdminStack extends Stack {
   readonly httpApi: HttpApi;
@@ -81,7 +85,7 @@ export class AdminStack extends Stack {
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
-        DB_USER: "app_ro",
+        DB_USER: "admin_api",
         // Trust the Amazon RDS CA so the in-VPC TLS connection to Aurora verifies (ADR-0020) — the
         // same setup app-core/app-auth use. Without it pg throws "unable to get local issuer
         // certificate" and every DB-backed admin route (stats) fails. Pairs with rdsCaBundling below.
@@ -92,8 +96,8 @@ export class AdminStack extends Stack {
     });
     this.adminApiFn = fn;
 
-    // Read-only Aurora as app_ro (ADR-0002) + the config table it writes.
-    props.cluster.grantConnect(fn, "app_ro");
+    // Aurora as admin_api (ADR-0002 least-privilege; 0004) + the config table it writes.
+    props.cluster.grantConnect(fn, "admin_api");
     props.runtimeConfigTable.grantReadWriteData(fn);
     props.recommendationTable.grantReadData(fn);
 
@@ -114,9 +118,18 @@ export class AdminStack extends Stack {
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RETAILER_SECRET_ARN: props.retailerSecret.secretArn,
+        CUSTOMER_USER_POOL_ID: props.customerPool.userPoolId,
       },
     });
     this.adminCredentialsFn = credentialsFn;
+    // Customer-account removal for the users page (AdminDeleteUser only - the admin surface can
+    // delete a member's sign-in but never read or alter one).
+    credentialsFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["cognito-idp:AdminDeleteUser"],
+        resources: [props.customerPool.userPoolArn],
+      }),
+    );
     // WRITE-ONLY grant on the retailer credential secret: PutSecretValue (replace the value) +
     // DescribeSecret (non-secret status metadata). Deliberately not grantWrite (adds UpdateSecret)
     // and no GetSecretValue - the admin role structurally cannot read the credential back.
@@ -153,10 +166,22 @@ export class AdminStack extends Stack {
     this.httpApi.addRoutes({ path: "/healthz", methods: [HttpMethod.GET], integration });
     // /admin/retailer/* → the non-VPC credentials function. HTTP APIs route by specificity, so
     // this greedy path beats the catch-all below for credential calls; same authorizer.
+    const credentialsIntegration = new HttpLambdaIntegration(
+      "AdminCredentialsIntegration",
+      credentialsFn,
+    );
     this.httpApi.addRoutes({
       path: "/admin/retailer/{proxy+}",
       methods: [HttpMethod.GET, HttpMethod.PUT],
-      integration: new HttpLambdaIntegration("AdminCredentialsIntegration", credentialsFn),
+      integration: credentialsIntegration,
+      authorizer,
+    });
+    // Cognito cleanup for the users page - also the non-VPC function (cognito-idp is unreachable
+    // from the VPC). Exact path beats the catch-all; /admin/users itself stays on admin-api.
+    this.httpApi.addRoutes({
+      path: "/admin/users/cognito-delete",
+      methods: [HttpMethod.POST],
+      integration: credentialsIntegration,
       authorizer,
     });
     // Explicit methods (NOT ANY) so `OPTIONS` has no matching route and falls through to API

@@ -1,7 +1,12 @@
 export {
+  type CustomerPage,
+  deleteCustomer,
   findByCognitoSub,
   findByPhone,
+  hasWalletEntries,
   insertCustomer,
+  type ListCustomersInput,
+  listCustomers,
   type NewCustomer,
   type ProfilePatch,
   toProfile,
