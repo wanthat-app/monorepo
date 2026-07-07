@@ -10,6 +10,9 @@ import { type Bindings, subFromClaims } from "../claims";
 /**
  * Serialise a contract-parsed value with Money's wire rule (bigint minor units → decimal
  * string). `c.json` would throw on bigint — JSON has no bigint (see contracts/common/money.ts).
+ * Every response that carries a `Money` (directly or nested, e.g. `WalletEntry.amount` in the
+ * entries list) must go through this, not `c.json` — even when the stub data is empty, the Zod
+ * defaults/shape can still surface a bigint field.
  */
 function moneyJson(c: Context<{ Bindings: Bindings }>, value: unknown): Response {
   return c.body(
@@ -48,7 +51,7 @@ export function walletRouter(): Hono<{ Bindings: Bindings }> {
       limit: c.req.query("limit"),
     });
     if (!query.success) return c.json({ error: "invalid_request" }, 400);
-    return c.json(ListWalletEntriesResponse.parse({ items: [], nextCursor: null }));
+    return moneyJson(c, ListWalletEntriesResponse.parse({ items: [], nextCursor: null }));
   });
 
   return wallet;
