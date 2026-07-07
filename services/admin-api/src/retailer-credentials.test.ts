@@ -28,9 +28,7 @@ describe("retailer credentials routes", () => {
 
   it("403s a non-admin", async () => {
     expect((await app.request(PATH, {}, memberEnv)).status).toBe(403);
-    expect(
-      (await app.request(PATH, { method: "PUT", body: "{}" }, memberEnv)).status,
-    ).toBe(403);
+    expect((await app.request(PATH, { method: "PUT", body: "{}" }, memberEnv)).status).toBe(403);
   });
 
   it("GET returns the write-only status, never a value", async () => {

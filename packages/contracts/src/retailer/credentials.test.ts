@@ -17,22 +17,20 @@ describe("PutRetailerCredentialsBody contract", () => {
   it("rejects when either field is missing or blank", () => {
     expect(PutRetailerCredentialsBody.safeParse({ appKey: "512345" }).success).toBe(false);
     expect(PutRetailerCredentialsBody.safeParse({ appSecret: "s" }).success).toBe(false);
-    expect(
-      PutRetailerCredentialsBody.safeParse({ appKey: "   ", appSecret: "s" }).success,
-    ).toBe(false);
-    expect(
-      PutRetailerCredentialsBody.safeParse({ appKey: "k", appSecret: "" }).success,
-    ).toBe(false);
+    expect(PutRetailerCredentialsBody.safeParse({ appKey: "   ", appSecret: "s" }).success).toBe(
+      false,
+    );
+    expect(PutRetailerCredentialsBody.safeParse({ appKey: "k", appSecret: "" }).success).toBe(
+      false,
+    );
   });
 
   it("rejects oversized values", () => {
     expect(
-      PutRetailerCredentialsBody.safeParse({ appKey: "k".repeat(201), appSecret: "s" })
-        .success,
+      PutRetailerCredentialsBody.safeParse({ appKey: "k".repeat(201), appSecret: "s" }).success,
     ).toBe(false);
     expect(
-      PutRetailerCredentialsBody.safeParse({ appKey: "k", appSecret: "s".repeat(501) })
-        .success,
+      PutRetailerCredentialsBody.safeParse({ appKey: "k", appSecret: "s".repeat(501) }).success,
     ).toBe(false);
   });
 });
@@ -46,8 +44,7 @@ describe("RetailerCredentialsStatus contract", () => {
       }).success,
     ).toBe(true);
     expect(
-      RetailerCredentialsStatus.safeParse({ configured: false, lastUpdatedAt: null })
-        .success,
+      RetailerCredentialsStatus.safeParse({ configured: false, lastUpdatedAt: null }).success,
     ).toBe(true);
   });
 

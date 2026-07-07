@@ -120,7 +120,8 @@ const en = {
       title: "Integrations",
       desc: "Third-party retailer credentials. Write-only: values can be replaced but never viewed.",
       aliexpressTitle: "AliExpress credentials",
-      aliexpressDesc: "App key and secret from the AliExpress affiliate console. Saving replaces both.",
+      aliexpressDesc:
+        "App key and secret from the AliExpress affiliate console. Saving replaces both.",
       appKey: "AppKey",
       appSecret: "AppSecret",
       configured: "Credentials set — last updated {{date}}",

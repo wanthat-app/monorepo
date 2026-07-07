@@ -538,10 +538,7 @@ function IntegrationsCard({ token }: { token: string | null }) {
           : t("admin.integrations.notConfigured");
 
   return (
-    <SectionCard
-      title={t("admin.integrations.title")}
-      description={t("admin.integrations.desc")}
-    >
+    <SectionCard title={t("admin.integrations.title")} description={t("admin.integrations.desc")}>
       <div className="flex flex-col gap-3 border-t border-[#eef2f0] py-5">
         <div>
           <div className="text-sm font-semibold text-ink">
