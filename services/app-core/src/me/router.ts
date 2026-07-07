@@ -7,18 +7,8 @@ import {
 import { findByCognitoSub, updateProfile } from "@wanthat/db";
 import type { Context } from "hono";
 import { Hono } from "hono";
-import type { LambdaEvent } from "hono/aws-lambda";
+import { type Bindings, subFromClaims } from "../claims";
 import { getContext } from "../context";
-
-type Bindings = { event: LambdaEvent };
-
-/** Pull the Cognito `sub` from the API Gateway JWT authorizer claims (HTTP API v2 shape). */
-function subFromClaims(c: Context<{ Bindings: Bindings }>): string | undefined {
-  // biome-ignore lint/suspicious/noExplicitAny: the authorizer claim shape varies by event type
-  const claims = (c.env?.event as any)?.requestContext?.authorizer?.jwt?.claims;
-  const sub = claims?.sub;
-  return typeof sub === "string" ? sub : undefined;
-}
 
 async function parseBody<T>(
   c: Context<{ Bindings: Bindings }>,
