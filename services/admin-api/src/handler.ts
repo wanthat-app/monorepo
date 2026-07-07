@@ -2,19 +2,26 @@
  * Admin API (ADR-0002, ADR-0020) — a separate in-VPC Lambda with its own role/exposure, behind its
  * own HTTP API + JWT authorizer (every route gated; no public probe). HTTP routing via Hono.
  *
- * Owns the runtime-config panel (the sole CONFIG writer) and read-only operational stats. Reads
- * Aurora as `app_ro`. Admin-group membership is re-checked in-handler (defence in depth).
+ * Owns the runtime-config panel (the sole CONFIG writer), operational stats, and the users page
+ * (list/search + the guarded hard delete). Reaches Aurora as `admin_api` (0004): app_ro's read
+ * surface plus DELETE on customer only — money tables stay immutable. Admin-group membership is
+ * re-checked in-handler (defence in depth).
  */
 import {
   CONFIG_DEFAULTS,
   CONFIG_KEYS,
   type ConfigItem,
   ConfigKey,
+  DeleteUserResponse,
   GetConfigResponse,
   ListConfigResponse,
+  ListUsersQuery,
+  ListUsersResponse,
   PutConfigBody,
   PutConfigResponse,
+  Uuid,
 } from "@wanthat/contracts";
+import { deleteCustomer, hasWalletEntries, listCustomers } from "@wanthat/db";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { getContext } from "./context";
@@ -94,6 +101,34 @@ app.get("/admin/stats/overview", async (c) => {
 app.get("/admin/stats/users", async (c) =>
   c.json(await loadUsersStats(getContext().db, Date.now())),
 );
+
+// GET /admin/users — paged customer list, newest first; ?search= matches phone or email
+// (case-insensitive substring), ?page=&pageSize= for paging (1-based; pageSize capped at 100).
+app.get("/admin/users", async (c) => {
+  const query = ListUsersQuery.safeParse({
+    search: c.req.query("search"),
+    page: c.req.query("page"),
+    pageSize: c.req.query("pageSize"),
+  });
+  if (!query.success) return c.json({ error: "invalid_request" }, 400);
+  const { search, page, pageSize } = query.data;
+  const { users, total } = await listCustomers(getContext().db, { search, page, pageSize });
+  return c.json(ListUsersResponse.parse({ users, total, page, pageSize }));
+});
+
+// DELETE /admin/users/:id — hard delete, guarded: refused while any wallet_entry references the
+// customer (the append-only ledger is never orphaned; the FK enforces the same at the DB layer).
+// Returns the phone so the SPA can run the Cognito cleanup step (admin-credentials, non-VPC —
+// this in-VPC function cannot reach cognito-idp; ADR-0004).
+app.delete("/admin/users/:id", async (c) => {
+  const id = Uuid.safeParse(c.req.param("id"));
+  if (!id.success) return c.json({ error: "invalid_request" }, 400);
+  const { db } = getContext();
+  if (await hasWalletEntries(db, id.data)) return c.json({ error: "has_wallet_history" }, 409);
+  const deleted = await deleteCustomer(db, id.data);
+  if (!deleted) return c.json({ error: "not_found" }, 404);
+  return c.json(DeleteUserResponse.parse({ deleted: true, id: id.data, phone: deleted.phone }));
+});
 
 app.get("/admin/health", (c) => c.json({ ok: true }));
 

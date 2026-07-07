@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { ctx } = vi.hoisted(() => ({
   ctx: {
     retailerSecret: { put: vi.fn(), status: vi.fn() },
+    cognitoUsers: { remove: vi.fn() },
   },
 }));
 vi.mock("./context", () => ({ getContext: () => ctx }));
@@ -111,5 +112,60 @@ describe("retailer credentials routes", () => {
     );
     expect(res.status).toBe(400);
     expect(ctx.retailerSecret.put).not.toHaveBeenCalled();
+  });
+});
+
+describe("cognito user delete", () => {
+  it("403s a non-admin", async () => {
+    const res = await app.request(
+      "/admin/users/cognito-delete",
+      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
+      memberEnv,
+    );
+    expect(res.status).toBe(403);
+  });
+
+  it("removes the account and reports it existed", async () => {
+    ctx.cognitoUsers.remove.mockResolvedValue(true);
+    const res = await app.request(
+      "/admin/users/cognito-delete",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "+972501234567" }),
+      },
+      adminEnv,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, existed: true });
+    expect(ctx.cognitoUsers.remove).toHaveBeenCalledWith("+972501234567");
+  });
+
+  it("treats an already-deleted account as success (idempotent retry)", async () => {
+    ctx.cognitoUsers.remove.mockResolvedValue(false);
+    const res = await app.request(
+      "/admin/users/cognito-delete",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "+972501234567" }),
+      },
+      adminEnv,
+    );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true, existed: false });
+  });
+
+  it("400s a malformed phone", async () => {
+    const res = await app.request(
+      "/admin/users/cognito-delete",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ phone: "0501234567" }),
+      },
+      adminEnv,
+    );
+    expect(res.status).toBe(400);
   });
 });

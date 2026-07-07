@@ -84,6 +84,8 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   // pool above. A customer token therefore can't reach /admin.
   employeePool: identity.employeePool,
   employeePoolClient: identity.employeePoolClient,
+  // Customer pool: the users page deletes member accounts (non-VPC credentials fn only).
+  customerPool: identity.userPool,
   runtimeConfigTable: data.runtimeConfigTable,
   recommendationTable: data.recommendationTable,
   // Write-only credential drop (PutSecretValue + DescribeSecret; never read) — see AdminStack.

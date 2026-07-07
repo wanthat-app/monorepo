@@ -17,6 +17,7 @@ import {
 import { identityFromIdToken } from "../../lib/jwt";
 import { Button, RangeSlider, Segmented, Spinner, Switch } from "../../ui/components";
 import { AdminLayout, type AdminView } from "./AdminLayout";
+import { UsersView } from "./UsersView";
 
 /**
  * Admin console (Wanthat Admin). A sidebar + topbar shell over two views: a Dashboard (the live users
@@ -64,20 +65,26 @@ export function AdminPage() {
   };
 
   const identity = identityFromIdToken(tokens.idToken);
-  const isDashboard = view === "dashboard";
+  const heading: Record<AdminView, { title: string; subtitle: string }> = {
+    dashboard: { title: t("admin.dashboard"), subtitle: t("admin.dashboardSub") },
+    users: { title: t("admin.usersNav"), subtitle: t("admin.usersSub") },
+    config: { title: t("admin.configuration"), subtitle: t("admin.configSub") },
+  };
 
   return (
     <AdminLayout
       view={view}
       onNavigate={setView}
-      title={isDashboard ? t("admin.dashboard") : t("admin.configuration")}
-      subtitle={isDashboard ? t("admin.dashboardSub") : t("admin.configSub")}
-      showSearch={isDashboard}
+      title={heading[view].title}
+      subtitle={heading[view].subtitle}
+      showSearch={view === "dashboard"}
       user={{ name: identity.name ?? identity.email ?? t("admin.you"), role: t("admin.role") }}
       onSignOut={signOut}
     >
-      {isDashboard ? (
+      {view === "dashboard" ? (
         <DashboardView token={tokens.accessToken} />
+      ) : view === "users" ? (
+        <UsersView token={tokens.accessToken} />
       ) : (
         <ConfigView token={tokens.accessToken} />
       )}
