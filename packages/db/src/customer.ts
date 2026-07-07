@@ -85,25 +85,42 @@ export interface NewCustomer {
 /**
  * Insert a customer at registration. Idempotent under retries: `ON CONFLICT (cognito_sub) DO NOTHING`
  * means a duplicate `/auth/register` returns the existing row rather than erroring (ADR-0020).
+ * A genuine insert also appends the `user_registered` audit row (0005) in the same transaction —
+ * registration is the beginning of the customer's wallet, so it is an audited event; the
+ * idempotent re-register path appends nothing, exactly as it inserts nothing.
  */
 export async function insertCustomer(
   db: Kysely<Database>,
   input: NewCustomer,
 ): Promise<CustomerProfile> {
-  const inserted = await db
-    .insertInto("customer")
-    .values({
-      phone_e164: input.phone,
-      email: input.email ?? null,
-      first_name: input.firstName,
-      last_name: input.lastName,
-      locale: input.locale,
-      status: "active",
-      cognito_sub: input.cognitoSub,
-    })
-    .onConflict((oc) => oc.column("cognito_sub").doNothing())
-    .returning(COLUMNS)
-    .executeTakeFirst();
+  const inserted = await db.transaction().execute(async (trx) => {
+    const row = await trx
+      .insertInto("customer")
+      .values({
+        phone_e164: input.phone,
+        email: input.email ?? null,
+        first_name: input.firstName,
+        last_name: input.lastName,
+        locale: input.locale,
+        status: "active",
+        cognito_sub: input.cognitoSub,
+      })
+      .onConflict((oc) => oc.column("cognito_sub").doNothing())
+      .returning(COLUMNS)
+      .executeTakeFirst();
+    if (row) {
+      const payload = JSON.stringify({
+        type: "user_registered",
+        customerId: row.id,
+        phone: input.phone,
+        firstName: input.firstName,
+        lastName: input.lastName,
+        email: input.email ?? null,
+      });
+      await sql`SELECT audit_append(${payload}::jsonb)`.execute(trx);
+    }
+    return row;
+  });
 
   if (inserted) return toProfile(inserted as CustomerRow);
   // Conflict: the row already exists for this sub — return it.
@@ -200,16 +217,18 @@ export type AdminDeleteOutcome = "deleted" | "not_found" | "has_wallet_history";
 
 /**
  * Guarded hard delete for the admin users page, via the `admin_delete_customer` SECURITY DEFINER
- * function (0004): the wallet-history guard and the delete run atomically with the table owner's
- * rights, so app_ro stays read-only at the table level. Returns the deleted row's phone (for the
- * follow-up Cognito cleanup) on success.
+ * function (0005): the wallet-history guard, the delete, and the `user_deleted` audit append run
+ * atomically with the table owner's rights, so app_ro stays read-only at the table level.
+ * `actor` (the acting admin's email/username from the JWT) lands in the audit payload. Returns
+ * the deleted row's phone (for the follow-up Cognito cleanup) on success.
  */
 export async function adminDeleteCustomer(
   db: Kysely<Database>,
   customerId: string,
+  actor: string,
 ): Promise<{ outcome: AdminDeleteOutcome; phone?: string }> {
   const { rows } = await sql<{ outcome: AdminDeleteOutcome; phone: string | null }>`
-    SELECT outcome, phone FROM admin_delete_customer(${customerId}::uuid)
+    SELECT outcome, phone FROM admin_delete_customer(${customerId}::uuid, ${actor})
   `.execute(db);
   const row = rows[0];
   if (!row) throw new Error("admin_delete_customer returned no row");
