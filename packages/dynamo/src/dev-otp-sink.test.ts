@@ -21,4 +21,12 @@ describe("DevOtpSinkRepo", () => {
     send.mockResolvedValue({});
     expect(await repo.get("+972000000000")).toBeUndefined();
   });
+
+  it("scanAll returns every parked item", async () => {
+    const send = vi.fn().mockResolvedValue({ Items: [item] });
+    const repo = new DevOtpSinkRepo({ send } as never, "sink");
+    const items = await repo.scanAll();
+    expect(send.mock.calls[0]?.[0]?.input).toMatchObject({ TableName: "sink" });
+    expect(items).toEqual([expect.objectContaining({ phone: "+972541234567" })]);
+  });
 });

@@ -4,6 +4,7 @@ import type {
   ConfigValue,
   DeleteUserResponse,
   GetConfigResponse,
+  ListActivityResponse,
   ListConfigResponse,
   ListUsersResponse,
   PutConfigResponse,
@@ -67,6 +68,14 @@ export const adminApi = {
     }),
   statsOverview: (token: string) => adminRequest<StatsOverview>("/admin/stats/overview", token),
   usersStats: (token: string) => adminRequest<UsersStats>("/admin/stats/users", token),
+  // Activity page: paged audit-log feed (+ dev OTP codes merged server-side on page 1 in dev).
+  listActivity: (token: string, opts: { page?: number; pageSize?: number } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.page) params.set("page", String(opts.page));
+    if (opts.pageSize) params.set("pageSize", String(opts.pageSize));
+    const qs = params.toString();
+    return adminRequest<ListActivityResponse>(`/admin/activity${qs ? `?${qs}` : ""}`, token);
+  },
   // Users page: paged list/search (admin-api), guarded hard delete (admin-api), then the Cognito
   // account cleanup (admin-credentials, non-VPC) - the SPA orchestrates the two delete steps.
   listUsers: (token: string, opts: { search?: string; page?: number; pageSize?: number } = {}) => {

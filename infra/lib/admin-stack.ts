@@ -37,6 +37,10 @@ export interface AdminStackProps extends StackProps {
   readonly customerPool: cognito.IUserPool;
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
+  // Dev OTP sink (docs/dev-otp-sink.md) - the activity page lists parked codes in dev. Absent in
+  // prod by design (the table is not provisioned there), so prod gets no env var and no grant:
+  // the otp_sent feed item type structurally cannot appear in prod.
+  readonly devOtpSinkTable?: dynamodb.ITable;
   // Retailer credential secret — admin-api may WRITE it (credential drop from the admin panel)
   // but never read it; retailer-proxy stays the sole reader (see the inline policy below).
   readonly retailerSecret: secretsmanager.ISecret;
@@ -84,6 +88,7 @@ export class AdminStack extends Stack {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
+        ...(props.devOtpSinkTable ? { DEV_OTP_SINK_TABLE: props.devOtpSinkTable.tableName } : {}),
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_ro",
@@ -102,6 +107,8 @@ export class AdminStack extends Stack {
     props.cluster.grantConnect(fn, "app_ro");
     props.runtimeConfigTable.grantReadWriteData(fn);
     props.recommendationTable.grantReadData(fn);
+    // Dev-only: the activity feed scans the parked OTP codes (read-only; table absent in prod).
+    props.devOtpSinkTable?.grantReadData(fn);
 
     // The retailer-credential drop runs as a separate NON-VPC function: Secrets Manager is only
     // reachable over its public endpoint, and the VPC is deliberately endpoint-free (ADR-0004;

@@ -1,4 +1,10 @@
 export {
+  type AuditLogEntry,
+  type AuditLogPage,
+  type ListAuditLogInput,
+  listAuditLog,
+} from "./activity";
+export {
   type AdminDeleteOutcome,
   adminDeleteCustomer,
   type CustomerPage,
