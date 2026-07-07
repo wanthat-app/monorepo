@@ -11,8 +11,7 @@ vi.mock("./context", () => ({ getContext: () => ctx }));
 const { dbFns } = vi.hoisted(() => ({
   dbFns: {
     listCustomers: vi.fn(),
-    hasWalletEntries: vi.fn(),
-    deleteCustomer: vi.fn(),
+    adminDeleteCustomer: vi.fn(),
   },
 }));
 vi.mock("@wanthat/db", () => dbFns);
@@ -111,24 +110,22 @@ describe("admin users", () => {
   });
 
   it("refuses to delete a user with wallet history", async () => {
-    dbFns.hasWalletEntries.mockResolvedValue(true);
+    dbFns.adminDeleteCustomer.mockResolvedValue({ outcome: "has_wallet_history" });
     const res = await app.request(`/admin/users/${USER.id}`, { method: "DELETE" }, adminEnv);
     expect(res.status).toBe(409);
     expect(((await res.json()) as { error: string }).error).toBe("has_wallet_history");
-    expect(dbFns.deleteCustomer).not.toHaveBeenCalled();
   });
 
   it("deletes a clean user and returns the phone for Cognito cleanup", async () => {
-    dbFns.hasWalletEntries.mockResolvedValue(false);
-    dbFns.deleteCustomer.mockResolvedValue({ phone: USER.phone });
+    dbFns.adminDeleteCustomer.mockResolvedValue({ outcome: "deleted", phone: USER.phone });
     const res = await app.request(`/admin/users/${USER.id}`, { method: "DELETE" }, adminEnv);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ deleted: true, id: USER.id, phone: USER.phone });
+    expect(dbFns.adminDeleteCustomer).toHaveBeenCalledWith(expect.anything(), USER.id);
   });
 
   it("404s a delete for an unknown id", async () => {
-    dbFns.hasWalletEntries.mockResolvedValue(false);
-    dbFns.deleteCustomer.mockResolvedValue(undefined);
+    dbFns.adminDeleteCustomer.mockResolvedValue({ outcome: "not_found" });
     const res = await app.request(`/admin/users/${USER.id}`, { method: "DELETE" }, adminEnv);
     expect(res.status).toBe(404);
   });

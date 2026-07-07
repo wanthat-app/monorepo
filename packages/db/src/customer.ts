@@ -1,5 +1,5 @@
 import { CustomerProfile } from "@wanthat/contracts";
-import type { Kysely } from "kysely";
+import { type Kysely, sql } from "kysely";
 import type { Database } from "./schema";
 
 /**
@@ -196,30 +196,22 @@ export async function listCustomers(
   };
 }
 
-/** True while any money-ledger row references the customer (the admin delete guard). */
-export async function hasWalletEntries(db: Kysely<Database>, customerId: string): Promise<boolean> {
-  const row = await db
-    .selectFrom("wallet_entry")
-    .select("id")
-    .where("customer_id", "=", customerId)
-    .limit(1)
-    .executeTakeFirst();
-  return row !== undefined;
-}
+export type AdminDeleteOutcome = "deleted" | "not_found" | "has_wallet_history";
 
 /**
- * Hard-delete a customer row (admin console). Returns the deleted row's phone (for the follow-up
- * Cognito cleanup) or undefined when no row matched. Callers must run the wallet-history guard
- * first; the wallet_entry FK also refuses the delete outright if a ledger row exists.
+ * Guarded hard delete for the admin users page, via the `admin_delete_customer` SECURITY DEFINER
+ * function (0004): the wallet-history guard and the delete run atomically with the table owner's
+ * rights, so app_ro stays read-only at the table level. Returns the deleted row's phone (for the
+ * follow-up Cognito cleanup) on success.
  */
-export async function deleteCustomer(
+export async function adminDeleteCustomer(
   db: Kysely<Database>,
   customerId: string,
-): Promise<{ phone: string } | undefined> {
-  const deleted = await db
-    .deleteFrom("customer")
-    .where("id", "=", customerId)
-    .returning(["phone_e164"])
-    .executeTakeFirst();
-  return deleted ? { phone: deleted.phone_e164 } : undefined;
+): Promise<{ outcome: AdminDeleteOutcome; phone?: string }> {
+  const { rows } = await sql<{ outcome: AdminDeleteOutcome; phone: string | null }>`
+    SELECT outcome, phone FROM admin_delete_customer(${customerId}::uuid)
+  `.execute(db);
+  const row = rows[0];
+  if (!row) throw new Error("admin_delete_customer returned no row");
+  return { outcome: row.outcome, ...(row.phone ? { phone: row.phone } : {}) };
 }

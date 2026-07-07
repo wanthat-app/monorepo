@@ -48,9 +48,10 @@ export interface AdminStackProps extends StackProps {
 /**
  * AdminStack — the admin API as a separate in-VPC Lambda with its own role and exposure (ADR-0002,
  * ADR-0020). Behind its own HTTP API + JWT authorizer; the admin-group check is re-enforced
- * in-handler. Reaches Aurora as `admin_api` (0004: app_ro's read surface + DELETE on customer for
- * the users page; money tables stay immutable) and writes the runtime `config` table (the admin
- * panel). `/healthz` is the only unauthenticated route (deploy probe).
+ * in-handler. Reaches Aurora as `app_ro`; the users page's guarded hard delete goes through the
+ * admin_delete_customer SECURITY DEFINER function (0004) - the one mutation exposed to app_ro,
+ * with tables staying read-only. Writes the runtime `config` table (the admin panel). `/healthz`
+ * is the only unauthenticated route (deploy probe).
  */
 export class AdminStack extends Stack {
   readonly httpApi: HttpApi;
@@ -85,7 +86,7 @@ export class AdminStack extends Stack {
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
-        DB_USER: "admin_api",
+        DB_USER: "app_ro",
         // Trust the Amazon RDS CA so the in-VPC TLS connection to Aurora verifies (ADR-0020) — the
         // same setup app-core/app-auth use. Without it pg throws "unable to get local issuer
         // certificate" and every DB-backed admin route (stats) fails. Pairs with rdsCaBundling below.
@@ -96,8 +97,9 @@ export class AdminStack extends Stack {
     });
     this.adminApiFn = fn;
 
-    // Aurora as admin_api (ADR-0002 least-privilege; 0004) + the config table it writes.
-    props.cluster.grantConnect(fn, "admin_api");
+    // Read-only Aurora as app_ro (ADR-0002; mutations only via the 0004 SECURITY DEFINER
+    // function) + the config table it writes.
+    props.cluster.grantConnect(fn, "app_ro");
     props.runtimeConfigTable.grantReadWriteData(fn);
     props.recommendationTable.grantReadData(fn);
 
