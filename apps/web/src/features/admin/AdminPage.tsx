@@ -549,7 +549,13 @@ function IntegrationsCard({ token }: { token: string | null }) {
           </div>
           <div className="mt-1.5 text-[12.5px] font-semibold text-subtle">{statusLine}</div>
         </div>
-        <div className="flex flex-col gap-2.5 sm:flex-row sm:items-center">
+        <form
+          className="flex flex-col gap-2.5 sm:flex-row sm:items-center"
+          onSubmit={(e) => {
+            e.preventDefault();
+            void save();
+          }}
+        >
           <SecretInput
             label={t("admin.integrations.appKey")}
             value={appKey}
@@ -567,11 +573,11 @@ function IntegrationsCard({ token }: { token: string | null }) {
             }}
           />
           <div className="sm:w-[180px] sm:flex-shrink-0">
-            <Button onClick={save} disabled={!canSave} loading={state === "saving"}>
+            <Button type="submit" disabled={!canSave} loading={state === "saving"}>
               {t("admin.integrations.save")}
             </Button>
           </div>
-        </div>
+        </form>
         {state === "saved" ? (
           <div className="text-[12.5px] font-semibold text-accent">
             {t("admin.integrations.saved")}

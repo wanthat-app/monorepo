@@ -88,12 +88,8 @@ app.put("/admin/retailer/aliexpress/credentials", async (c) => {
     return c.json({ error: "invalid_request", fields }, 400);
   }
   await getContext().retailerSecret.put(body.data);
-  return c.json(
-    RetailerCredentialsStatus.parse({
-      configured: true,
-      lastUpdatedAt: new Date().toISOString(),
-    }),
-  );
+  // Re-describe rather than fabricating a timestamp, so PUT and GET report the same clock.
+  return c.json(RetailerCredentialsStatus.parse(await getContext().retailerSecret.status()));
 });
 
 // GET /admin/stats/overview — the live users count is real (Aurora COUNT); the rest are placeholders

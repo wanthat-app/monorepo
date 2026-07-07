@@ -44,8 +44,12 @@ describe("retailer credentials routes", () => {
     });
   });
 
-  it("PUT stores trimmed credentials and answers with status only — no echo", async () => {
+  it("PUT stores trimmed credentials and answers with the secret's status only — no echo", async () => {
     ctx.retailerSecret.put.mockResolvedValue(undefined);
+    ctx.retailerSecret.status.mockResolvedValue({
+      configured: true,
+      lastUpdatedAt: "2026-07-07T10:00:00.000Z",
+    });
     const res = await app.request(
       PATH,
       {
@@ -64,8 +68,24 @@ describe("retailer credentials routes", () => {
     expect(text).not.toContain("512345");
     expect(text).not.toContain("topsecret");
     const body = JSON.parse(text) as Record<string, unknown>;
-    expect(Object.keys(body).sort()).toEqual(["configured", "lastUpdatedAt"]);
-    expect(body.configured).toBe(true);
+    expect(body).toEqual({ configured: true, lastUpdatedAt: "2026-07-07T10:00:00.000Z" });
+  });
+
+  it("PUT answers a generic 500 without the submitted values when Secrets Manager fails", async () => {
+    ctx.retailerSecret.put.mockRejectedValue(new Error("sm down"));
+    const res = await app.request(
+      PATH,
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ appKey: "512345", appSecret: "topsecret" }),
+      },
+      adminEnv,
+    );
+    expect(res.status).toBe(500);
+    const text = await res.text();
+    expect(text).not.toContain("512345");
+    expect(text).not.toContain("topsecret");
   });
 
   it("PUT rejects a missing/blank field naming the field, not its content", async () => {
