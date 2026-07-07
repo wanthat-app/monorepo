@@ -45,6 +45,24 @@ describe("api client", () => {
     expect(call[1].body).toBeUndefined();
   });
 
+  it("GETs the member's passkey list with the Bearer token", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ passkeys: [] }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await authApi.passkeyList("tok-123");
+    expect(res.passkeys).toEqual([]);
+    const call = fetchMock.mock.calls[0] as [
+      string,
+      { method?: string; headers: Record<string, string> },
+    ];
+    expect(call[0]).toContain("/auth/passkey/list");
+    expect(call[1].method ?? "GET").toBe("GET");
+    expect(call[1].headers.authorization).toBe("Bearer tok-123");
+  });
+
   it("throws ApiError carrying the server error code", async () => {
     vi.stubGlobal(
       "fetch",

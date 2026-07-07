@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { type WalletEntryWire, walletApi } from "../../lib/api";
+import { authApi, type WalletEntryWire, walletApi } from "../../lib/api";
 import { formatMoneyMinor, splitMoneyMinor } from "../../lib/money";
 import { enrollPasskey, passkeysSupported } from "../../lib/passkey";
 import { useSession } from "../../lib/session";
@@ -34,7 +34,9 @@ const FACE_ICON = (
  * Member home — the wallet dashboard (design handoff: Wallet flow, Home). Balance + activity come
  * from the wallet endpoints (stubbed empty until the poller slice writes the ledger). Create link,
  * Activity, Profile, See all and Withdraw are visible per the design but inert this slice; the
- * Face ID prompt card is live. Sign-out stays reachable via the avatar menu meanwhile.
+ * Face ID prompt card is live — shown only to members with no enrolled passkey (server truth via
+ * GET /auth/passkey/list; hidden while unknown so the enrolled majority never sees a flash).
+ * Sign-out stays reachable via the avatar menu meanwhile.
  */
 export function HomePage() {
   const { t, i18n } = useTranslation();
@@ -53,6 +55,11 @@ export function HomePage() {
     queryKey: ["wallet-entries", customer?.id, RECENT_LIMIT],
     queryFn: () => walletApi.entries(token as string, RECENT_LIMIT),
     enabled: !!token && !!customer,
+  });
+  const passkeys = useQuery({
+    queryKey: ["passkeys", customer?.id],
+    queryFn: () => authApi.passkeyList(token as string),
+    enabled: !!token && !!customer && passkeysSupported(),
   });
 
   if (!customer) {
@@ -156,7 +163,10 @@ export function HomePage() {
           />
         )}
 
-        {passkeysSupported() && passkeyState !== "done" && (
+        {/* Only members who have NOT enrolled a passkey yet see the prompt. `length === 0` is the
+            deliberate gate: while the list is loading (or failed) it is undefined, so enrolled
+            members never see the card flash and an outage stays quiet rather than nagging. */}
+        {passkeysSupported() && passkeyState !== "done" && passkeys.data?.passkeys.length === 0 && (
           <PromptCard
             icon={FACE_ICON}
             title={t("home.setupFaceId")}

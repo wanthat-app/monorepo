@@ -310,10 +310,12 @@ export class ApiStack extends Stack {
       this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: coreIntegration });
     }
 
-    // Passkey enrolment -> app-auth, behind the JWT authorizer (the access token is a valid pool JWT).
+    // Passkey enrolment (POST) + the member's passkey list (GET /auth/passkey/list) -> app-auth,
+    // behind the JWT authorizer (the access token is a valid pool JWT). The public login GET above
+    // is a static route, so it keeps precedence over this proxy.
     this.httpApi.addRoutes({
       path: "/auth/passkey/{proxy+}",
-      methods: [HttpMethod.POST],
+      methods: [HttpMethod.POST, HttpMethod.GET],
       integration: authIntegration,
       authorizer,
     });
