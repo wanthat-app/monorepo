@@ -49,7 +49,9 @@ describe("auditEntryToItem", () => {
   });
 
   it("tolerates unknown types and non-object payloads", () => {
-    expect(auditEntryToItem({ id: "1", createdAt: AT, payload: { type: "fx_rate_written" } })).toEqual({
+    expect(
+      auditEntryToItem({ id: "1", createdAt: AT, payload: { type: "fx_rate_written" } }),
+    ).toEqual({
       id: "audit_1",
       type: "fx_rate_written",
       at: AT.toISOString(),

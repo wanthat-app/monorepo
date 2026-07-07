@@ -88,9 +88,7 @@ export class AdminStack extends Stack {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
-        ...(props.devOtpSinkTable
-          ? { DEV_OTP_SINK_TABLE: props.devOtpSinkTable.tableName }
-          : {}),
+        ...(props.devOtpSinkTable ? { DEV_OTP_SINK_TABLE: props.devOtpSinkTable.tableName } : {}),
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_ro",

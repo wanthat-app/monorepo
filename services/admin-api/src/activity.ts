@@ -14,9 +14,10 @@ function str(v: unknown): string | undefined {
 
 /** audit_log row -> feed item. Known payload keys are lifted; anything else just keeps `type`. */
 export function auditEntryToItem(entry: AuditLogEntry): ActivityItem {
-  const p = (
-    entry.payload && typeof entry.payload === "object" ? entry.payload : {}
-  ) as Record<string, unknown>;
+  const p = (entry.payload && typeof entry.payload === "object" ? entry.payload : {}) as Record<
+    string,
+    unknown
+  >;
   const first = str(p.firstName);
   const last = str(p.lastName);
   const name = first || last ? [first, last].filter(Boolean).join(" ") : undefined;
