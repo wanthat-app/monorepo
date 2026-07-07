@@ -1,4 +1,9 @@
-import { type DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  type DynamoDBDocumentClient,
+  GetCommand,
+  PutCommand,
+  ScanCommand,
+} from "@aws-sdk/lib-dynamodb";
 import type { OtpChannel } from "@wanthat/contracts";
 
 /**
@@ -31,5 +36,15 @@ export class DevOtpSinkRepo {
   async get(phone: string): Promise<DevOtpSinkItem | undefined> {
     const res = await this.doc.send(new GetCommand({ TableName: this.tableName, Key: { phone } }));
     return res.Item as DevOtpSinkItem | undefined;
+  }
+
+  /**
+   * Every parked item — the admin activity feed (dev only) lists current codes. The sink holds
+   * at most one 5-minute-TTL item per phone, so a single unpaginated scan is plenty; TTL
+   * deletion lags are filtered by the caller (Dynamo TTL is best-effort).
+   */
+  async scanAll(): Promise<DevOtpSinkItem[]> {
+    const res = await this.doc.send(new ScanCommand({ TableName: this.tableName }));
+    return (res.Items ?? []) as DevOtpSinkItem[];
   }
 }
