@@ -4,7 +4,13 @@ import { TabBar } from "../wallet";
 const meta: Meta<typeof TabBar> = {
   title: "Wallet/TabBar",
   component: TabBar,
-  decorators: [(S) => <div className="w-[390px] rounded-b-card bg-page pt-6"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[390px] rounded-b-card bg-page pt-6">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof TabBar>;

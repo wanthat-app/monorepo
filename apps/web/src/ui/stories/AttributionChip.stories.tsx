@@ -4,7 +4,13 @@ import { AttributionChip, RecommendationQuote } from "../wallet";
 const meta: Meta<typeof AttributionChip> = {
   title: "Wallet/AttributionChip",
   component: AttributionChip,
-  decorators: [(S) => <div className="w-[380px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[380px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof AttributionChip>;

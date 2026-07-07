@@ -1,12 +1,18 @@
-import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react";
+import { useState } from "react";
 import { Segmented } from "../components";
 
 const meta: Meta<typeof Segmented> = { title: "Shared/Segmented", component: Segmented };
 export default meta;
 type Story = StoryObj<typeof Segmented>;
 
-function Demo({ options, initial }: { options: { value: string; label: string }[]; initial: string }) {
+function Demo({
+  options,
+  initial,
+}: {
+  options: { value: string; label: string }[];
+  initial: string;
+}) {
   const [value, setValue] = useState(initial);
   return <Segmented options={options} value={value} onChange={setValue} />;
 }

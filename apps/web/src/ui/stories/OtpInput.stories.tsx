@@ -4,7 +4,13 @@ import { OtpInput } from "../components";
 const meta: Meta<typeof OtpInput> = {
   title: "Shared/OtpInput",
   component: OtpInput,
-  decorators: [(S) => <div className="w-[360px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[360px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof OtpInput>;
@@ -14,7 +20,12 @@ export const Empty: Story = {
 };
 
 export const Filled: Story = {
-  args: { name: "otp-filled", label: "Enter the code we sent", value: "482913", onChange: () => {} },
+  args: {
+    name: "otp-filled",
+    label: "Enter the code we sent",
+    value: "482913",
+    onChange: () => {},
+  },
 };
 
 export const WithError: Story = {

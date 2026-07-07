@@ -4,7 +4,9 @@ import { Chip } from "../components";
 const meta: Meta<typeof Chip> = {
   title: "Shared/Chip",
   component: Chip,
-  argTypes: { tone: { control: "select", options: ["accent", "mint", "onink", "neutral", "base"] } },
+  argTypes: {
+    tone: { control: "select", options: ["accent", "mint", "onink", "neutral", "base"] },
+  },
 };
 export default meta;
 type Story = StoryObj<typeof Chip>;

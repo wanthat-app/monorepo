@@ -4,7 +4,9 @@ import { StatusBadge } from "../components";
 const meta: Meta<typeof StatusBadge> = {
   title: "Shared/StatusBadge",
   component: StatusBadge,
-  argTypes: { status: { control: "select", options: ["confirmed", "pending", "rejected", "neutral"] } },
+  argTypes: {
+    status: { control: "select", options: ["confirmed", "pending", "rejected", "neutral"] },
+  },
 };
 export default meta;
 type Story = StoryObj<typeof StatusBadge>;

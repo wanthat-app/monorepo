@@ -4,7 +4,13 @@ import { InviteCard } from "../wallet";
 const meta: Meta<typeof InviteCard> = {
   title: "Wallet/InviteCard",
   component: InviteCard,
-  decorators: [(S) => <div className="w-[420px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[420px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof InviteCard>;

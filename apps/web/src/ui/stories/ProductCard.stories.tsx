@@ -1,11 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { ProductCard } from "../wallet";
 import feeder from "../assets/product-feeder.jpg";
+import { ProductCard } from "../wallet";
 
 const meta: Meta<typeof ProductCard> = {
   title: "Wallet/ProductCard",
   component: ProductCard,
-  decorators: [(S) => <div className="w-[400px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[400px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof ProductCard>;

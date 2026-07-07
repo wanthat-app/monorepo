@@ -4,7 +4,13 @@ import { RecommendationQuote } from "../wallet";
 const meta: Meta<typeof RecommendationQuote> = {
   title: "Wallet/RecommendationQuote",
   component: RecommendationQuote,
-  decorators: [(S) => <div className="w-[380px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[380px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof RecommendationQuote>;

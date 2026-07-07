@@ -1,12 +1,18 @@
 import type { Meta, StoryObj } from "@storybook/react";
 import { ApprovalRow, MerchantStatusChip } from "../admin";
-import { Avatar } from "../wallet";
 import feeder from "../assets/product-feeder.jpg";
+import { Avatar } from "../wallet";
 
 const meta: Meta<typeof ApprovalRow> = {
   title: "Admin/ApprovalRow",
   component: ApprovalRow,
-  decorators: [(S) => <div className="w-[640px] rounded-card border border-line bg-surface"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[640px] rounded-card border border-line bg-surface">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof ApprovalRow>;

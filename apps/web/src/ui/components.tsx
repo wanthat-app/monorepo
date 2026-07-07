@@ -28,9 +28,16 @@ export function Button({ variant = "primary", loading, children, disabled, ...re
     "inline-flex h-12 w-full items-center justify-center gap-2 px-5 font-display font-semibold transition disabled:cursor-not-allowed";
   const off = loading || disabled;
   // The mock's disabled/loading state is soft-green with evergreen text — never a faded variant.
-  const skin = off && variant !== "ghost" ? "rounded-button bg-accent-soft text-accent" : BUTTON_VARIANTS[variant];
+  const skin =
+    off && variant !== "ghost"
+      ? "rounded-button bg-accent-soft text-accent"
+      : BUTTON_VARIANTS[variant];
   return (
-    <button className={`${base} ${skin} ${off && variant === "ghost" ? "opacity-60" : ""}`} disabled={off} {...rest}>
+    <button
+      className={`${base} ${skin} ${off && variant === "ghost" ? "opacity-60" : ""}`}
+      disabled={off}
+      {...rest}
+    >
       {loading ? (
         <>
           <Spinner />
@@ -84,7 +91,9 @@ const CHIP_TONES: Record<ChipTone, string> = {
 
 export function Chip({ tone = "neutral", children }: { tone?: ChipTone; children: ReactNode }) {
   return (
-    <span className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${CHIP_TONES[tone]}`}>
+    <span
+      className={`inline-flex items-center rounded-full px-2.5 py-1 text-[11px] font-semibold ${CHIP_TONES[tone]}`}
+    >
       {children}
     </span>
   );

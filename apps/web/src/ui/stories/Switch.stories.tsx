@@ -1,5 +1,5 @@
-import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react";
+import { useState } from "react";
 import { Switch } from "../components";
 
 const meta: Meta<typeof Switch> = { title: "Shared/Switch", component: Switch };
@@ -20,7 +20,13 @@ function Row({ title, sub, initial }: { title: string; sub: string; initial: boo
 }
 
 export const On: Story = {
-  render: () => <Row title="Auto-approve small cashbacks" sub="Events under the threshold skip the queue" initial />,
+  render: () => (
+    <Row
+      title="Auto-approve small cashbacks"
+      sub="Events under the threshold skip the queue"
+      initial
+    />
+  ),
 };
 
 export const Off: Story = {

@@ -1,11 +1,17 @@
 import type { Meta, StoryObj } from "@storybook/react";
-import { ActivityRow, Avatar } from "../wallet";
 import feeder from "../assets/product-feeder.jpg";
+import { ActivityRow, Avatar } from "../wallet";
 
 const meta: Meta<typeof ActivityRow> = {
   title: "Wallet/ActivityRow",
   component: ActivityRow,
-  decorators: [(S) => <div className="w-[420px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[420px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof ActivityRow>;

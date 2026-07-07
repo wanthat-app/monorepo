@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
-import { Chip, IconTile } from "./components";
 import { Logo } from "./brand";
+import { IconTile } from "./components";
 
 /**
  * Consumer (wallet) modules of the Wanthat Design System — the balance card, activity rows,
@@ -100,7 +100,7 @@ export function AttributionChip({ initial, children }: { initial: string; childr
 // to the attribution chip above it. Flips for RTL via logical properties.
 export function RecommendationQuote({ children }: { children: ReactNode }) {
   const quoteMark = (
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="#BCD3C7" stroke="none" aria-hidden>
+    <svg width="16" height="16" viewBox="0 0 24 24" fill="#BCD3C7" stroke="none" aria-hidden="true">
       <path d="M10 11H6.5a.5.5 0 0 1-.5-.5V9c0-1.6 1.1-2.7 2.7-3.2l.5 1.3C8.4 7.4 8 8 8 8.8h2a.5.5 0 0 1 .5.5V11zm8 0h-3.5a.5.5 0 0 1-.5-.5V9c0-1.6 1.1-2.7 2.7-3.2l.5 1.3c-.8.3-1.2.9-1.2 1.7h2a.5.5 0 0 1 .5.5V11z" />
     </svg>
   );
@@ -184,7 +184,10 @@ export function BalanceCard({
         <span className="text-[13px] font-medium text-onink-muted">{label}</span>
         {chip}
       </div>
-      <div className="tabular mb-3 font-display text-[46px] font-bold leading-none tracking-[-0.03em]" dir="ltr">
+      <div
+        className="tabular mb-3 font-display text-[46px] font-bold leading-none tracking-[-0.03em]"
+        dir="ltr"
+      >
         {approx ? <span className="text-2xl font-semibold text-onink-muted">≈</span> : null}
         {amount}
         {fraction ? <span className="text-[28px] text-onink-muted">{fraction}</span> : null}
@@ -192,11 +195,16 @@ export function BalanceCard({
       {holdings?.length ? (
         <div className="mb-3.5 flex flex-wrap items-center gap-1.5" dir="ltr">
           {holdings.map((h) => (
-            <span key={h} className="tabular rounded-full bg-white/10 px-2.5 py-1 text-[12.5px] font-semibold text-onink">
+            <span
+              key={h}
+              className="tabular rounded-full bg-white/10 px-2.5 py-1 text-[12.5px] font-semibold text-onink"
+            >
               {h}
             </span>
           ))}
-          {holdingsNote ? <span className="text-[11.5px] text-onink-faint">{holdingsNote}</span> : null}
+          {holdingsNote ? (
+            <span className="text-[11.5px] text-onink-faint">{holdingsNote}</span>
+          ) : null}
         </div>
       ) : null}
       {pendingNote ? (
@@ -257,11 +265,19 @@ export function ActivityRow({
           {statusLabel ? (
             <span className={`font-semibold ${ROW_STATUS_TEXT[status]}`}>{statusLabel}</span>
           ) : null}
-          {meta ? <span className="text-muted">{statusLabel ? " · " : ""}{meta}</span> : null}
+          {meta ? (
+            <span className="text-muted">
+              {statusLabel ? " · " : ""}
+              {meta}
+            </span>
+          ) : null}
         </span>
       </span>
       <span className="text-end">
-        <span className={`tabular block text-sm font-bold ${status === "neutral" ? "text-ink" : ROW_STATUS_TEXT[status]}`} dir="ltr">
+        <span
+          className={`tabular block text-sm font-bold ${status === "neutral" ? "text-ink" : ROW_STATUS_TEXT[status]}`}
+          dir="ltr"
+        >
           {amount}
         </span>
         {amountSub ? (
@@ -274,7 +290,11 @@ export function ActivityRow({
   );
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className="flex w-full items-center gap-3 px-0.5 py-3 text-start">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-3 px-0.5 py-3 text-start"
+      >
         {body}
       </button>
     );
@@ -291,7 +311,17 @@ const METHOD_TILES: Record<MethodBrand, { bg: string; fg: string; icon: ReactNod
     bg: "bg-bank-soft",
     fg: "text-bank",
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
         <path d="M3 9.5L12 4l9 5.5" />
         <path d="M5 10v9M19 10v9M9.5 10v9M14.5 10v9" />
         <path d="M3 21h18" />
@@ -302,20 +332,40 @@ const METHOD_TILES: Record<MethodBrand, { bg: string; fg: string; icon: ReactNod
     bg: "bg-cardpay-soft",
     fg: "text-cardpay",
     icon: (
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <svg
+        width="20"
+        height="20"
+        viewBox="0 0 24 24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
         <rect x="2" y="5" width="20" height="14" rx="2" />
         <path d="M2 10h20M6 15h4" />
       </svg>
     ),
   },
-  bit: { bg: "bg-bit-soft", fg: "text-bit", icon: <span className="text-[13px] font-extrabold">bit</span> },
-  paybox: { bg: "bg-paybox-soft", fg: "text-paybox", icon: <span className="text-[10px] font-extrabold">PayBox</span> },
+  bit: {
+    bg: "bg-bit-soft",
+    fg: "text-bit",
+    icon: <span className="text-[13px] font-extrabold">bit</span>,
+  },
+  paybox: {
+    bg: "bg-paybox-soft",
+    fg: "text-paybox",
+    icon: <span className="text-[10px] font-extrabold">PayBox</span>,
+  },
 };
 
 export function MethodTile({ brand }: { brand: MethodBrand }) {
   const t = METHOD_TILES[brand];
   return (
-    <span className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-tile ${t.bg} ${t.fg}`}>
+    <span
+      className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-tile ${t.bg} ${t.fg}`}
+    >
       {t.icon}
     </span>
   );
@@ -357,7 +407,17 @@ export function MethodRow({
         ) : null}
       </span>
       {selected ? (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1F7A57" strokeWidth="2.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+        <svg
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="#1F7A57"
+          strokeWidth="2.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          aria-hidden="true"
+        >
           <path d="M20 6L9 17l-5-5" />
         </svg>
       ) : null}
@@ -384,7 +444,9 @@ export function PromptCard({
       <IconTile tone="accent">{icon}</IconTile>
       <span className="min-w-0 flex-1">
         <span className="block text-sm font-bold text-ink">{title}</span>
-        {subtitle ? <span className="block text-xs leading-[1.35] text-accent-deep">{subtitle}</span> : null}
+        {subtitle ? (
+          <span className="block text-xs leading-[1.35] text-accent-deep">{subtitle}</span>
+        ) : null}
       </span>
       {actionLabel ? (
         <button
@@ -400,7 +462,15 @@ export function PromptCard({
 }
 
 // Icon-tile + title + sub — the value-prop rows on the logged-out landing.
-export function FeatureRow({ icon, title, subtitle }: { icon: ReactNode; title: string; subtitle?: string }) {
+export function FeatureRow({
+  icon,
+  title,
+  subtitle,
+}: {
+  icon: ReactNode;
+  title: string;
+  subtitle?: string;
+}) {
   return (
     <div className="flex items-center gap-3">
       <IconTile tone="soft">{icon}</IconTile>
@@ -434,7 +504,9 @@ export function PillTabs<T extends string>({
             aria-pressed={active}
             onClick={() => onChange(opt.value)}
             className={`shrink-0 rounded-full px-4 py-2 text-[13px] font-bold transition ${
-              active ? "bg-ink text-white" : "border border-edge bg-surface text-secondary hover:text-ink"
+              active
+                ? "bg-ink text-white"
+                : "border border-edge bg-surface text-secondary hover:text-ink"
             }`}
           >
             {opt.label}
@@ -470,12 +542,20 @@ export function SettingsRow({
   );
   if (onClick) {
     return (
-      <button type="button" onClick={onClick} className="flex w-full items-center gap-3 border-b border-hairrow p-4 last:border-b-0">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex w-full items-center gap-3 border-b border-hairrow p-4 last:border-b-0"
+      >
         {inner}
       </button>
     );
   }
-  return <div className="flex w-full items-center gap-3 border-b border-hairrow p-4 last:border-b-0">{inner}</div>;
+  return (
+    <div className="flex w-full items-center gap-3 border-b border-hairrow p-4 last:border-b-0">
+      {inner}
+    </div>
+  );
 }
 
 // Dark invite card (profile): referral code with a mint copy affordance.
@@ -495,7 +575,9 @@ export function InviteCard({
   return (
     <div className="rounded-card bg-ink p-5 text-onink">
       <div className="mb-1 text-sm font-bold">{title}</div>
-      {subtitle ? <div className="mb-3.5 text-[12.5px] leading-[1.45] text-onink-muted">{subtitle}</div> : null}
+      {subtitle ? (
+        <div className="mb-3.5 text-[12.5px] leading-[1.45] text-onink-muted">{subtitle}</div>
+      ) : null}
       <div className="flex items-center gap-2.5 rounded-thumb bg-white/[.07] p-1.5 ps-4" dir="ltr">
         <span className="tabular min-w-0 flex-1 truncate text-[15px] font-bold">{code}</span>
         <button
@@ -511,9 +593,20 @@ export function InviteCard({
 }
 
 // White share row for a created link: the short link + an ink copy button.
-export function ShareLinkRow({ link, copyLabel, onCopy }: { link: string; copyLabel: string; onCopy?: () => void }) {
+export function ShareLinkRow({
+  link,
+  copyLabel,
+  onCopy,
+}: {
+  link: string;
+  copyLabel: string;
+  onCopy?: () => void;
+}) {
   return (
-    <div className="flex items-center gap-2.5 rounded-field border border-line bg-surface p-1.5 ps-4" dir="ltr">
+    <div
+      className="flex items-center gap-2.5 rounded-field border border-line bg-surface p-1.5 ps-4"
+      dir="ltr"
+    >
       <span className="tabular min-w-0 flex-1 truncate text-sm font-semibold text-ink">{link}</span>
       <button
         type="button"
@@ -527,18 +620,48 @@ export function ShareLinkRow({ link, copyLabel, onCopy }: { link: string; copyLa
 }
 
 const HOME_ICON = (
-  <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg
+    width="23"
+    height="23"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
     <path d="M3 10.5L12 3l9 7.5" />
     <path d="M5 9.5V20h14V9.5" />
   </svg>
 );
 const ACTIVITY_ICON = (
-  <svg width="23" height="23" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg
+    width="23"
+    height="23"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
     <path d="M4 18V9M9 18V5M14 18v-6M19 18v-9" />
   </svg>
 );
 const PLUS_ICON = (
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+  <svg
+    width="24"
+    height="24"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2.4"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
     <path d="M12 5v14M5 12h14" />
   </svg>
 );

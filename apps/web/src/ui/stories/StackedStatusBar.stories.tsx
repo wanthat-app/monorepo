@@ -4,7 +4,13 @@ import { StackedStatusBar } from "../admin";
 const meta: Meta<typeof StackedStatusBar> = {
   title: "Admin/StackedStatusBar",
   component: StackedStatusBar,
-  decorators: [(S) => <div className="w-[340px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[340px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof StackedStatusBar>;

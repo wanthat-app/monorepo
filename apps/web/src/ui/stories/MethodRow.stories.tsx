@@ -1,11 +1,17 @@
-import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react";
+import { useState } from "react";
 import { MethodRow } from "../wallet";
 
 const meta: Meta<typeof MethodRow> = {
   title: "Wallet/MethodRow",
   component: MethodRow,
-  decorators: [(S) => <div className="w-[420px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[420px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof MethodRow>;
@@ -17,10 +23,34 @@ export const Picker: Story = {
     const [sel, setSel] = useState("bit");
     return (
       <div>
-        <MethodRow brand="bank" label="Bank account" detail="Add details" selected={sel === "bank"} onSelect={() => setSel("bank")} />
-        <MethodRow brand="card" label="Credit card" detail="Add details" selected={sel === "card"} onSelect={() => setSel("card")} />
-        <MethodRow brand="bit" label="Bit" detail="+972 50 123 4567" selected={sel === "bit"} onSelect={() => setSel("bit")} />
-        <MethodRow brand="paybox" label="PayBox" detail="+972 50 123 4567" selected={sel === "paybox"} onSelect={() => setSel("paybox")} />
+        <MethodRow
+          brand="bank"
+          label="Bank account"
+          detail="Add details"
+          selected={sel === "bank"}
+          onSelect={() => setSel("bank")}
+        />
+        <MethodRow
+          brand="card"
+          label="Credit card"
+          detail="Add details"
+          selected={sel === "card"}
+          onSelect={() => setSel("card")}
+        />
+        <MethodRow
+          brand="bit"
+          label="Bit"
+          detail="+972 50 123 4567"
+          selected={sel === "bit"}
+          onSelect={() => setSel("bit")}
+        />
+        <MethodRow
+          brand="paybox"
+          label="PayBox"
+          detail="+972 50 123 4567"
+          selected={sel === "paybox"}
+          onSelect={() => setSel("paybox")}
+        />
       </div>
     );
   },

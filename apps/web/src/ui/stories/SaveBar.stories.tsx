@@ -4,7 +4,13 @@ import { SaveBar } from "../admin";
 const meta: Meta<typeof SaveBar> = {
   title: "Admin/SaveBar",
   component: SaveBar,
-  decorators: [(S) => <div className="w-[720px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[720px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof SaveBar>;

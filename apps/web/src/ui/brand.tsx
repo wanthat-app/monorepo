@@ -26,7 +26,9 @@ export function Logo({ size = "lg", caption }: { size?: LogoSize; caption?: stri
     <span className="inline-flex items-center gap-2.5">
       <BrandMark height={s.mark} />
       <span className="flex flex-col">
-        <span className={`font-display font-bold leading-none tracking-[-0.03em] text-ink ${s.text}`}>
+        <span
+          className={`font-display font-bold leading-none tracking-[-0.03em] text-ink ${s.text}`}
+        >
           wanthat
         </span>
         {caption ? (

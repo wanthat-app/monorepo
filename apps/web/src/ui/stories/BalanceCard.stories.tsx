@@ -5,7 +5,13 @@ import { BalanceCard } from "../wallet";
 const meta: Meta<typeof BalanceCard> = {
   title: "Wallet/BalanceCard",
   component: BalanceCard,
-  decorators: [(S) => <div className="w-[400px]"><S /></div>],
+  decorators: [
+    (S) => (
+      <div className="w-[400px]">
+        <S />
+      </div>
+    ),
+  ],
 };
 export default meta;
 type Story = StoryObj<typeof BalanceCard>;

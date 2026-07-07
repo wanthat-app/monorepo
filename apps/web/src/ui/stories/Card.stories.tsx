@@ -15,11 +15,35 @@ export const RecentActivity: Story = {
         </a>
       </div>
       {[
-        { store: "AliExpress order", when: "2 days ago", ils: "≈₪12.40", real: "+$3.35", status: "confirmed" as const, label: "Confirmed" },
-        { store: "AliExpress order", when: "5 days ago", ils: "≈₪7.90", real: "+$2.14", status: "pending" as const, label: "Pending" },
-        { store: "Shein order", when: "1 week ago", ils: "≈₪4.10", real: "+€1.02", status: "rejected" as const, label: "Rejected" },
+        {
+          store: "AliExpress order",
+          when: "2 days ago",
+          ils: "≈₪12.40",
+          real: "+$3.35",
+          status: "confirmed" as const,
+          label: "Confirmed",
+        },
+        {
+          store: "AliExpress order",
+          when: "5 days ago",
+          ils: "≈₪7.90",
+          real: "+$2.14",
+          status: "pending" as const,
+          label: "Pending",
+        },
+        {
+          store: "Shein order",
+          when: "1 week ago",
+          ils: "≈₪4.10",
+          real: "+€1.02",
+          status: "rejected" as const,
+          label: "Rejected",
+        },
       ].map((row) => (
-        <div key={row.when} className="flex items-center justify-between border-t border-hairrow pt-3">
+        <div
+          key={row.when}
+          className="flex items-center justify-between border-t border-hairrow pt-3"
+        >
           <div className="flex flex-col gap-0.5">
             <span className="text-[15px] font-semibold text-ink">{row.store}</span>
             <span className="text-xs text-subtle">{row.when}</span>
@@ -41,7 +65,9 @@ export const SimpleContent: Story = {
   render: () => (
     <Card className="flex w-[340px] flex-col gap-4">
       <h1 className="text-2xl">Welcome back, Maya</h1>
-      <p className="text-muted">Share a product link and earn cashback when friends buy through it.</p>
+      <p className="text-muted">
+        Share a product link and earn cashback when friends buy through it.
+      </p>
       <Button>Create link</Button>
     </Card>
   ),

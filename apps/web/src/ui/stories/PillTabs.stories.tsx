@@ -1,5 +1,5 @@
-import { useState } from "react";
 import type { Meta, StoryObj } from "@storybook/react";
+import { useState } from "react";
 import { PillTabs } from "../wallet";
 
 const meta: Meta<typeof PillTabs> = { title: "Wallet/PillTabs", component: PillTabs };

@@ -4,7 +4,9 @@ import { Button } from "../components";
 const meta: Meta<typeof Button> = {
   title: "Shared/Button",
   component: Button,
-  argTypes: { variant: { control: "select", options: ["primary", "ink", "ghost", "mint", "outline"] } },
+  argTypes: {
+    variant: { control: "select", options: ["primary", "ink", "ghost", "mint", "outline"] },
+  },
   args: { variant: "primary", loading: false, disabled: false, children: "Sign up to earn" },
 };
 export default meta;
