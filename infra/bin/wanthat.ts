@@ -86,6 +86,8 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   employeePoolClient: identity.employeePoolClient,
   runtimeConfigTable: data.runtimeConfigTable,
   recommendationTable: data.recommendationTable,
+  // Write-only credential drop (PutSecretValue + DescribeSecret; never read) — see AdminStack.
+  retailerSecret: data.retailerSecret,
   vpc: network.vpc,
   lambdaSg: network.lambdaSg,
   cluster: data.cluster,

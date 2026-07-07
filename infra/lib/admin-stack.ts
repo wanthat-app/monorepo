@@ -6,9 +6,11 @@ import type * as cognito from "aws-cdk-lib/aws-cognito";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
+import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import type * as rds from "aws-cdk-lib/aws-rds";
+import type * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 import {
   applyThrottle,
@@ -32,6 +34,9 @@ export interface AdminStackProps extends StackProps {
   readonly employeePoolClient: cognito.IUserPoolClient;
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
+  // Retailer credential secret — admin-api may WRITE it (credential drop from the admin panel)
+  // but never read it; retailer-proxy stays the sole reader (see the inline policy below).
+  readonly retailerSecret: secretsmanager.ISecret;
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
   readonly cluster: rds.IDatabaseCluster;
@@ -75,6 +80,7 @@ export class AdminStack extends Stack {
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_ro",
+        RETAILER_SECRET_ARN: props.retailerSecret.secretArn,
         // Trust the Amazon RDS CA so the in-VPC TLS connection to Aurora verifies (ADR-0020) — the
         // same setup app-core/app-auth use. Without it pg throws "unable to get local issuer
         // certificate" and every DB-backed admin route (stats) fails. Pairs with rdsCaBundling below.
@@ -89,6 +95,15 @@ export class AdminStack extends Stack {
     props.cluster.grantConnect(fn, "app_ro");
     props.runtimeConfigTable.grantReadWriteData(fn);
     props.recommendationTable.grantReadData(fn);
+    // WRITE-ONLY grant on the retailer credential secret: PutSecretValue (replace the value) +
+    // DescribeSecret (non-secret status metadata). Deliberately not grantWrite (adds UpdateSecret)
+    // and no GetSecretValue - the admin role structurally cannot read the credential back.
+    fn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["secretsmanager:PutSecretValue", "secretsmanager:DescribeSecret"],
+        resources: [props.retailerSecret.secretArn],
+      }),
+    );
 
     const integration = new HttpLambdaIntegration("AdminApiIntegration", fn);
     const authorizer = new HttpJwtAuthorizer(
