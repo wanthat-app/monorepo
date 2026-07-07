@@ -1,7 +1,5 @@
-import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import { createDb } from "@wanthat/db";
 import { getDocClient, RuntimeConfigRepo } from "@wanthat/dynamo";
-import { RetailerSecretWriter } from "./retailer-secret";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -14,7 +12,6 @@ type Db = ReturnType<typeof createDb>;
 export interface AdminContext {
   db: Db;
   config: RuntimeConfigRepo;
-  retailerSecret: RetailerSecretWriter;
 }
 
 let cached: AdminContext | undefined;
@@ -36,10 +33,6 @@ export function getContext(): AdminContext {
       caCerts: process.env.DB_CA_CERT,
     }),
     config: new RuntimeConfigRepo(getDocClient(region), requireEnv("RUNTIME_CONFIG_TABLE")),
-    retailerSecret: new RetailerSecretWriter(
-      new SecretsManagerClient({ region }),
-      requireEnv("RETAILER_SECRET_ARN"),
-    ),
   };
   return cached;
 }

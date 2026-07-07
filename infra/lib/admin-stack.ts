@@ -52,6 +52,8 @@ export class AdminStack extends Stack {
   readonly httpApi: HttpApi;
   /** The admin-api Lambda — observed by the ObservabilityStack (errors/throttles/duration). */
   readonly adminApiFn: lambda.Function;
+  /** The non-VPC credential-drop Lambda — observed by the ObservabilityStack. */
+  readonly adminCredentialsFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: AdminStackProps) {
     super(scope, id, props);
@@ -80,7 +82,6 @@ export class AdminStack extends Stack {
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_ro",
-        RETAILER_SECRET_ARN: props.retailerSecret.secretArn,
         // Trust the Amazon RDS CA so the in-VPC TLS connection to Aurora verifies (ADR-0020) — the
         // same setup app-core/app-auth use. Without it pg throws "unable to get local issuer
         // certificate" and every DB-backed admin route (stats) fails. Pairs with rdsCaBundling below.
@@ -95,10 +96,31 @@ export class AdminStack extends Stack {
     props.cluster.grantConnect(fn, "app_ro");
     props.runtimeConfigTable.grantReadWriteData(fn);
     props.recommendationTable.grantReadData(fn);
+
+    // The retailer-credential drop runs as a separate NON-VPC function: Secrets Manager is only
+    // reachable over its public endpoint, and the VPC is deliberately endpoint-free (ADR-0004;
+    // the SM interface endpoint was removed once nothing in the VPC read secrets). Same HTTP API
+    // and authorizer; only this function's role can touch the secret - and only write it.
+    const credentialsFn = new NodejsFunction(this, "AdminCredentials", {
+      functionName: `wanthat-${wanthatEnv.name}-admin-credentials`,
+      entry: serviceEntry("admin-credentials"),
+      handler: "handler",
+      runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
+      memorySize: 256,
+      timeout: Duration.seconds(10),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "AdminCredentialsLogs", wanthatEnv),
+      environment: {
+        WANTHAT_ENV: wanthatEnv.name,
+        RETAILER_SECRET_ARN: props.retailerSecret.secretArn,
+      },
+    });
+    this.adminCredentialsFn = credentialsFn;
     // WRITE-ONLY grant on the retailer credential secret: PutSecretValue (replace the value) +
     // DescribeSecret (non-secret status metadata). Deliberately not grantWrite (adds UpdateSecret)
     // and no GetSecretValue - the admin role structurally cannot read the credential back.
-    fn.addToRolePolicy(
+    credentialsFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["secretsmanager:PutSecretValue", "secretsmanager:DescribeSecret"],
         resources: [props.retailerSecret.secretArn],
@@ -129,6 +151,14 @@ export class AdminStack extends Stack {
 
     // Unauthenticated liveness probe; everything else behind the JWT authorizer (+ in-handler group).
     this.httpApi.addRoutes({ path: "/healthz", methods: [HttpMethod.GET], integration });
+    // /admin/retailer/* → the non-VPC credentials function. HTTP APIs route by specificity, so
+    // this greedy path beats the catch-all below for credential calls; same authorizer.
+    this.httpApi.addRoutes({
+      path: "/admin/retailer/{proxy+}",
+      methods: [HttpMethod.GET, HttpMethod.PUT],
+      integration: new HttpLambdaIntegration("AdminCredentialsIntegration", credentialsFn),
+      authorizer,
+    });
     // Explicit methods (NOT ANY) so `OPTIONS` has no matching route and falls through to API
     // Gateway's built-in CORS preflight handler instead of being 401'd by the authorizer.
     this.httpApi.addRoutes({

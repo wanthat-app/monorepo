@@ -143,6 +143,7 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
     { label: "app-auth", fn: api.appAuthFn },
     { label: "app-core", fn: api.appCoreFn },
     { label: "admin-api", fn: admin.adminApiFn },
+    { label: "admin-credentials", fn: admin.adminCredentialsFn },
     { label: "landing", fn: edgeServices.landingFn },
     { label: "retailer-proxy", fn: edgeServices.retailerProxyFn },
     { label: "conversion-poller", fn: edgeServices.conversionPollerFn },
