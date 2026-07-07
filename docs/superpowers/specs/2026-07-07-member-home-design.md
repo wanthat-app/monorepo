@@ -82,12 +82,14 @@ internals do.
 Rebuild `features/home/HomePage.tsx` on the design system:
 
 - **Shell:** desktop `TopNav` (wordmark, Home active, Activity link, green **Create link**
-  button, avatar) / mobile `TabBar` (Home, Activity, Profile) + create affordance. All inert
-  except Home this slice; future pages plug into the same shell. Extracted as a reusable
-  authenticated-shell component so Activity/Profile/Create pages reuse it.
-- **Sign-out stays reachable** even though Profile is inert: avatar menu on desktop, the
-  profile tab placeholder area on mobile. (The design parks sign-out in Profile; we don't
-  drop it in the meantime.)
+  button, avatar) / mobile `TabBar` (Home, center Create FAB, Activity — no Profile tab; the
+  design system does not have one) + create affordance. All inert except Home this slice;
+  future pages plug into the same shell. Kept inline in `HomePage.tsx` for now (only one
+  authenticated page exists); extraction into a reusable shell component happens when the
+  second authenticated page (Activity) lands.
+- **Sign-out stays reachable** even though there is no Profile tab: avatar menu on desktop,
+  the mobile header `ProfileChip` on mobile. (The design eventually parks sign-out behind a
+  Profile page; we don't drop it in the meantime.)
 - **BalanceCard:** skeleton while loading → estimated-ILS headline with `≈` + "Estimated"
   chip, per-currency holdings chips (from `balances[].available`), "held in original
   currencies" note, `≈` pending note (from `estimated.pending`), mint **Withdraw cash** CTA
