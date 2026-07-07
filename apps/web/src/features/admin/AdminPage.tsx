@@ -6,6 +6,7 @@ import type {
 } from "@wanthat/contracts";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useLocation, useNavigate } from "react-router-dom";
 import { adminApi, type UsersStats } from "../../lib/admin-api";
 import {
   type AdminTokens,
@@ -15,7 +16,7 @@ import {
   isAdminSession,
 } from "../../lib/admin-login";
 import { identityFromIdToken } from "../../lib/jwt";
-import { Button, RangeSlider, Segmented, Spinner, Switch } from "../../ui/components";
+import { Button, RangeSlider, Segmented, Skeleton, Spinner, Switch } from "../../ui/components";
 import { ActivityView } from "./ActivityView";
 import { AdminLayout, type AdminView } from "./AdminLayout";
 import { UsersView } from "./UsersView";
@@ -30,10 +31,27 @@ import { UsersView } from "./UsersView";
  * redirect to that login; the `admin` group gates the UI client-side and admin-api re-enforces it. The
  * layout follows the document direction (RTL for Hebrew, the default) via logical properties.
  */
+// Each admin view owns a URL (deep links, reloads and back/forward all work); the path is the
+// single source of truth for the active view. The "config" view lives under /admin/settings to
+// match the sidebar's Settings section.
+const VIEW_PATHS: Record<AdminView, string> = {
+  dashboard: "/admin",
+  users: "/admin/users",
+  activity: "/admin/activity",
+  config: "/admin/settings",
+};
+
+function viewFromPath(pathname: string): AdminView {
+  const match = (Object.keys(VIEW_PATHS) as AdminView[]).find((v) => VIEW_PATHS[v] === pathname);
+  return match ?? "dashboard";
+}
+
 export function AdminPage() {
   const { t } = useTranslation();
   const [tokens, setTokens] = useState<AdminTokens | null>(null);
-  const [view, setView] = useState<AdminView>("dashboard");
+  const location = useLocation();
+  const navigate = useNavigate();
+  const view = viewFromPath(location.pathname);
 
   // Load the stored session, refreshing an expired access token first (a tab left open past the
   // 1h token lifetime otherwise 401s on every call). No session and no refresh → bounce to the
@@ -76,21 +94,23 @@ export function AdminPage() {
   return (
     <AdminLayout
       view={view}
-      onNavigate={setView}
+      onNavigate={(next) => navigate(VIEW_PATHS[next])}
       title={heading[view].title}
       subtitle={heading[view].subtitle}
-      showSearch={view === "dashboard"}
       user={{ name: identity.name ?? identity.email ?? t("admin.you"), role: t("admin.role") }}
       onSignOut={signOut}
     >
+      {/* The id token is the console's Bearer (same signature check at the gateway — the JWT
+          authorizer accepts aud as well as client_id): unlike the access token it carries email,
+          so audited actions record a readable actor instead of the Cognito sub. */}
       {view === "dashboard" ? (
-        <DashboardView token={tokens.accessToken} />
+        <DashboardView token={tokens.idToken} />
       ) : view === "users" ? (
-        <UsersView token={tokens.accessToken} />
+        <UsersView token={tokens.idToken} />
       ) : view === "activity" ? (
-        <ActivityView token={tokens.accessToken} />
+        <ActivityView token={tokens.idToken} />
       ) : (
-        <ConfigView token={tokens.accessToken} />
+        <ConfigView token={tokens.idToken} />
       )}
     </AdminLayout>
   );
@@ -115,7 +135,9 @@ function DashboardView({ token }: { token: string | null }) {
       .catch(() => setFailed(true));
   }, [token]);
 
-  const num = (v: number | undefined) => (v === undefined ? "…" : v.toLocaleString("en-US"));
+  // Skeleton placeholder while the stats request is in flight, so the module doesn't flash "…".
+  const num = (v: number | undefined) =>
+    v === undefined ? <Skeleton className="h-[30px] w-16" /> : v.toLocaleString("en-US");
 
   return (
     <div className="flex flex-col gap-[18px]">
@@ -167,7 +189,8 @@ function DashboardView({ token }: { token: string | null }) {
 
 function UsersPanel({ users, failed }: { users: UsersStats | null; failed: boolean }) {
   const { t } = useTranslation();
-  const num = (v: number | undefined) => (v === undefined ? "…" : v.toLocaleString("en-US"));
+  const num = (v: number | undefined) =>
+    v === undefined ? <Skeleton className="h-[22px] w-12" /> : v.toLocaleString("en-US");
   return (
     <div className="rounded-card border border-line bg-surface p-5">
       <h2 className="mb-4 font-display text-lg font-semibold text-ink">{t("admin.users.title")}</h2>
@@ -194,7 +217,7 @@ function UsersPanel({ users, failed }: { users: UsersStats | null; failed: boole
   );
 }
 
-function StatTile({ label, value }: { label: string; value: string }) {
+function StatTile({ label, value }: { label: string; value: ReactNode }) {
   return (
     <div className="rounded-[14px] border border-line px-3.5 py-3">
       <div className="text-[22px] font-semibold tabular-nums text-ink">{value}</div>
@@ -205,7 +228,7 @@ function StatTile({ label, value }: { label: string; value: string }) {
 
 /** A compact 30-bar daily-signup trend. LTR regardless of page direction so time reads left→right. */
 function SignupTrend({ data }: { data: UsersStats["dailySignups"] | null }) {
-  if (!data) return <div className="h-24 animate-pulse rounded-[12px] bg-accent-soft/40" />;
+  if (!data) return <Skeleton className="h-24" />;
   const max = Math.max(1, ...data.map((d) => d.count));
   return (
     <div>
@@ -239,7 +262,7 @@ function KpiCard({
   tone = "accent",
 }: {
   label: string;
-  value: string;
+  value: ReactNode;
   icon: ReactNode;
   live?: boolean;
   tone?: "accent" | "pending";

@@ -1,7 +1,11 @@
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { completeAdminLogin, verifyAdminOauthState } from "../../lib/admin-login";
+import {
+  completeAdminLogin,
+  consumeAdminReturnPath,
+  verifyAdminOauthState,
+} from "../../lib/admin-login";
 import { Spinner } from "../../ui/components";
 
 /**
@@ -28,7 +32,7 @@ export function AdminCallbackPage() {
       return;
     }
     completeAdminLogin(code)
-      .then(() => navigate("/admin", { replace: true }))
+      .then(() => navigate(consumeAdminReturnPath(), { replace: true }))
       .catch(() => setError(true));
   }, [navigate]);
 

@@ -16,7 +16,6 @@ export function AdminLayout({
   onNavigate,
   title,
   subtitle,
-  showSearch,
   user,
   onSignOut,
   children,
@@ -25,7 +24,6 @@ export function AdminLayout({
   onNavigate: (view: AdminView) => void;
   title: string;
   subtitle: string;
-  showSearch?: boolean;
   user: { name: string; role: string };
   onSignOut: () => void;
   children: ReactNode;
@@ -147,8 +145,8 @@ export function AdminLayout({
             value={i18n.language.startsWith("he") ? "he" : "en"}
             onChange={(lng) => void i18n.changeLanguage(lng)}
             options={[
-              { value: "en", label: "EN" },
-              { value: "he", label: "עב" },
+              { value: "en", label: "English" },
+              { value: "he", label: "עברית" },
             ]}
           />
           <div className="flex items-center gap-2.5 rounded-[14px] border border-line bg-base px-3 py-2.5">
@@ -196,55 +194,6 @@ export function AdminLayout({
               {title}
             </h1>
             <div className="mt-[3px] text-[13px] text-muted">{subtitle}</div>
-          </div>
-          <div className="ms-auto flex items-center gap-3">
-            {showSearch ? (
-              <div className="flex w-[260px] items-center gap-2.5 rounded-input border border-[#e2e7e4] bg-base px-3.5 py-2.5">
-                <svg
-                  width="16"
-                  height="16"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="#9aa8a1"
-                  strokeWidth="2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  aria-hidden
-                >
-                  <title>{t("admin.search")}</title>
-                  <circle cx="11" cy="11" r="7" />
-                  <path d="m21 21-4.3-4.3" />
-                </svg>
-                <input
-                  type="text"
-                  aria-label={t("admin.search")}
-                  placeholder={t("admin.search")}
-                  className="w-full border-none bg-transparent text-[13.5px] text-ink outline-none placeholder:text-subtle"
-                />
-              </div>
-            ) : null}
-            <button
-              type="button"
-              aria-label={t("admin.notifications")}
-              className="relative flex h-[42px] w-[42px] items-center justify-center rounded-input border border-[#e2e7e4] bg-base text-ink"
-            >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <title>{t("admin.notifications")}</title>
-                <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9" />
-                <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0" />
-              </svg>
-              <span className="absolute end-2.5 top-2 h-2 w-2 rounded-full border-2 border-base bg-accent" />
-            </button>
           </div>
         </header>
 

@@ -18,13 +18,13 @@ beforeEach(() => {
 });
 
 describe("adminRequest 401 handling", () => {
-  it("refreshes once on a 401 and retries with the new access token", async () => {
+  it("refreshes once on a 401 and retries with the new id token", async () => {
     const fetchMock = vi
       .fn()
       .mockResolvedValueOnce({ ok: false, status: 401, json: async () => ({}) })
       .mockResolvedValueOnce({ ok: true, status: 200, json: async () => ({ items: [] }) });
     vi.stubGlobal("fetch", fetchMock);
-    login.refreshAdminTokens.mockResolvedValue({ accessToken: "fresh-tok" });
+    login.refreshAdminTokens.mockResolvedValue({ idToken: "fresh-tok" });
 
     const res = await adminApi.listConfig("stale-tok");
     expect(res.items).toEqual([]);
@@ -51,7 +51,7 @@ describe("adminRequest 401 handling", () => {
       "fetch",
       vi.fn().mockResolvedValue({ ok: false, status: 401, json: async () => ({}) }),
     );
-    login.refreshAdminTokens.mockResolvedValue({ accessToken: "fresh-tok" });
+    login.refreshAdminTokens.mockResolvedValue({ idToken: "fresh-tok" });
 
     await expect(adminApi.listConfig("stale-tok")).rejects.toBeInstanceOf(ApiError);
     expect(login.clearAdminTokens).toHaveBeenCalled();

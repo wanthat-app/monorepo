@@ -15,7 +15,7 @@ const en = {
     firstName: "First name",
     lastName: "Last name",
     email: "Email (optional)",
-    emailPlaceholder: "maya@email.com",
+    emailPlaceholder: "name@email.com",
     language: "Language",
     continue: "Continue",
     verify: "Verify",
@@ -105,8 +105,6 @@ const en = {
     you: "Admin",
     signOut: "Sign out",
     notAuthorised: "Not authorised.",
-    search: "Search users, links, payouts…",
-    notifications: "Notifications",
     language: "Language",
     dashboardSub: "Cashback performance across the platform",
     configSub: "Reward rules, payouts and feature flags",
@@ -278,7 +276,7 @@ const he: typeof en = {
     firstName: "שם פרטי",
     lastName: "שם משפחה",
     email: "אימייל (לא חובה)",
-    emailPlaceholder: "maya@email.com",
+    emailPlaceholder: "name@email.com",
     language: "שפה",
     continue: "המשך",
     verify: "אימות",
@@ -368,8 +366,6 @@ const he: typeof en = {
     you: "מנהל",
     signOut: "התנתקות",
     notAuthorised: "אין הרשאה.",
-    search: "חיפוש משתמשים, קישורים, תשלומים…",
-    notifications: "התראות",
     language: "שפה",
     dashboardSub: "ביצועי קאשבק ברחבי הפלטפורמה",
     configSub: "כללי תגמול, תשלומים ודגלי תכונות",
@@ -527,22 +523,41 @@ const he: typeof en = {
   },
 };
 
+// The chosen language is remembered per device (Hebrew by default) and restored on the next visit.
+// Guarded so the module stays importable outside the browser (tests, SSR).
+const LANG_KEY = "wanthat.lang";
+
+function storedLanguage(): "he" | "en" {
+  try {
+    const stored = localStorage.getItem(LANG_KEY);
+    return stored === "en" || stored === "he" ? stored : "he";
+  } catch {
+    return "he";
+  }
+}
+
 void i18n.use(initReactI18next).init({
-  lng: "he",
+  lng: typeof localStorage === "undefined" ? "he" : storedLanguage(),
   fallbackLng: "en",
   interpolation: { escapeValue: false },
   resources: { he: { translation: he }, en: { translation: en } },
 });
 
 // Keep the document direction/lang in sync with the active locale so the layout mirrors (RTL for
-// Hebrew, the default; LTR for English). Logical Tailwind properties handle the rest. Guarded so the
-// module stays importable outside the browser (tests, SSR).
+// Hebrew, the default; LTR for English). Logical Tailwind properties handle the rest.
 function applyDir(lng: string) {
   if (typeof document === "undefined") return;
   document.documentElement.lang = lng;
   document.documentElement.dir = lng.startsWith("he") ? "rtl" : "ltr";
 }
 applyDir(i18n.language ?? "he");
-i18n.on("languageChanged", applyDir);
+i18n.on("languageChanged", (lng) => {
+  applyDir(lng);
+  try {
+    localStorage.setItem(LANG_KEY, lng.startsWith("he") ? "he" : "en");
+  } catch {
+    // Storage unavailable (private mode/tests) — the choice simply isn't remembered.
+  }
+});
 
 export default i18n;

@@ -22,7 +22,11 @@ const router = createBrowserRouter([
   { path: "/home", element: <HomePage /> },
   // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).
   { path: "/p/:id", element: <SharedProductPage /> },
+  // Each admin view has its own URL so deep links, reloads and browser history work.
   { path: "/admin", element: <AdminPage /> },
+  { path: "/admin/users", element: <AdminPage /> },
+  { path: "/admin/activity", element: <AdminPage /> },
+  { path: "/admin/settings", element: <AdminPage /> },
   { path: "/admin/callback", element: <AdminCallbackPage /> },
 ]);
 
