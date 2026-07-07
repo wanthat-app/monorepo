@@ -7,7 +7,10 @@
 
 const SYMBOLS: Record<string, string> = { ILS: "₪", USD: "$", EUR: "€", GBP: "£" };
 
-function parts(amountMinor: string, currency: string): { sign: string; int: string; frac: string; symbol: string } {
+function parts(
+  amountMinor: string,
+  currency: string,
+): { sign: string; int: string; frac: string; symbol: string } {
   const neg = amountMinor.startsWith("-");
   const digits = (neg ? amountMinor.slice(1) : amountMinor).padStart(3, "0");
   const int = digits
