@@ -99,6 +99,35 @@ export function Chip({ tone = "neutral", children }: { tone?: ChipTone; children
   );
 }
 
+// Loading placeholder block: a pulsing base-grey shape (white/10 on ink surfaces) that data-bearing
+// components swap in for their real content while `loading` is set. Size it with width/height
+// utilities via className; it always keeps the space it stands in, so nothing shifts when data lands.
+export function Skeleton({
+  className = "",
+  onInk = false,
+}: {
+  className?: string;
+  onInk?: boolean;
+}) {
+  return (
+    <span
+      aria-hidden
+      className={`block animate-pulse rounded-md ${onInk ? "bg-white/10" : "bg-line/70"} ${className}`}
+    />
+  );
+}
+
+// Circle variant for avatar/profile placeholders.
+export function SkeletonCircle({ size = 44, onInk = false }: { size?: number; onInk?: boolean }) {
+  return (
+    <span
+      aria-hidden
+      className={`block shrink-0 animate-pulse rounded-full ${onInk ? "bg-white/10" : "bg-line/70"}`}
+      style={{ width: size, height: size }}
+    />
+  );
+}
+
 // Rounded icon container (42px / 12px radius in the mock's prompt cards and value props;
 // 34px / 10px in the profile settings rows).
 type IconTileTone = "accent" | "soft" | "base";

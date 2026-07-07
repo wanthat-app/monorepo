@@ -34,6 +34,12 @@ are available. `h1`–`h3` already render in Space Grotesk 600.
   mirror automatically. Use `ms-*`/`me-*`/`ps-*`/`pe-*`/`text-start`/`text-end`, never `ml/mr`.
 - The mint CTA (`variant="mint"` / `bg-mint`) appears **only on dark ink surfaces**.
 - Disabled/loading buttons are soft-green (`bg-accent-soft text-accent`) — never faded.
+- **Loading states:** every data-bearing component (`BalanceCard`, `ActivityRow`, `ProductCard`,
+  `KpiCard`, `ApprovalRow`, `MethodRow`, `SettingsRow`, `InviteCard`, `ShareLinkRow`,
+  `StackedStatusBar`, `AttributionChip`, `RecommendationQuote`, `FeatureRow`) takes
+  `loading?: boolean` and renders a pulsing skeleton with the same geometry — no layout shift when
+  data lands. For custom layouts compose the `Skeleton` primitive directly
+  (`<Skeleton className="h-4 w-3/4" />`; `onInk` on dark surfaces; `SkeletonCircle` for avatars).
 - Consumer screens live in a centered ~430px column (`Screen`) on `bg-page`; mobile nav is
   `TabBar`, desktop nav is `TopNav`. The admin console is desktop-only, English/LTR, with
   `Sidebar` (248px, light by default; a dark variant exists via `theme="dark"`).

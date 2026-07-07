@@ -24,3 +24,5 @@ export const CashbackStatus: Story = {
     ],
   },
 };
+
+export const Loading: Story = { args: { loading: true } };

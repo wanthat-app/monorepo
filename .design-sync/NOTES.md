@@ -46,3 +46,7 @@
   300x620).
 - Disabled/loading Button style now follows the mock (soft-green #E7F1EC + accent text) — the
   earlier POC used opacity-50; app screens changed accordingly (approved by Dennis 2026-07-07).
+- Skeleton loading states (2026-07-07, PR #100): new `Skeleton`/`SkeletonCircle` primitives +
+  `loading` prop on 13 data-bearing components, each with a Loading story. Captures are
+  animation-stabilized, so `animate-pulse` grades fine. New cardMode column overrides:
+  Skeleton, FeatureRow, InviteCard, ProductCard, SettingsRow.

@@ -35,6 +35,11 @@
     "TopNav": { "cardMode": "column" },
     "Sidebar": { "cardMode": "single", "viewport": "300x620" },
     "ApprovalRow": { "cardMode": "column" },
+    "Skeleton": { "cardMode": "column" },
+    "FeatureRow": { "cardMode": "column" },
+    "InviteCard": { "cardMode": "column" },
+    "ProductCard": { "cardMode": "column" },
+    "SettingsRow": { "cardMode": "column" },
     "MethodToggleRow": { "cardMode": "column" },
     "StackedStatusBar": { "cardMode": "column" }
   }

@@ -39,3 +39,5 @@ export const WithRecommendation: Story = {
     </div>
   ),
 };
+
+export const Loading: Story = { args: { loading: true } };

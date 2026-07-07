@@ -47,3 +47,13 @@ export const Queue: Story = {
     </div>
   ),
 };
+
+export const Loading: Story = {
+  render: () => (
+    <div>
+      <ApprovalRow loading />
+      <ApprovalRow loading />
+      <ApprovalRow loading />
+    </div>
+  ),
+};

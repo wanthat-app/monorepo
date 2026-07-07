@@ -23,3 +23,5 @@ export const Default: Story = {
     copyLabel: "Copy",
   },
 };
+
+export const Loading: Story = { args: { loading: true } };

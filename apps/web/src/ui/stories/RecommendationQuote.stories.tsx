@@ -31,3 +31,5 @@ export const Rtl: Story = {
     </div>
   ),
 };
+
+export const Loading: Story = { args: { loading: true } };

@@ -87,3 +87,13 @@ export const ValueProps: Story = {
     </div>
   ),
 };
+
+export const Loading: Story = {
+  render: () => (
+    <div className="flex flex-col gap-3.5">
+      <FeatureRow loading />
+      <FeatureRow loading />
+      <FeatureRow loading />
+    </div>
+  ),
+};

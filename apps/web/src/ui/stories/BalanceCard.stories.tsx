@@ -51,3 +51,8 @@ export const SignupPitch: Story = {
     </BalanceCard>
   ),
 };
+
+// Skeleton while the wallet balance loads — same geometry, nothing shifts when data lands.
+export const Loading: Story = {
+  args: { label: "Available cashback", amount: "", cta: "Withdraw cash", loading: true },
+};

@@ -17,3 +17,5 @@ type Story = StoryObj<typeof ShareLinkRow>;
 
 export const Default: Story = { args: { link: "wnt.ht/Mx7Qa", copyLabel: "Copy" } };
 export const Copied: Story = { args: { link: "wnt.ht/Mx7Qa", copyLabel: "Copied ✓" } };
+
+export const Loading: Story = { args: { loading: true } };
