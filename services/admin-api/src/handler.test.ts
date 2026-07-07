@@ -4,6 +4,10 @@ const { ctx } = vi.hoisted(() => ({
   ctx: {
     config: { getAll: vi.fn().mockResolvedValue([]), put: vi.fn() },
     db: {},
+  } as {
+    config: { getAll: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
+    db: object;
+    devOtpSink?: { scanAll: ReturnType<typeof vi.fn> };
   },
 }));
 vi.mock("./context", () => ({ getContext: () => ctx }));
@@ -12,6 +16,7 @@ const { dbFns } = vi.hoisted(() => ({
   dbFns: {
     listCustomers: vi.fn(),
     adminDeleteCustomer: vi.fn(),
+    listAuditLog: vi.fn(),
   },
 }));
 vi.mock("@wanthat/db", () => dbFns);
@@ -19,7 +24,13 @@ vi.mock("@wanthat/db", () => dbFns);
 import { app } from "./handler";
 
 const adminEnv = {
-  event: { requestContext: { authorizer: { jwt: { claims: { "cognito:groups": ["admin"] } } } } },
+  event: {
+    requestContext: {
+      authorizer: {
+        jwt: { claims: { "cognito:groups": ["admin"], username: "dennis@wanthat.co.il" } },
+      },
+    },
+  },
 };
 const memberEnv = {
   event: { requestContext: { authorizer: { jwt: { claims: { "cognito:groups": ["user"] } } } } },
@@ -121,7 +132,11 @@ describe("admin users", () => {
     const res = await app.request(`/admin/users/${USER.id}`, { method: "DELETE" }, adminEnv);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ deleted: true, id: USER.id, phone: USER.phone });
-    expect(dbFns.adminDeleteCustomer).toHaveBeenCalledWith(expect.anything(), USER.id);
+    expect(dbFns.adminDeleteCustomer).toHaveBeenCalledWith(
+      expect.anything(),
+      USER.id,
+      "dennis@wanthat.co.il",
+    );
   });
 
   it("404s a delete for an unknown id", async () => {
@@ -133,5 +148,65 @@ describe("admin users", () => {
   it("400s a non-uuid id", async () => {
     const res = await app.request("/admin/users/not-a-uuid", { method: "DELETE" }, adminEnv);
     expect(res.status).toBe(400);
+  });
+});
+
+describe("admin activity", () => {
+  const ENTRY = {
+    id: "7",
+    createdAt: new Date("2026-07-08T11:32:00.000Z"),
+    payload: {
+      type: "user_registered",
+      customerId: USER.id,
+      phone: USER.phone,
+      firstName: USER.firstName,
+      lastName: USER.lastName,
+      email: USER.email,
+    },
+  };
+
+  it("lists audit entries as feed items", async () => {
+    dbFns.listAuditLog.mockResolvedValue({ entries: [ENTRY], total: 1 });
+    const res = await app.request("/admin/activity", {}, adminEnv);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as { items: { id: string; type: string }[]; total: number };
+    expect(body.total).toBe(1);
+    expect(body.items[0]).toMatchObject({ id: "audit_7", type: "user_registered" });
+    expect(dbFns.listAuditLog).toHaveBeenCalledWith(expect.anything(), { page: 1, pageSize: 20 });
+  });
+
+  it("rejects an out-of-range pageSize", async () => {
+    const res = await app.request("/admin/activity?pageSize=500", {}, adminEnv);
+    expect(res.status).toBe(400);
+  });
+
+  it("merges live dev-sink codes into page 1 when the sink is configured", async () => {
+    dbFns.listAuditLog.mockResolvedValue({ entries: [ENTRY], total: 1 });
+    ctx.devOtpSink = {
+      scanAll: vi.fn().mockResolvedValue([
+        {
+          phone: "+972520000001",
+          code: "48213976",
+          channel: "whatsapp",
+          triggerSource: "t",
+          createdAt: "2026-07-08T11:40:00.000Z",
+          ttl: Math.floor(Date.now() / 1000) + 300,
+        },
+      ]),
+    };
+    const res = await app.request("/admin/activity", {}, adminEnv);
+    const body = (await res.json()) as { items: { type: string; code?: string }[]; total: number };
+    expect(body.total).toBe(2);
+    expect(body.items[0]).toMatchObject({ type: "otp_sent", code: "48213976" });
+    delete ctx.devOtpSink;
+  });
+
+  it("does not merge sink codes on page 2", async () => {
+    dbFns.listAuditLog.mockResolvedValue({ entries: [], total: 21 });
+    ctx.devOtpSink = { scanAll: vi.fn() };
+    const res = await app.request("/admin/activity?page=2", {}, adminEnv);
+    expect(res.status).toBe(200);
+    expect(ctx.devOtpSink.scanAll).not.toHaveBeenCalled();
+    delete ctx.devOtpSink;
   });
 });

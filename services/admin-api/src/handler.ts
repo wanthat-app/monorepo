@@ -14,6 +14,8 @@ import {
   ConfigKey,
   DeleteUserResponse,
   GetConfigResponse,
+  ListActivityQuery,
+  ListActivityResponse,
   ListConfigResponse,
   ListUsersQuery,
   ListUsersResponse,
@@ -21,9 +23,10 @@ import {
   PutConfigResponse,
   Uuid,
 } from "@wanthat/contracts";
-import { adminDeleteCustomer, listCustomers } from "@wanthat/db";
+import { adminDeleteCustomer, listAuditLog, listCustomers } from "@wanthat/db";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
+import { auditEntryToItem, mergeByAtDesc, otpSinkToItems } from "./activity";
 import { getContext } from "./context";
 import { type Bindings, requireAdmin } from "./guard";
 import { loadUsersStats } from "./users-stats";
@@ -116,6 +119,30 @@ app.get("/admin/users", async (c) => {
   return c.json(ListUsersResponse.parse({ users, total, page, pageSize }));
 });
 
+// GET /admin/activity — one paged feed over the audit log (registrations, deletions, any future
+// audited admin action), newest first. In dev the first page also merges the parked OTP codes
+// from the dev sink (DEV_OTP_SINK_TABLE is only set where the table exists — never prod), so
+// codes are grabbed from this panel instead of the AWS CLI. `total` counts audit rows plus the
+// live sink items; page boundaries can drift by the sink size on page 1 — accepted, dev only.
+app.get("/admin/activity", async (c) => {
+  const query = ListActivityQuery.safeParse({
+    page: c.req.query("page"),
+    pageSize: c.req.query("pageSize"),
+  });
+  if (!query.success) return c.json({ error: "invalid_request" }, 400);
+  const { page, pageSize } = query.data;
+  const { entries, total } = await listAuditLog(getContext().db, { page, pageSize });
+  let items = entries.map(auditEntryToItem);
+  let grandTotal = total;
+  const sink = getContext().devOtpSink;
+  if (sink && page === 1) {
+    const otp = otpSinkToItems(await sink.scanAll(), Date.now());
+    items = mergeByAtDesc(items, otp);
+    grandTotal += otp.length;
+  }
+  return c.json(ListActivityResponse.parse({ items, total: grandTotal, page, pageSize }));
+});
+
 // DELETE /admin/users/:id — hard delete via the admin_delete_customer SECURITY DEFINER function
 // (0004): the wallet-history guard and the delete run atomically in the database, so the
 // append-only ledger is never orphaned (the FK enforces the same independently). Returns the phone
@@ -124,7 +151,13 @@ app.get("/admin/users", async (c) => {
 app.delete("/admin/users/:id", async (c) => {
   const id = Uuid.safeParse(c.req.param("id"));
   if (!id.success) return c.json({ error: "invalid_request" }, 400);
-  const result = await adminDeleteCustomer(getContext().db, id.data);
+  // biome-ignore lint/suspicious/noExplicitAny: authorizer claim shape varies by event type
+  const claims = (c.env?.event as any)?.requestContext?.authorizer?.jwt?.claims ?? {};
+  const actor =
+    (typeof claims.email === "string" && claims.email) ||
+    (typeof claims.username === "string" && claims.username) ||
+    String(claims.sub ?? "unknown");
+  const result = await adminDeleteCustomer(getContext().db, id.data, actor);
   if (result.outcome === "has_wallet_history") return c.json({ error: "has_wallet_history" }, 409);
   if (result.outcome === "not_found") return c.json({ error: "not_found" }, 404);
   return c.json(DeleteUserResponse.parse({ deleted: true, id: id.data, phone: result.phone }));

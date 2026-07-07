@@ -1,5 +1,5 @@
 import { createDb } from "@wanthat/db";
-import { getDocClient, RuntimeConfigRepo } from "@wanthat/dynamo";
+import { DevOtpSinkRepo, getDocClient, RuntimeConfigRepo } from "@wanthat/dynamo";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -12,6 +12,8 @@ type Db = ReturnType<typeof createDb>;
 export interface AdminContext {
   db: Db;
   config: RuntimeConfigRepo;
+  /** Dev only — undefined in prod (no table, no env var; fail-closed). */
+  devOtpSink?: DevOtpSinkRepo;
 }
 
 let cached: AdminContext | undefined;
@@ -23,6 +25,7 @@ let cached: AdminContext | undefined;
 export function getContext(): AdminContext {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
+  const devOtpSinkTable = process.env.DEV_OTP_SINK_TABLE;
   cached = {
     db: createDb({
       host: requireEnv("DB_HOST"),
@@ -33,6 +36,10 @@ export function getContext(): AdminContext {
       caCerts: process.env.DB_CA_CERT,
     }),
     config: new RuntimeConfigRepo(getDocClient(region), requireEnv("RUNTIME_CONFIG_TABLE")),
+    // Dev only: DEV_OTP_SINK_TABLE is set solely where the sink table exists (never prod).
+    ...(devOtpSinkTable
+      ? { devOtpSink: new DevOtpSinkRepo(getDocClient(region), devOtpSinkTable) }
+      : {}),
   };
   return cached;
 }
