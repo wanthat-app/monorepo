@@ -10,6 +10,7 @@ import type {
   CustomerProfile,
   MessageLanguage,
   OtpChannel,
+  PasskeyListResponse,
   PasskeyLoginChallengeResponse,
   PasskeyLoginVerifyResponse,
   PasskeyRegisterOptionsResponse,
@@ -82,6 +83,9 @@ export const authApi = {
     request<AuthRefreshResponse>("/auth/refresh", { method: "POST", body: { refreshToken } }),
   signout: (refreshToken: string) =>
     request<{ ok: true }>("/auth/signout", { method: "POST", body: { refreshToken } }),
+  // The member's enrolled passkeys (summaries). Gates the home "set up Face ID" prompt: it shows
+  // only while this list is empty (user-level truth, unlike the per-device localStorage flag).
+  passkeyList: (token: string) => request<PasskeyListResponse>("/auth/passkey/list", { token }),
   passkeyRegisterOptions: (token: string) =>
     request<PasskeyRegisterOptionsResponse>("/auth/passkey/register/options", {
       method: "POST",

@@ -11,6 +11,7 @@ import {
   AuthVerifyBody,
   AuthVerifyResponse,
   normalizePhone,
+  PasskeyListResponse,
   PasskeyLoginChallengeResponse,
   PasskeyLoginVerifyBody,
   PasskeyLoginVerifyResponse,
@@ -417,6 +418,24 @@ export function authRouter(): Hono {
       createdAt,
     });
     return c.json(PasskeyRegisterVerifyResponse.parse({ passkey: { credentialId, createdAt } }));
+  });
+
+  // GET /auth/passkey/list — the caller's enrolled passkeys as summaries (credentialId + createdAt;
+  // the public key and sign counter never leave the server). Behind the JWT authorizer like the
+  // register routes. The SPA shows its "set up Face ID" prompt only while this list is empty.
+  auth.get("/passkey/list", async (c) => {
+    const token = bearerToken(c);
+    if (!token) return c.json({ error: "unauthorized" }, 401);
+    const claims = tokenClaims(token);
+    if (!claims) return c.json({ error: "unauthorized" }, 401);
+    const ctx = getContext();
+
+    const creds = await ctx.passkeys.listByCustomer(claims.sub);
+    return c.json(
+      PasskeyListResponse.parse({
+        passkeys: creds.map(({ credentialId, createdAt }) => ({ credentialId, createdAt })),
+      }),
+    );
   });
 
   // GET /auth/passkey/login/challenge — begin a USERLESS discoverable passkey login (ADR-0022).

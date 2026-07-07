@@ -137,6 +137,12 @@ export type PasskeyRegisterVerifyBody = z.infer<typeof PasskeyRegisterVerifyBody
 export const PasskeyRegisterVerifyResponse = z.object({ passkey: Passkey });
 export type PasskeyRegisterVerifyResponse = z.infer<typeof PasskeyRegisterVerifyResponse>;
 
+// GET /auth/passkey/list — the signed-in member's enrolled passkeys (summaries only; the public key
+// and sign counter never leave the server). Drives the SPA's "set up Face ID" prompt: it renders
+// only while this list is empty, so already-enrolled members are not nagged on every visit.
+export const PasskeyListResponse = z.object({ passkeys: z.array(Passkey) });
+export type PasskeyListResponse = z.infer<typeof PasskeyListResponse>;
+
 // GET /auth/passkey/login/challenge — begin a USERLESS discoverable passkey login (ADR-0022). No
 // username/phone: the discoverable credential resolves itself (userHandle = the Cognito sub). Public.
 // The `options` carry an EMPTY allowCredentials + a single-use challenge; `challengeId` is echoed at

@@ -558,6 +558,49 @@ describe("passkey register (ADR-0022 — own-store enrolment)", () => {
       expect(fake.challenges.consumePasskeyChallenge).toHaveBeenCalledWith("c1");
     });
   });
+
+  describe("GET /auth/passkey/list", () => {
+    function getAuthed(path: string, token = ACCESS_TOKEN) {
+      return app.request(path, { headers: { authorization: `Bearer ${token}` } });
+    }
+
+    it("requires a Bearer token", async () => {
+      const res = await app.request("/auth/passkey/list");
+      expect(res.status).toBe(401);
+    });
+
+    it("401s on a Bearer token with no decodable sub/username", async () => {
+      const res = await getAuthed("/auth/passkey/list", "not-a-jwt");
+      expect(res.status).toBe(401);
+    });
+
+    it("returns the member's passkey summaries only (no public key / counters on the wire)", async () => {
+      fake.passkeys.listByCustomer.mockResolvedValue([
+        {
+          credentialId: "cred-1",
+          customerSub: SUB,
+          cognitoUsername: "u",
+          publicKey: "pub-key",
+          signCount: 3,
+          transports: ["internal"],
+          createdAt: "2026-07-01T00:00:00.000Z",
+        },
+      ]);
+      const res = await getAuthed("/auth/passkey/list");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({
+        passkeys: [{ credentialId: "cred-1", createdAt: "2026-07-01T00:00:00.000Z" }],
+      });
+      expect(fake.passkeys.listByCustomer).toHaveBeenCalledWith(SUB);
+    });
+
+    it("returns an empty list for a member with no passkeys", async () => {
+      fake.passkeys.listByCustomer.mockResolvedValue([]);
+      const res = await getAuthed("/auth/passkey/list");
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ passkeys: [] });
+    });
+  });
 });
 
 describe("GET /auth/passkey/login/challenge (ADR-0022 — userless discoverable)", () => {
