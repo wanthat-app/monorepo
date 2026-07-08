@@ -180,15 +180,19 @@ export class AliExpressClient {
       timeoutMs,
     );
     const parsed = ProductDetailResponse.safeParse(data);
-    const respResult = parsed.success
-      ? parsed.data.aliexpress_affiliate_productdetail_get_response.resp_result
-      : undefined;
-    const product = respResult?.result?.products?.product[0];
+    // An unrecognized payload is NOT a definitive miss — never let it read as "no such product".
+    if (!parsed.success)
+      throw new AliExpressApiError(
+        "malformed_result",
+        "productdetail.get answered an unrecognized payload",
+      );
+    const respResult = parsed.data.aliexpress_affiliate_productdetail_get_response.resp_result;
+    const product = respResult.result?.products?.product[0];
     if (!product) {
       const diagnostics = [
-        respResult?.resp_code !== undefined && `resp_code=${respResult.resp_code}`,
-        respResult?.resp_msg !== undefined && `resp_msg="${respResult.resp_msg}"`,
-        respResult?.result?.current_record_count !== undefined &&
+        respResult.resp_code !== undefined && `resp_code=${respResult.resp_code}`,
+        respResult.resp_msg !== undefined && `resp_msg="${respResult.resp_msg}"`,
+        respResult.result?.current_record_count !== undefined &&
           `records=${respResult.result.current_record_count}`,
       ].filter(Boolean);
       throw new AliExpressApiError(

@@ -190,6 +190,27 @@ describe("generateLink", () => {
     expect(upserts).toHaveLength(0);
   });
 
+  it("answers product_not_supported (nothing stored) on a definitive empty productdetail", async () => {
+    const { products, upserts } = fakeProducts();
+    const res = await generateLink(URL, {
+      products,
+      client: async () =>
+        fakeClient({
+          detail: async () => {
+            throw new AliExpressApiError("empty_result", "productdetail.get returned no product");
+          },
+        }),
+      logger,
+      now: () => NOW,
+    });
+    expect(res).toEqual({
+      status: "error",
+      code: "product_not_supported",
+      message: "product is not in the affiliate catalog",
+    });
+    expect(upserts).toHaveLength(0);
+  });
+
   it("logs the store product id when productdetail fails (diagnosable failures)", async () => {
     const spyLogger = new Logger({ serviceName: "test", logLevel: "SILENT" });
     const errors: Array<[string, Record<string, unknown> | undefined]> = [];

@@ -128,6 +128,20 @@ describe("getProductDetail", () => {
     expect(capture.params?.get("country")).toBe("IL");
   });
 
+  it("answers empty_result ONLY for a well-formed empty response (a definitive miss)", async () => {
+    const empty = client({
+      aliexpress_affiliate_productdetail_get_response: { resp_result: { result: {} } },
+    });
+    await expect(empty.getProductDetail("1")).rejects.toMatchObject({ code: "empty_result" });
+  });
+
+  it("answers malformed_result for an unrecognized payload (NOT a definitive miss)", async () => {
+    const garbage = client({ something: "else entirely" });
+    await expect(garbage.getProductDetail("1")).rejects.toMatchObject({
+      code: "malformed_result",
+    });
+  });
+
   it("surfaces resp_code/resp_msg/record count in the empty-result error", async () => {
     const empty = client({
       aliexpress_affiliate_productdetail_get_response: {

@@ -142,6 +142,19 @@ export async function generateLink(url: string, deps: GenerateLinkDeps): Promise
       client.getProductDetail(parsed.storeProductId, PRODUCT_DETAIL_TIMEOUT_MS),
     );
   } catch (err) {
+    // A well-formed empty answer is a DEFINITIVE miss — the product is not in the affiliate
+    // catalog (e.g. subsidized promo items). Permanent, so a typed code, not upstream_error.
+    if (err instanceof AliExpressApiError && err.code === "empty_result") {
+      deps.logger.warn("productdetail.get answered empty; product not in the affiliate catalog", {
+        storeProductId: parsed.storeProductId,
+        error: String(err),
+      });
+      return {
+        status: "error",
+        code: "product_not_supported",
+        message: "product is not in the affiliate catalog",
+      };
+    }
     deps.logger.error("productdetail.get failed; failing the flow (all-or-nothing)", {
       storeProductId: parsed.storeProductId,
       error: String(err),

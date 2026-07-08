@@ -24,6 +24,12 @@ export const GenerateLinkErrorCode = z.enum([
   "unsupported_url",
   /** The retailer credential secret has not been populated yet (admin drop pending). */
   "retailer_not_configured",
+  /**
+   * The retailer answered a well-formed, definitive "no such product in the affiliate catalog"
+   * (e.g. subsidized promo items excluded from commission). Permanent for this product —
+   * retrying cannot help, unlike upstream_error.
+   */
+  "product_not_supported",
   /** The retailer API failed or answered with an error/malformed payload. */
   "upstream_error",
 ]);
