@@ -1,28 +1,27 @@
 import { describe, expect, it } from "vitest";
-import { isSupportedProductUrl, looksLikeUrl } from "./product-url";
+import { extractSupportedUrl } from "./product-url";
 
-describe("isSupportedProductUrl", () => {
-  it.each([
-    "https://www.aliexpress.com/item/1005006123456789.html",
-    "https://he.aliexpress.com/item/1005006123456789.html?spm=a2g0o.detail",
-    " https://m.aliexpress.com/i/1005006123456789.html ",
-  ])("accepts %s", (url) => {
-    expect(isSupportedProductUrl(url)).toBe(true);
+describe("extractSupportedUrl", () => {
+  const item = "https://he.aliexpress.com/item/1005006123456789.html";
+
+  it("extracts the short link from the real share-button message", () => {
+    const shareText =
+      "I just found this on AliExpress:  | USB To 5V DC Power Cable USB A to DC Boost Cable " +
+      "With Adapters USB to DC Jack Connector Power Supply Adapter For Wifi Router Fan\n" +
+      "https://a.aliexpress.com/_c3TWMcp5";
+    expect(extractSupportedUrl(shareText)).toBe("https://a.aliexpress.com/_c3TWMcp5");
   });
 
-  it.each([
-    "https://www.amazon.com/dp/B00X",
-    "https://a.aliexpress.com/_mShort",
-    "https://aliexpress.com.evil.example/item/1005006123456789.html",
-    "not a url",
-  ])("rejects %s", (url) => {
-    expect(isSupportedProductUrl(url)).toBe(false);
+  it("accepts a bare product URL and one inside prose (trailing punctuation stripped)", () => {
+    expect(extractSupportedUrl(item)).toBe(item);
+    expect(extractSupportedUrl(` look: ${item}?spm=x, nice!`)).toBe(`${item}?spm=x`);
   });
-});
 
-describe("looksLikeUrl", () => {
-  it("recognises a pasted URL and ignores prose", () => {
-    expect(looksLikeUrl("https://he.aliexpress.com/item/1.html")).toBe(true);
-    expect(looksLikeUrl("check this out")).toBe(false);
+  it("returns null for unsupported stores, lookalike hosts and plain prose", () => {
+    expect(extractSupportedUrl("https://www.amazon.com/dp/B00X")).toBeNull();
+    expect(
+      extractSupportedUrl("https://aliexpress.com.evil.example/item/1005006123456789.html"),
+    ).toBeNull();
+    expect(extractSupportedUrl("no links here")).toBeNull();
   });
 });

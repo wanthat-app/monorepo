@@ -1,4 +1,4 @@
-import { parseAliExpressProductUrl } from "@wanthat/aliexpress";
+import { extractAliExpressUrl } from "@wanthat/aliexpress";
 import type {
   CashbackEstimate,
   CashbackSplit,
@@ -158,31 +158,33 @@ const keyOf = (cursor: string | undefined): Record<string, unknown> | undefined 
 export function productsRouter(): Hono<{ Bindings: Bindings }> {
   const products = new Hono<{ Bindings: Bindings }>();
 
-  // POST /products/resolve — paste URL → fetch/upsert the shared product + current-policy
-  // estimate. Reuse check first (ADR-0008: one link.generate per product): a known product is
-  // answered straight from DynamoDB with no retailer call.
+  // POST /products/resolve — paste a URL OR the whole share-button text → fetch/upsert the
+  // shared product + current-policy estimate. The first supported URL is extracted from the
+  // text; a directly-parseable product URL gets a local reuse check first (ADR-0008: one
+  // link.generate per product), while a share short-link goes straight to the retailer-proxy,
+  // which expands it (the sole egress) and does its own reuse check.
   products.post("/resolve", async (c) => {
     const sub = subFromClaims(c);
     if (!sub) return c.json({ error: "unauthorized" }, 401);
     const body = await parseBody(c, ResolveProductBody);
     if (!body) return c.json({ error: "invalid_request" }, 400);
 
-    const parsed = parseAliExpressProductUrl(body.url);
-    if (!parsed) return c.json({ error: "unsupported_url" }, 400);
+    const candidate = extractAliExpressUrl(body.url);
+    if (!candidate) return c.json({ error: "unsupported_url" }, 400);
 
     const ctx = getContext();
-    let item: ProductItem | undefined = await ctx.products.get(
-      parsed.storeId,
-      parsed.storeProductId,
-    );
+    let item: ProductItem | undefined =
+      candidate.kind === "product"
+        ? await ctx.products.get(candidate.storeId, candidate.storeProductId)
+        : undefined;
     if (!item) {
-      const minted = await ctx.retailerProxy.generateLink(body.url);
+      const minted = await ctx.retailerProxy.generateLink(candidate.url);
       if (minted.status === "error") {
         return c.json({ error: minted.code }, PROXY_ERROR_STATUS[minted.code]);
       }
       // The proxy upserted the Product (ADR-0004); reread the stored row so the response and
       // any concurrent resolve agree on one source of truth.
-      item = await ctx.products.get(parsed.storeId, parsed.storeProductId);
+      item = await ctx.products.get(minted.product.storeId, minted.product.storeProductId);
       if (!item) return c.json({ error: "upstream_error" }, 502);
     }
 
