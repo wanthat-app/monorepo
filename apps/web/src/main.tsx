@@ -6,7 +6,6 @@ import { App } from "./App";
 import { AdminCallbackPage } from "./features/admin/AdminCallbackPage";
 import { AdminPage } from "./features/admin/AdminPage";
 import { AuthPage } from "./features/auth/AuthPage";
-import { CallbackPage } from "./features/auth/CallbackPage";
 import { CreateLinkPage } from "./features/create/CreateLinkPage";
 import { HomePage } from "./features/home/HomePage";
 import { SharedProductPage } from "./features/landing/SharedProductPage";
@@ -14,13 +13,14 @@ import { NotFoundPage } from "./features/not-found/NotFoundPage";
 import "./i18n";
 import "./index.css";
 import { initConfig } from "./lib/config";
-import { SessionProvider } from "./lib/session";
+import { SessionProvider } from "./user";
 
 const queryClient = new QueryClient();
 const router = createBrowserRouter([
   { path: "/", element: <App /> },
   { path: "/auth", element: <AuthPage /> },
-  { path: "/auth/callback", element: <CallbackPage /> },
+  // No /auth/callback any more: customer auth is Cognito-native in-page (ADR-0006); the only
+  // OAuth redirect left is the ADMIN console's (its own callback below).
   { path: "/home", element: <HomePage /> },
   { path: "/create", element: <CreateLinkPage /> },
   // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).

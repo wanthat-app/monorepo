@@ -2,13 +2,12 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { authApi, type WalletEntryWire, walletApi } from "../../lib/api";
+import { type WalletEntryWire, walletApi } from "../../lib/api";
 import { formatMoneyMinor, splitMoneyMinor } from "../../lib/money";
-import { enrollPasskey, passkeysSupported } from "../../lib/passkey";
-import { useSession } from "../../lib/session";
 import { Logo } from "../../ui/brand";
 import { Button } from "../../ui/components";
-import { ActivityRow, BalanceCard, ProfileChip, PromptCard, TabBar, TopNav } from "../../ui/wallet";
+import { ActivityRow, BalanceCard, PromptCard, TabBar, TopNav } from "../../ui/wallet";
+import { enrollPasskey, listPasskeys, passkeysSupported, UserChip, useSession } from "../../user";
 
 const RECENT_LIMIT = 4;
 const ROW_STATUS = { confirmed: "confirmed", pending: "pending", clawback: "rejected" } as const;
@@ -32,57 +31,54 @@ const FACE_ICON = (
 
 /**
  * Member home — the wallet dashboard (design handoff: Wallet flow, Home). Balance + activity come
- * from the wallet endpoints (stubbed empty until the poller slice writes the ledger). Create link
- * is LIVE (nav button, mobile FAB and the promo card all open /create); Activity, Profile, See all
- * and Withdraw are visible per the design but inert this slice; the Face ID prompt card is live —
- * shown only to members with no enrolled passkey (server truth via GET /auth/passkey/list; hidden
- * while unknown so the enrolled majority never sees a flash). Sign-out stays reachable via the
- * avatar menu meanwhile.
+ * from the wallet endpoints (Bearer access token via useSession — app-core is wallet-only after
+ * ADR-0006). The profile is the module's ID-token claims; the avatar is the module's UserChip
+ * (profile edit, passkeys and sign-out all live inside it). The Face ID prompt card is live —
+ * shown only to members with no enrolled passkey (server truth via Cognito
+ * ListWebAuthnCredentials; hidden while unknown so the enrolled majority never sees a flash).
  */
 export function HomePage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
-  const { customer, accessToken, signOut } = useSession();
+  const { profile, loading, accessToken } = useSession();
   const [passkeyState, setPasskeyState] = useState<"idle" | "enrolling" | "done" | "error">("idle");
-  const [menuOpen, setMenuOpen] = useState(false);
 
   const token = accessToken();
   const wallet = useQuery({
-    queryKey: ["wallet", customer?.id],
+    queryKey: ["wallet", profile?.sub],
     queryFn: () => walletApi.get(token as string),
-    enabled: !!token && !!customer,
+    enabled: !!token && !!profile,
   });
   const entries = useQuery({
-    queryKey: ["wallet-entries", customer?.id, RECENT_LIMIT],
+    queryKey: ["wallet-entries", profile?.sub, RECENT_LIMIT],
     queryFn: () => walletApi.entries(token as string, RECENT_LIMIT),
-    enabled: !!token && !!customer,
+    enabled: !!token && !!profile,
   });
   const passkeys = useQuery({
-    queryKey: ["passkeys", customer?.id],
-    queryFn: () => authApi.passkeyList(token as string),
-    enabled: !!token && !!customer && passkeysSupported(),
+    queryKey: ["passkeys", profile?.sub],
+    queryFn: () => listPasskeys(),
+    enabled: !!profile && passkeysSupported(),
   });
 
-  if (!customer) {
+  // Wait out the session rehydrate before deciding — a hard reload of /home must not bounce a
+  // signed-in member to /auth while the refresh-token exchange is in flight.
+  if (loading) return null;
+  if (!profile) {
     navigate("/auth", { replace: true });
     return null;
   }
 
   const onEnrollPasskey = async () => {
-    if (!token) return;
     setPasskeyState("enrolling");
     try {
-      await enrollPasskey(token);
+      await enrollPasskey();
       setPasskeyState("done");
     } catch {
       setPasskeyState("error");
     }
   };
 
-  const onSignOut = async () => {
-    await signOut();
-    navigate("/auth", { replace: true });
-  };
+  const userChip = <UserChip onSignedOut={() => navigate("/auth", { replace: true })} />;
 
   const est = wallet.data?.estimated ?? null;
   const [amount, fraction] = est ? splitMoneyMinor(est.available.amountMinor, "ILS") : ["", ""];
@@ -98,21 +94,9 @@ export function HomePage() {
   const entryMeta = (e: WalletEntryWire) =>
     new Date(e.createdAt).toLocaleDateString(dateLocale, { day: "numeric", month: "short" });
 
-  const profileMenu = menuOpen ? (
-    <div className="absolute end-6 top-16 z-20 min-w-36 rounded-input border border-line bg-surface p-1.5 shadow-[0_1px_2px_rgba(0,0,0,.08)]">
-      <button
-        type="button"
-        onClick={() => void onSignOut()}
-        className="w-full rounded-[9px] px-3 py-2 text-start text-sm font-semibold text-ink transition hover:bg-page"
-      >
-        {t("home.signOut")}
-      </button>
-    </div>
-  ) : null;
-
   return (
     <div className="relative flex min-h-screen flex-col bg-page">
-      {/* Desktop chrome: top nav. Activity / avatar-menu-open are the slice's inert edges. */}
+      {/* Desktop chrome: top nav. Activity is the slice's inert edge. */}
       <div className="hidden md:block">
         <TopNav
           links={[
@@ -121,20 +105,14 @@ export function HomePage() {
           ]}
           createLabel={t("home.createLink")}
           onCreate={() => navigate("/create")}
-          profileInitial={customer.firstName.charAt(0).toUpperCase()}
-          onProfile={() => setMenuOpen((v) => !v)}
+          profileSlot={userChip}
         />
       </div>
       {/* Mobile chrome: brand + avatar header. */}
       <header className="flex items-center justify-between px-6 pt-5 md:hidden">
         <Logo size="sm" />
-        <ProfileChip
-          initial={customer.firstName.charAt(0).toUpperCase()}
-          onClick={() => setMenuOpen((v) => !v)}
-          size={36}
-        />
+        {userChip}
       </header>
-      {profileMenu}
 
       <main className="mx-auto flex w-full max-w-[430px] flex-1 flex-col gap-4 px-6 pb-32 pt-5 md:max-w-[640px] md:pb-12 md:pt-8">
         {wallet.isError ? (
@@ -186,7 +164,7 @@ export function HomePage() {
         {/* Only members who have NOT enrolled a passkey yet see the prompt. `length === 0` is the
             deliberate gate: while the list is loading (or failed) it is undefined, so enrolled
             members never see the card flash and an outage stays quiet rather than nagging. */}
-        {passkeysSupported() && passkeyState !== "done" && passkeys.data?.passkeys.length === 0 && (
+        {passkeysSupported() && passkeyState !== "done" && passkeys.data?.length === 0 && (
           <PromptCard
             icon={FACE_ICON}
             title={t("home.setupFaceId")}

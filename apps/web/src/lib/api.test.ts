@@ -1,66 +1,40 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ApiError, authApi } from "./api";
+import { ApiError, linksApi, walletApi } from "./api";
 
 afterEach(() => vi.unstubAllGlobals());
 
-describe("api client", () => {
-  it("POSTs /auth/start and returns the parsed body", async () => {
+describe("api client (wallet + links — the app-api surface left after ADR-0006)", () => {
+  it("GETs the wallet with the Bearer token", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ challengeId: "c1", resendAfterSec: 30, expiresInSec: 180 }),
+      json: async () => ({ balances: [], estimated: null }),
     });
     vi.stubGlobal("fetch", fetchMock);
 
-    const res = await authApi.start("+972541234567", "sms");
-    expect(res.challengeId).toBe("c1");
-    const call = fetchMock.mock.calls[0] as [string, { method: string }];
-    expect(call[0]).toContain("/auth/start");
-    expect(call[1].method).toBe("POST");
-  });
-
-  it("attaches the Bearer token for authorised calls", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ challengeId: "c1", options: {} }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    await authApi.passkeyRegisterOptions("tok-123");
-    const call = fetchMock.mock.calls[0] as [string, { headers: Record<string, string> }];
-    expect(call[1].headers.authorization).toBe("Bearer tok-123");
-  });
-
-  it("GETs the userless passkey login challenge with no body or token", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ challengeId: "c1", options: {} }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const res = await authApi.passkeyLoginChallenge();
-    expect(res.challengeId).toBe("c1");
-    const call = fetchMock.mock.calls[0] as [string, { method?: string; body?: unknown }];
-    expect(call[0]).toContain("/auth/passkey/login/challenge");
-    expect(call[1].method ?? "GET").toBe("GET");
-    expect(call[1].body).toBeUndefined();
-  });
-
-  it("GETs the member's passkey list with the Bearer token", async () => {
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      json: async () => ({ passkeys: [] }),
-    });
-    vi.stubGlobal("fetch", fetchMock);
-
-    const res = await authApi.passkeyList("tok-123");
-    expect(res.passkeys).toEqual([]);
+    const res = await walletApi.get("tok-123");
+    expect(res.balances).toEqual([]);
     const call = fetchMock.mock.calls[0] as [
       string,
       { method?: string; headers: Record<string, string> },
     ];
-    expect(call[0]).toContain("/auth/passkey/list");
+    expect(call[0]).toContain("/wallet");
     expect(call[1].method ?? "GET").toBe("GET");
     expect(call[1].headers.authorization).toBe("Bearer tok-123");
+  });
+
+  it("POSTs /products/resolve with the pasted URL and returns the parsed body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ product: { title: "x" }, estimate: {}, displayFx: null }),
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await linksApi.resolveProduct("tok-123", "https://example.com/p");
+    expect(res.displayFx).toBeNull();
+    const call = fetchMock.mock.calls[0] as [string, { method: string; body: string }];
+    expect(call[0]).toContain("/products/resolve");
+    expect(call[1].method).toBe("POST");
+    expect(JSON.parse(call[1].body).url).toBe("https://example.com/p");
   });
 
   it("throws ApiError carrying the server error code", async () => {
@@ -72,8 +46,8 @@ describe("api client", () => {
         json: async () => ({ error: "rate_limited" }),
       }),
     );
-    await expect(authApi.start("+972", "sms")).rejects.toBeInstanceOf(ApiError);
-    await expect(authApi.start("+972", "sms")).rejects.toMatchObject({
+    await expect(walletApi.get("tok")).rejects.toBeInstanceOf(ApiError);
+    await expect(walletApi.get("tok")).rejects.toMatchObject({
       status: 429,
       code: "rate_limited",
     });

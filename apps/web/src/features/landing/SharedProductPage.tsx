@@ -1,14 +1,14 @@
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
-import {
-  deviceHasPasskey,
-  loginWithPasskeyTokens,
-  passkeyImmediateSupported,
-  passkeysSupported,
-} from "../../lib/passkey";
-import { hasStoredSession, persistRefreshToken, useSession } from "../../lib/session";
 import { Button, Screen, Spinner } from "../../ui/components";
+import {
+  canLoginWithPasskey,
+  hasStoredSession,
+  loginWithPasskey,
+  passkeysSupported,
+  useSession,
+} from "../../user";
 
 /**
  * Referral landing (ADR-0007/0006) — the dynamic, SPA-rendered `/p/{id}` page. The landing SERVICE
@@ -17,13 +17,14 @@ import { Button, Screen, Spinner } from "../../ui/components";
  * Design rule: CONTENT FIRST — the product card renders immediately and unconditionally; auth is a
  * small module under it and never gates rendering. The module walks the same states as /auth:
  *  - logged in (stored session) → "signing you in…" while rehydrating → auto-redirect to the store;
- *  - logged out + returning passkey device → the Face ID prompt is ARMED and fires when the document
- *    gains focus (iOS Safari rejects an unfocused get(); worst case it pops on the first tap) — the
- *    CTAs stay visible underneath; on success → auto-redirect;
+ *  - logged out + returning device (remembered phone, ADR-0006) → the Face ID prompt is ARMED and
+ *    fires when the document gains focus (iOS Safari rejects an unfocused get(); worst case it pops
+ *    on the first tap) — the CTAs stay visible underneath; on success → auto-redirect;
  *  - logged out / unknown device → Sign up / Log in (→ /auth?ref, which redirects to the store after
  *    auth) + a direct guest link.
- * MOCK: hardcoded product + a placeholder store URL (the real resolve + attributed redirect land with
- * the full-landing slice). The auth is real.
+ * The whole path is backend-free (ADR-0006): Cognito challenge + token mint, done — no Aurora, no
+ * app API. MOCK: hardcoded product + a placeholder store URL (the real resolve + attributed
+ * redirect land with the full-landing slice). The auth is real.
  */
 const PRODUCT = {
   title: "Jebao Smart Aquarium Fish Feeder",
@@ -38,11 +39,11 @@ export function SharedProductPage() {
   const { t } = useTranslation();
   const { id = "" } = useParams();
   const [searchParams] = useSearchParams();
-  // Aurora-free by design (ADR-0007): a member is recognised by `tokens` (a valid Cognito refresh) —
-  // never by the profile (`customer` needs /me → Aurora, which this page must not touch).
-  const { tokens, loading } = useSession();
-  // True from the moment the biometric succeeds until the verify round-trip lands — the module shows
-  // "signing you in…" instead of looking hung.
+  // A member is recognised by the session status (a valid Cognito refresh) — the profile comes free
+  // with it (ID-token claims), so no backend is touched either way (ADR-0006).
+  const { status, loading } = useSession();
+  // True from the moment the biometric succeeds until the Cognito round-trip lands — the module
+  // shows "signing you in…" instead of looking hung.
   const [verifying, setVerifying] = useState(false);
   // A passkey login that just completed on this page (session persisted, redirect firing).
   const [authed, setAuthed] = useState(false);
@@ -59,16 +60,16 @@ export function SharedProductPage() {
   const toStore = () => window.location.assign(MOCK_STORE_URL);
 
   // A recognised (valid refresh) or just-authenticated member goes straight to the store — the
-  // acquisition destination. No button, no interstitial, no Aurora.
-  const signedIn = (!loading && !!tokens) || authed;
+  // acquisition destination. No button, no interstitial, no backend.
+  const signedIn = status === "signedIn" || authed;
   useEffect(() => {
     if (signedIn) toStore();
   }, [signedIn]);
 
-  // Arm the automatic passkey prompt when there is no session: immediate mode where supported
-  // (zero-storage, fires on first interaction iff a passkey exists), else the per-device-flag modal
-  // prompt that fires on document focus. Rendering is never blocked on it. The whole path is
-  // Aurora-free: DynamoDB challenge + credential, Cognito token mint, done.
+  // Arm the automatic passkey prompt when there is no session: only on a returning device — a
+  // remembered phone exists (Cognito's WEB_AUTHN challenge is username-gated; userless login is
+  // waived, ADR-0006). The module waits for document focus internally, so rendering is never
+  // blocked on it.
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
@@ -80,30 +81,19 @@ export function SharedProductPage() {
       note("gate: webauthn unsupported → no prompt");
       return;
     }
+    if (!canLoginWithPasskey()) {
+      note("gate: no remembered phone → no prompt (ADR-0006: userless login waived)");
+      return;
+    }
+    note("auto-prompt: armed — fires on document focus");
     void (async () => {
-      // Immediate mode (Chrome 149+) is the zero-storage automatic path: fires on the first
-      // interaction iff a locally-available passkey exists (even one synced from another device),
-      // rejects silently otherwise. Elsewhere (Safari/Firefox) the per-device flag gates the
-      // focus-armed modal prompt, so a brand-new visitor is never shown an unsatisfiable sheet.
-      const immediate = await passkeyImmediateSupported();
-      if (!immediate && !deviceHasPasskey()) {
-        note("gate: immediateGet unsupported + not a returning device → no prompt");
-        return;
-      }
-      note(
-        immediate
-          ? "auto-prompt: immediate mode — fires on first interaction if a passkey exists"
-          : "auto-prompt: armed — fires on document focus",
-      );
       try {
-        const freshTokens = await loginWithPasskeyTokens({
-          mode: immediate ? "immediate" : "modal",
+        await loginWithPasskey({
           onCredential: () => {
             note("biometric ok → verifying");
             setVerifying(true);
           },
         });
-        persistRefreshToken(freshTokens.refreshToken);
         setAuthed(true); // → signedIn → the redirect effect above
       } catch (err) {
         note(
