@@ -31,6 +31,13 @@ app.route("/auth", authRouter());
 app.route("/products", productsRouter());
 app.route("/recommendations", recommendationsRouter());
 
+// Log any uncaught handler error (otherwise Hono returns 500 with no trace) so a failed proxy
+// invoke or DynamoDB hiccup on the links routes surfaces as a clean, logged internal_error.
+app.onError((err, c) => {
+  console.error(`${SERVICE} error on ${c.req.method} ${c.req.path}:`, err);
+  return c.json({ error: "internal_error", service: SERVICE }, 500);
+});
+
 // Anything else on this function is not its concern — a clean 501 rather than a 404.
 app.all("*", (c) => c.json({ error: "not_implemented", service: SERVICE, path: c.req.path }, 501));
 

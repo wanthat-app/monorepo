@@ -17,10 +17,16 @@ const ReviewItem = z.object({
 /**
  * The stored recommendation projection (ADR-0003/0007): a member's shareable rec of a product,
  * PK `recommendationId`, GSI `byOwner` (`ownerId`, `createdAt`). `ownerId` is the member's
- * Cognito sub — the create path must stay Aurora-free (ADR-0004), so no customer-row lookup.
+ * canonical id — the Cognito sub (ADR-0025) — so the create path stays Aurora-free (ADR-0004).
  * The product fields (+ `affiliateUrl`) are denormalised so the landing redirect resolves in
  * ONE lookup (ADR-0007), and `cashback` is the split snapshot that LOCKS the link's economics
  * at creation (ADR-0008). `clicks`/`conversions` are fed by the funnel (later slice).
+ *
+ * FUTURE (agreed 2026-07-09): two DynamoDB reads per resolve are acceptable, so the duplicated
+ * product metadata (`title`/`imageUrl`/`price`/`commissionBps`) may be normalised into a second
+ * Product-table read when a real need appears (metadata refresh, moderation). `affiliateUrl` and
+ * the `cashback` snapshot stay HERE either way — they are point-in-time state of the link, not
+ * catalog data. No rework now.
  */
 export const RecommendationItem = z.object({
   recommendationId: z.string(),

@@ -42,7 +42,12 @@ export function Avatar({
         className="flex shrink-0 items-center justify-center overflow-hidden rounded-thumb border border-line bg-surface"
         style={{ width: size, height: size }}
       >
-        <img src={src} alt={alt} className="max-h-full max-w-full object-contain" />
+        <img
+          src={src}
+          alt={alt}
+          referrerPolicy="no-referrer"
+          className="max-h-full max-w-full object-contain"
+        />
       </span>
     );
   }
@@ -191,7 +196,14 @@ export function ProductCard({
   return (
     <div className="overflow-hidden rounded-[22px] border border-line bg-surface">
       <div className="flex h-[204px] items-center justify-center border-b border-line bg-surface p-3.5">
-        <img src={src} alt={title} className="max-h-full max-w-full object-contain" />
+        {/* Hotlinked from the retailer CDN (we store only the URL). Plain <img> needs no CORS;
+            no-referrer keeps it rendering if the CDN ever adds referer-based hotlink protection. */}
+        <img
+          src={src}
+          alt={title}
+          referrerPolicy="no-referrer"
+          className="max-h-full max-w-full object-contain"
+        />
       </div>
       <div className="px-4.5 py-4 px-[18px]">
         <div className="mb-2 text-[17px] font-bold leading-[1.25] text-ink">{title}</div>

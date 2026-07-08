@@ -58,13 +58,15 @@ export function meRouter(): Hono<{ Bindings: Bindings }> {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
+    // Membership check only — the mapping stores the SUB, the canonical user id (ADR-0025); the
+    // poller resolves sub → customer row via cognito_sub when it writes the ledger.
     const profile = await findByCognitoSub(ctx.db, sub);
     if (!profile) return c.json({ error: "not_found" }, 404);
 
     const claimedAt = new Date().toISOString();
     let claimed = 0;
     for (const guestId of body.guestIds) {
-      if (await ctx.guests.claim(guestId, profile.id, claimedAt)) claimed += 1;
+      if (await ctx.guests.claim(guestId, sub, claimedAt)) claimed += 1;
     }
     return c.json({ claimed });
   });

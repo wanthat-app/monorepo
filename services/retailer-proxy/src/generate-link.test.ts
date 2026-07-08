@@ -74,6 +74,19 @@ describe("generateLink", () => {
     expect(res).toEqual({ status: "error", code: "retailer_not_configured" });
   });
 
+  it("answers upstream_error (never throws) when the client setup itself fails", async () => {
+    const { products } = fakeProducts();
+    const res = await generateLink(URL, {
+      products,
+      client: async () => {
+        throw new Error("secrets manager throttled");
+      },
+      logger,
+    });
+    expect(res.status).toBe("error");
+    if (res.status === "error") expect(res.code).toBe("upstream_error");
+  });
+
   it("answers upstream_error when the link mint fails", async () => {
     const { products, upserts } = fakeProducts();
     const res = await generateLink(URL, {

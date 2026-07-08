@@ -40,7 +40,16 @@ export async function generateLink(url: string, deps: GenerateLinkDeps): Promise
   const parsed = parseAliExpressProductUrl(url);
   if (!parsed) return { status: "error", code: "unsupported_url" };
 
-  const client = await deps.client();
+  // Building the client reads the credential secret + the tracking-id config — remote calls that
+  // can fail transiently. A known op never throws (the invoke contract), so degrade to a typed
+  // error the caller maps, exactly like a retailer failure.
+  let client: Awaited<ReturnType<GenerateLinkDeps["client"]>>;
+  try {
+    client = await deps.client();
+  } catch (err) {
+    deps.logger.error("client setup failed (secret/config read)", { error: String(err) });
+    return { status: "error", code: "upstream_error", message: "client setup failed" };
+  }
   if (!client) return { status: "error", code: "retailer_not_configured" };
 
   const [link, detail] = await Promise.allSettled([

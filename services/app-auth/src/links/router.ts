@@ -26,7 +26,7 @@ import { Hono } from "hono";
 import { type Bindings, subFromClaims } from "../claims";
 import { getContext } from "../context";
 import { moneyJson } from "../http";
-import { RECOMMENDATION_NAMESPACE, uuidV5 } from "./uuid";
+import { recommendationIdFor } from "./rec-id";
 
 /**
  * The links module (ADR-0002): paste URL → shared product with a product-level affiliate URL →
@@ -216,8 +216,8 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
   const recs = new Hono<{ Bindings: Bindings }>();
 
   // POST /recommendations — the member's shareable link for a resolved product. Idempotent on
-  // (owner, product): the id is derived (uuidV5), so a replay returns the EXISTING link with its
-  // original cashback snapshot (ADR-0008 locks economics at creation) — 200, not 201.
+  // (owner, product): the id is derived (rec-id.ts), so a replay returns the EXISTING link with
+  // its original cashback snapshot (ADR-0008 locks economics at creation) — 200, not 201.
   recs.post("/", async (c) => {
     const sub = subFromClaims(c);
     if (!sub) return c.json({ error: "unauthorized" }, 401);
@@ -232,10 +232,7 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
     const split = await currentSplit();
     const now = new Date().toISOString();
     const { item, created } = await ctx.recommendations.create({
-      recommendationId: uuidV5(
-        `${sub}#${body.storeId}#${body.storeProductId}`,
-        RECOMMENDATION_NAMESPACE,
-      ),
+      recommendationId: recommendationIdFor(sub, body.storeId, body.storeProductId),
       ownerId: sub,
       storeId: product.storeId,
       storeProductId: product.storeProductId,
@@ -251,6 +248,18 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
       createdAt: now,
       updatedAt: now,
     });
+    // A conditional-write hit must be THIS owner's link for THIS product. With an 11-char
+    // (~64-bit) id an accidental birthday collision is negligible but not zero — this guard
+    // turns that worst case into a loud 500 instead of ever returning someone else's link.
+    if (
+      !created &&
+      (item.ownerId !== sub ||
+        item.storeId !== body.storeId ||
+        item.storeProductId !== body.storeProductId)
+    ) {
+      console.error("recommendation id collision", { recommendationId: item.recommendationId });
+      return c.json({ error: "internal_error" }, 500);
+    }
     return moneyJson(
       c,
       CreateRecommendationResponse.parse({ recommendation: toRecommendation(item, ctx.appUrl) }),

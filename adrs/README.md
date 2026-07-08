@@ -6,7 +6,7 @@ consequences. **0001–0009** cover the architecture (foundation-first: structur
 **0010–0016** cover the implementation stack; **0017** extends the architecture set with the
 currency / FX model; **0019** fixes the EdgeStack composition (one CloudFront distribution: SPA +
 landing); **0020** carries the auth foundation incl. the auth-edge/core split; **0022** the full
-passkey story; **0023** WhatsApp messaging.
+passkey story; **0023** WhatsApp messaging; **0025** the canonical user identifier.
 
 > **Numbering gaps are deliberate.** Pre-production (2026-07-07) the set was consolidated: each
 > superseding ADR was folded into the record it superseded, with the replaced design preserved
@@ -37,6 +37,7 @@ passkey story; **0023** WhatsApp messaging.
 | [0020](0020-auth-foundation.md) | Auth foundation: `customer` provisioned in `/auth/register`, non-VPC auth edge + in-VPC core split, Ed25519 ticket bridge (verification secretless), DynamoDB kill switch, unified flow, employee pool (absorbed 0021) |
 | [0022](0022-faceid-passkey-authentication.md) | FaceID = platform WebAuthn passkeys: custom discoverable ceremony (`@wanthat/webauthn` + `passkey_credential`), automatic biometric login (auto-modal armed on focus / conditional-UI autofill), admin token exchange to Cognito tokens, OTP recovery (absorbed 0024) |
 | [0023](0023-whatsapp-messaging-capability.md) | WhatsApp messaging capability: reusable `@wanthat/whatsapp` + Cognito Custom SMS Sender over AWS End User Messaging Social (WhatsApp-default OTP + `optin_welcome`); DynamoDB-Streams outbox NAT-free bridge (refines [0006](0006-identity-sms-otp-and-passkeys.md)) *(Proposed)* |
+| [0025](0025-canonical-user-identifier.md) | Canonical user identifier: the Cognito `sub` everywhere outside Aurora's own FKs (DynamoDB items, attribution `custom_parameters`, invoke payloads); `customer.id` stays Aurora-internal, joined via unique `cognito_sub` |
 
 ## Status & change policy
 

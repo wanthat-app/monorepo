@@ -21,8 +21,8 @@ const { fake } = vi.hoisted(() => ({
 
 vi.mock("../context", () => ({ getContext: () => fake }));
 
+import { recommendationIdFor } from "./rec-id";
 import { productsRouter, recommendationsRouter } from "./router";
-import { RECOMMENDATION_NAMESPACE, uuidV5 } from "./uuid";
 
 const app = new Hono();
 app.route("/products", productsRouter());
@@ -47,7 +47,7 @@ const PRODUCT_ITEM = {
   updatedAt: NOW,
 };
 
-const REC_ID = uuidV5(`${SUB}#aliexpress#1005006123456789`, RECOMMENDATION_NAMESPACE);
+const REC_ID = recommendationIdFor(SUB, "aliexpress", "1005006123456789");
 const REC_ITEM = {
   recommendationId: REC_ID,
   ownerId: SUB,
@@ -203,6 +203,17 @@ describe("POST /recommendations", () => {
     const res = await req("/recommendations", "POST", body);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "product_not_resolved" });
+  });
+
+  it("500s (never leaks) if a conditional-write hit belongs to another owner (id collision)", async () => {
+    fake.products.get.mockResolvedValue(PRODUCT_ITEM);
+    fake.recommendations.create.mockResolvedValue({
+      item: { ...REC_ITEM, ownerId: "sub-other" },
+      created: false,
+    });
+    const res = await req("/recommendations", "POST", body);
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain("sub-other");
   });
 });
 
