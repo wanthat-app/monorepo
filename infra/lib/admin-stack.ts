@@ -32,8 +32,9 @@ export interface AdminStackProps extends StackProps {
   // as defence-in-depth.
   readonly employeePool: cognito.IUserPool;
   readonly employeePoolClient: cognito.IUserPoolClient;
-  // CUSTOMER pool (the members) - the users page deletes customer accounts from it. Only the
-  // non-VPC credentials function touches it (cognito-idp is unreachable from the VPC, ADR-0004).
+  // CUSTOMER pool (the members) - the users page lists, moderates, and deletes customer accounts
+  // in it (ADR-0006: Cognito is the customer store). Only the non-VPC credentials function
+  // touches it (cognito-idp is unreachable from the VPC, ADR-0004).
   readonly customerPool: cognito.IUserPool;
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly productTable: dynamodb.ITable;
@@ -132,17 +133,33 @@ export class AdminStack extends Stack {
         WANTHAT_ENV: wanthatEnv.name,
         RETAILER_SECRET_ARN: props.retailerSecret.secretArn,
         CUSTOMER_USER_POOL_ID: props.customerPool.userPoolId,
+        // User erasure also deletes the member's DynamoDB recommendations (ADR-0006 decision 8).
+        RECOMMENDATION_TABLE: props.recommendationTable.tableName,
       },
     });
     this.adminCredentialsFn = credentialsFn;
-    // Customer-account removal for the users page (AdminDeleteUser only - the admin surface can
-    // delete a member's sign-in but never read or alter one).
+    // Customer-pool user management for the users page (ADR-0006 decision 8): list/search via
+    // ListUsers, approximate totals via DescribeUserPool, suspend/lift/kick via
+    // AdminDisableUser / AdminEnableUser / AdminUserGlobalSignOut, erasure via AdminGetUser (sub
+    // resolution for the recommendation cleanup) + AdminDeleteUser. Lifecycle-only on purpose:
+    // no attribute writes, no token reads.
     credentialsFn.addToRolePolicy(
       new iam.PolicyStatement({
-        actions: ["cognito-idp:AdminDeleteUser"],
+        actions: [
+          "cognito-idp:AdminDeleteUser",
+          "cognito-idp:AdminDisableUser",
+          "cognito-idp:AdminEnableUser",
+          "cognito-idp:AdminGetUser",
+          "cognito-idp:AdminUserGlobalSignOut",
+          "cognito-idp:DescribeUserPool",
+          "cognito-idp:ListUsers",
+        ],
         resources: [props.customerPool.userPoolArn],
       }),
     );
+    // deleteByOwner pages the byOwner GSI and pairs each delete with the counter decrement -
+    // read + write on the table and its indexes.
+    props.recommendationTable.grantReadWriteData(credentialsFn);
     // WRITE-ONLY grant on the retailer credential secret: PutSecretValue (replace the value) +
     // DescribeSecret (non-secret status metadata). Deliberately not grantWrite (adds UpdateSecret)
     // and no GetSecretValue - the admin role structurally cannot read the credential back.
@@ -194,14 +211,24 @@ export class AdminStack extends Stack {
       integration: credentialsIntegration,
       authorizer,
     });
-    // Cognito cleanup for the users page - also the non-VPC function (cognito-idp is unreachable
-    // from the VPC). Exact path beats the catch-all; /admin/users itself stays on admin-api.
+    // The users surface is Cognito-backed (ADR-0006), so it is served by the non-VPC function:
+    // list/search (GET /admin/users), ban tooling (disable / enable / global-signout), and the
+    // account cleanup (cognito-delete). Exact paths beat the catch-all; the Aurora-side
+    // DELETE /admin/users/{id} stays on admin-api until T7 drops the customer table.
     this.httpApi.addRoutes({
-      path: "/admin/users/cognito-delete",
-      methods: [HttpMethod.POST],
+      path: "/admin/users",
+      methods: [HttpMethod.GET],
       integration: credentialsIntegration,
       authorizer,
     });
+    for (const action of ["disable", "enable", "global-signout", "cognito-delete"]) {
+      this.httpApi.addRoutes({
+        path: `/admin/users/${action}`,
+        methods: [HttpMethod.POST],
+        integration: credentialsIntegration,
+        authorizer,
+      });
+    }
     // Explicit methods (NOT ANY) so `OPTIONS` has no matching route and falls through to API
     // Gateway's built-in CORS preflight handler instead of being 401'd by the authorizer.
     this.httpApi.addRoutes({

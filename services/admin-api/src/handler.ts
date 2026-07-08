@@ -2,8 +2,10 @@
  * Admin API (ADR-0002, ADR-0006) — a separate in-VPC Lambda with its own role/exposure, behind its
  * own HTTP API + JWT authorizer (every route gated; no public probe). HTTP routing via Hono.
  *
- * Owns the runtime-config panel (the sole CONFIG writer), operational stats, and the users page
- * (list/search + the guarded hard delete). Reaches Aurora as `admin_api` (0004): app_ro's read
+ * Owns the runtime-config panel (the sole CONFIG writer), operational stats, the activity feed,
+ * and the users page's Aurora-side hard delete (removed in T7 with the `customer` table). The
+ * rest of the users surface — list/search + ban tooling — is Cognito-backed (ADR-0006) and served
+ * by the non-VPC admin-credentials function. Reaches Aurora as `admin_api` (0004): app_ro's read
  * surface plus DELETE on customer only — money tables stay immutable. Admin-group membership is
  * re-checked in-handler (defence in depth).
  */
@@ -18,13 +20,11 @@ import {
   ListActivityQuery,
   ListActivityResponse,
   ListConfigResponse,
-  ListUsersQuery,
-  ListUsersResponse,
   PutConfigBody,
   PutConfigResponse,
   Uuid,
 } from "@wanthat/contracts";
-import { adminDeleteCustomer, listAuditLog, listCustomers } from "@wanthat/db";
+import { adminDeleteCustomer, listAuditLog } from "@wanthat/db";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { auditEntryToItem, mergeByAtDesc, otpSinkToItems } from "./activity";
@@ -86,7 +86,9 @@ app.put("/admin/config/:key", async (c) => {
 // endpoint-free VPC this function runs in (ADR-0004).
 
 // GET /admin/stats/overview — the live users count is real (Aurora COUNT); the rest are placeholders
-// until their slices land.
+// until their slices land. NOTE (T7): still counts the Aurora `customer` table; the contract has no
+// approximate flag and this in-VPC function cannot call DescribeUserPool (no cognito-idp path,
+// ADR-0004), so the switch to EstimatedNumberOfUsers lands with the T7 customer-table drop.
 app.get("/admin/stats/overview", async (c) => {
   const row = await getContext()
     .db.selectFrom("customer")
@@ -101,7 +103,10 @@ app.get("/admin/stats/overview", async (c) => {
 });
 
 // GET /admin/stats/users — real customer metrics (total, status split, recent-signup windows, and a
-// 30-day daily-signup trend), all from the Aurora `customer` table (read-only).
+// 30-day daily-signup trend), all from the Aurora `customer` table (read-only). NOTE (T7): the
+// UsersStats contract has no `approximate` field and cognito-idp is unreachable from this VPC, so
+// the Cognito-based replacement (DescribeUserPool / ListUsers-derived) lands with T7's
+// customer-table drop rather than here.
 app.get("/admin/stats/users", async (c) =>
   c.json(await loadUsersStats(getContext().db, Date.now())),
 );
@@ -117,19 +122,10 @@ app.get("/admin/stats/catalog", async (c) => {
   return c.json(CatalogStats.parse({ products, recommendations }));
 });
 
-// GET /admin/users — paged customer list, newest first; ?search= matches phone or email
-// (case-insensitive substring), ?page=&pageSize= for paging (1-based; pageSize capped at 100).
-app.get("/admin/users", async (c) => {
-  const query = ListUsersQuery.safeParse({
-    search: c.req.query("search"),
-    page: c.req.query("page"),
-    pageSize: c.req.query("pageSize"),
-  });
-  if (!query.success) return c.json({ error: "invalid_request" }, 400);
-  const { search, page, pageSize } = query.data;
-  const { users, total } = await listCustomers(getContext().db, { search, page, pageSize });
-  return c.json(ListUsersResponse.parse({ users, total, page, pageSize }));
-});
+// NOTE: GET /admin/users (list/search) and the ban tooling (disable / enable / global-signout)
+// are served by the NON-VPC admin-credentials function on this same HTTP API — Cognito is the
+// customer store (ADR-0006) and cognito-idp is unreachable from the endpoint-free VPC this
+// function runs in (ADR-0004). Route wiring lives in infra/lib/admin-stack.ts.
 
 // GET /admin/activity — one paged feed over the audit log (registrations, deletions, any future
 // audited admin action), newest first. In dev the first page also merges the parked OTP codes
@@ -159,7 +155,8 @@ app.get("/admin/activity", async (c) => {
 // (0004): the wallet-history guard and the delete run atomically in the database, so the
 // append-only ledger is never orphaned (the FK enforces the same independently). Returns the phone
 // so the SPA can run the Cognito cleanup step (admin-credentials, non-VPC — this in-VPC function
-// cannot reach cognito-idp; ADR-0004).
+// cannot reach cognito-idp; ADR-0004). Removed in T7: this Aurora customer-row delete goes away
+// with the `customer` table; the Cognito delete + recommendation erasure then stand alone.
 app.delete("/admin/users/:id", async (c) => {
   const id = Uuid.safeParse(c.req.param("id"));
   if (!id.success) return c.json({ error: "invalid_request" }, 400);

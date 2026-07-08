@@ -3,7 +3,14 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const { ctx } = vi.hoisted(() => ({
   ctx: {
     retailerSecret: { put: vi.fn(), status: vi.fn() },
-    cognitoUsers: { remove: vi.fn() },
+    cognitoUsers: {
+      remove: vi.fn(),
+      list: vi.fn(),
+      disable: vi.fn(),
+      enable: vi.fn(),
+      globalSignOut: vi.fn(),
+    },
+    recommendations: { deleteByOwner: vi.fn() },
   },
 }));
 vi.mock("./context", () => ({ getContext: () => ctx }));
@@ -11,7 +18,13 @@ vi.mock("./context", () => ({ getContext: () => ctx }));
 import { app } from "./handler";
 
 const adminEnv = {
-  event: { requestContext: { authorizer: { jwt: { claims: { "cognito:groups": ["admin"] } } } } },
+  event: {
+    requestContext: {
+      authorizer: {
+        jwt: { claims: { "cognito:groups": ["admin"], email: "dennis@wanthat.co.il" } },
+      },
+    },
+  },
 };
 const memberEnv = {
   event: { requestContext: { authorizer: { jwt: { claims: { "cognito:groups": ["user"] } } } } },
@@ -115,57 +128,147 @@ describe("retailer credentials routes", () => {
   });
 });
 
+const SUB = "3f1c9a2e-0000-4000-8000-000000000000";
+
+function post(path: string, body: unknown, env: object = adminEnv) {
+  return app.request(
+    path,
+    { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) },
+    env,
+  );
+}
+
 describe("cognito user delete", () => {
+  beforeEach(() => {
+    ctx.cognitoUsers.remove.mockReset();
+    ctx.recommendations.deleteByOwner.mockReset();
+  });
+
   it("403s a non-admin", async () => {
-    const res = await app.request(
-      "/admin/users/cognito-delete",
-      { method: "POST", headers: { "content-type": "application/json" }, body: "{}" },
-      memberEnv,
-    );
+    const res = await post("/admin/users/cognito-delete", {}, memberEnv);
     expect(res.status).toBe(403);
   });
 
-  it("removes the account and reports it existed", async () => {
-    ctx.cognitoUsers.remove.mockResolvedValue(true);
-    const res = await app.request(
-      "/admin/users/cognito-delete",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ phone: "+972501234567" }),
-      },
-      adminEnv,
-    );
+  it("removes the account and erases its recommendations under the resolved sub", async () => {
+    ctx.cognitoUsers.remove.mockResolvedValue({ existed: true, sub: SUB });
+    ctx.recommendations.deleteByOwner.mockResolvedValue(3);
+    const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, existed: true });
+    expect(await res.json()).toEqual({ ok: true, existed: true, recommendationsDeleted: 3 });
     expect(ctx.cognitoUsers.remove).toHaveBeenCalledWith("+972501234567");
+    expect(ctx.recommendations.deleteByOwner).toHaveBeenCalledWith(SUB);
   });
 
-  it("treats an already-deleted account as success (idempotent retry)", async () => {
-    ctx.cognitoUsers.remove.mockResolvedValue(false);
-    const res = await app.request(
-      "/admin/users/cognito-delete",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ phone: "+972501234567" }),
-      },
-      adminEnv,
-    );
+  it("treats an already-deleted account as success and skips the rec cleanup (no sub)", async () => {
+    ctx.cognitoUsers.remove.mockResolvedValue({ existed: false });
+    const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, existed: false });
+    expect(ctx.recommendations.deleteByOwner).not.toHaveBeenCalled();
   });
 
   it("400s a malformed phone", async () => {
+    const res = await post("/admin/users/cognito-delete", { phone: "0501234567" });
+    expect(res.status).toBe(400);
+  });
+});
+
+describe("users list (Cognito ListUsers)", () => {
+  beforeEach(() => ctx.cognitoUsers.list.mockReset());
+
+  const ROW = {
+    id: SUB,
+    phone: "+972501234567",
+    email: null,
+    firstName: "Maya",
+    lastName: "Levi",
+    locale: "he-IL",
+    status: "active",
+    userStatus: "CONFIRMED",
+    createdAt: "2026-07-09T10:00:00.000Z",
+    updatedAt: "2026-07-09T10:00:00.000Z",
+  };
+
+  it("403s a non-admin", async () => {
+    expect((await app.request("/admin/users", {}, memberEnv)).status).toBe(403);
+  });
+
+  it("pages with the Cognito token and passes the phone prefix through", async () => {
+    ctx.cognitoUsers.list.mockResolvedValue({
+      users: [ROW],
+      total: 41,
+      approximate: true,
+      nextToken: "tok2",
+    });
     const res = await app.request(
-      "/admin/users/cognito-delete",
-      {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ phone: "0501234567" }),
-      },
+      "/admin/users?search=%2B9725&pageSize=20&nextToken=tok1",
+      {},
       adminEnv,
     );
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      users: [ROW],
+      total: 41,
+      approximate: true,
+      nextToken: "tok2",
+    });
+    expect(ctx.cognitoUsers.list).toHaveBeenCalledWith({
+      phonePrefix: "+9725",
+      limit: 20,
+      nextToken: "tok1",
+    });
+  });
+
+  it("rejects a pageSize above Cognito's Limit cap (60)", async () => {
+    const res = await app.request("/admin/users?pageSize=61", {}, adminEnv);
     expect(res.status).toBe(400);
+    expect(ctx.cognitoUsers.list).not.toHaveBeenCalled();
+  });
+});
+
+describe("ban tooling (disable / enable / global-signout)", () => {
+  const routes = [
+    { path: "/admin/users/disable", fn: () => ctx.cognitoUsers.disable },
+    { path: "/admin/users/enable", fn: () => ctx.cognitoUsers.enable },
+    { path: "/admin/users/global-signout", fn: () => ctx.cognitoUsers.globalSignOut },
+  ];
+
+  beforeEach(() => {
+    ctx.cognitoUsers.disable.mockReset();
+    ctx.cognitoUsers.enable.mockReset();
+    ctx.cognitoUsers.globalSignOut.mockReset();
+  });
+
+  it("403s a non-admin on every route", async () => {
+    for (const r of routes) {
+      expect((await post(r.path, { phone: "+972501234567" }, memberEnv)).status).toBe(403);
+    }
+  });
+
+  it("answers a bare ok and calls the matching lifecycle action", async () => {
+    for (const r of routes) {
+      r.fn().mockResolvedValue(true);
+      const res = await post(r.path, { phone: "+972501234567" });
+      expect(res.status).toBe(200);
+      expect(await res.json()).toEqual({ ok: true });
+      expect(r.fn()).toHaveBeenCalledWith("+972501234567");
+    }
+  });
+
+  it("404s an unknown phone", async () => {
+    for (const r of routes) {
+      r.fn().mockResolvedValue(false);
+      const res = await post(r.path, { phone: "+972501234567" });
+      expect(res.status).toBe(404);
+      expect(((await res.json()) as { error: string }).error).toBe("not_found");
+    }
+  });
+
+  it("400s a malformed phone without touching Cognito", async () => {
+    for (const r of routes) {
+      const res = await post(r.path, { phone: "0501234567" });
+      expect(res.status).toBe(400);
+      expect(r.fn()).not.toHaveBeenCalled();
+    }
   });
 });

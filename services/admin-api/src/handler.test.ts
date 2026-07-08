@@ -18,7 +18,6 @@ vi.mock("./context", () => ({ getContext: () => ctx }));
 
 const { dbFns } = vi.hoisted(() => ({
   dbFns: {
-    listCustomers: vi.fn(),
     adminDeleteCustomer: vi.fn(),
     listAuditLog: vi.fn(),
   },
@@ -118,25 +117,10 @@ const USER = {
   updatedAt: "2026-07-01T00:00:00.000Z",
 };
 
-describe("admin users", () => {
-  it("lists users with paging + search passthrough", async () => {
-    dbFns.listCustomers.mockResolvedValue({ users: [USER], total: 41 });
-    const res = await app.request("/admin/users?search=%2B9725&page=2&pageSize=20", {}, adminEnv);
-    expect(res.status).toBe(200);
-    const body = (await res.json()) as { users: unknown[]; total: number; page: number };
-    expect(body.total).toBe(41);
-    expect(body.page).toBe(2);
-    expect(body.users).toHaveLength(1);
-    expect(dbFns.listCustomers).toHaveBeenCalledWith(expect.anything(), {
-      search: "+9725",
-      page: 2,
-      pageSize: 20,
-    });
-  });
-
-  it("rejects an out-of-range pageSize", async () => {
-    const res = await app.request("/admin/users?pageSize=500", {}, adminEnv);
-    expect(res.status).toBe(400);
+describe("admin users (Aurora-side delete only - listing/ban tooling live on admin-credentials)", () => {
+  it("501s the list route here - GET /admin/users is served by admin-credentials (ADR-0006)", async () => {
+    const res = await app.request("/admin/users", {}, adminEnv);
+    expect(res.status).toBe(501);
   });
 
   it("refuses to delete a user with wallet history", async () => {
