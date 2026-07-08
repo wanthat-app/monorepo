@@ -195,6 +195,8 @@ const en = {
       pending: "Pending payouts",
       cashback: "Cashback paid",
       conversions: "Link conversion",
+      links: "Links created",
+      products: "Products",
     },
     users: {
       title: "Users",
@@ -495,6 +497,8 @@ const he: typeof en = {
       pending: "תשלומים ממתינים",
       cashback: "קאשבק ששולם",
       conversions: "המרת קישורים",
+      links: "קישורים שנוצרו",
+      products: "מוצרים",
     },
     users: {
       title: "משתמשים",

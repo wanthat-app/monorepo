@@ -7,7 +7,7 @@ import type {
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { adminApi, type UsersStats } from "../../lib/admin-api";
+import { adminApi, type CatalogStats, type UsersStats } from "../../lib/admin-api";
 import {
   type AdminTokens,
   beginAdminLogin,
@@ -124,6 +124,8 @@ function DashboardView({ token }: { token: string | null }) {
   const { t } = useTranslation();
   const [users, setUsers] = useState<UsersStats | null>(null);
   const [failed, setFailed] = useState(false);
+  // undefined = loading, null = fetch failed.
+  const [catalog, setCatalog] = useState<CatalogStats | null | undefined>(undefined);
   useEffect(() => {
     if (!token) return;
     adminApi
@@ -133,6 +135,10 @@ function DashboardView({ token }: { token: string | null }) {
         setFailed(false);
       })
       .catch(() => setFailed(true));
+    adminApi
+      .catalogStats(token)
+      .then(setCatalog)
+      .catch(() => setCatalog(null));
   }, [token]);
 
   // Skeleton placeholder while the stats request is in flight, so the module doesn't flash "…".
@@ -177,6 +183,28 @@ function DashboardView({ token }: { token: string | null }) {
             <>
               <path d="M3 17l6-6 4 4 7-7" />
               <path d="M14 8h6v6" />
+            </>
+          }
+        />
+        <KpiCard
+          label={t("admin.stats.links")}
+          value={catalog === null ? "—" : num(catalog?.recommendations)}
+          live
+          icon={
+            <>
+              <path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.7 1.7" />
+              <path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.7-1.7" />
+            </>
+          }
+        />
+        <KpiCard
+          label={t("admin.stats.products")}
+          value={catalog === null ? "—" : num(catalog?.products)}
+          live
+          icon={
+            <>
+              <path d="M21 8l-9-5-9 5v8l9 5 9-5V8z" />
+              <path d="M3 8l9 5 9-5M12 13v8" />
             </>
           }
         />

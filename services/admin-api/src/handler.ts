@@ -8,6 +8,7 @@
  * re-checked in-handler (defence in depth).
  */
 import {
+  CatalogStats,
   CONFIG_DEFAULTS,
   CONFIG_KEYS,
   type ConfigItem,
@@ -104,6 +105,17 @@ app.get("/admin/stats/overview", async (c) => {
 app.get("/admin/stats/users", async (c) =>
   c.json(await loadUsersStats(getContext().db, Date.now())),
 );
+
+// GET /admin/stats/catalog — exact product + recommendation totals from the transactional
+// counters (incremented atomically with each conditional create; sentinel items in the tables).
+app.get("/admin/stats/catalog", async (c) => {
+  const ctx = getContext();
+  const [products, recommendations] = await Promise.all([
+    ctx.products.count("aliexpress"),
+    ctx.recommendations.count(),
+  ]);
+  return c.json(CatalogStats.parse({ products, recommendations }));
+});
 
 // GET /admin/users — paged customer list, newest first; ?search= matches phone or email
 // (case-insensitive substring), ?page=&pageSize= for paging (1-based; pageSize capped at 100).

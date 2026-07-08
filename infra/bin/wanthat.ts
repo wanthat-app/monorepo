@@ -89,6 +89,7 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   // Customer pool: the users page deletes member accounts (non-VPC credentials fn only).
   customerPool: identity.userPool,
   runtimeConfigTable: data.runtimeConfigTable,
+  productTable: data.productTable,
   recommendationTable: data.recommendationTable,
   // Dev OTP sink: activity page lists parked codes (undefined in prod - fail-closed).
   devOtpSinkTable: data.devOtpSinkTable,

@@ -36,6 +36,7 @@ export interface AdminStackProps extends StackProps {
   // non-VPC credentials function touches it (cognito-idp is unreachable from the VPC, ADR-0004).
   readonly customerPool: cognito.IUserPool;
   readonly runtimeConfigTable: dynamodb.ITable;
+  readonly productTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
   // Dev OTP sink (docs/dev-otp-sink.md) - the activity page lists parked codes in dev. Absent in
   // prod by design (the table is not provisioned there), so prod gets no env var and no grant:
@@ -87,6 +88,7 @@ export class AdminStack extends Stack {
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
+        PRODUCT_TABLE: props.productTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
         ...(props.devOtpSinkTable ? { DEV_OTP_SINK_TABLE: props.devOtpSinkTable.tableName } : {}),
         DB_HOST: props.cluster.clusterEndpoint.hostname,
@@ -106,6 +108,8 @@ export class AdminStack extends Stack {
     // function) + the config table it writes.
     props.cluster.grantConnect(fn, "app_ro");
     props.runtimeConfigTable.grantReadWriteData(fn);
+    // Stats reads (the transactional counters live in these tables).
+    props.productTable.grantReadData(fn);
     props.recommendationTable.grantReadData(fn);
     // Dev-only: the activity feed scans the parked OTP codes (read-only; table absent in prod).
     props.devOtpSinkTable?.grantReadData(fn);
