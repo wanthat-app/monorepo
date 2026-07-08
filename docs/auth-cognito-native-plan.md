@@ -50,13 +50,27 @@ Parallel waves: **Wave 1** T0 T1 T2 T3 T9 T11 - **Wave 2** T4 T5 T6 T10 - **Wave
 
 ## Tasks
 
-### T0 - Spike: WAF-for-Cognito availability in il-central-1
-Verify AWS WAF web ACL association with Cognito user pools is available in il-central-1
-(console/CLI `associate-web-acl` on the pool ARN; regional WAF, not the us-east-1 CloudFront
-one). Decide the rate-based rule set (per-IP rate on unauthenticated calls). Output: a short
-note in this doc + the rule sketch. If unavailable (Tel Aviv has feature gaps - see
-RDS Data API precedent), record the fallback: rely on Cognito quotas + SNS spend cap and
-revisit. **Depends:** none. **Blocks:** T8.
+### T0 - Spike: WAF-for-Cognito availability in il-central-1 - DONE 2026-07-09: AVAILABLE
+**Verdict: AVAILABLE - GO for T8's WAF bullet** (fallback not needed). Evidence (read-only,
+account 818913587533):
+- `wafv2 get-web-acl-for-resource` on the dev customer pool ARN
+  (`arn:aws:cognito-idp:il-central-1:818913587533:userpool/il-central-1_iUq0D1Gy5`,
+  wanthat-dev) succeeds in-region, returning "no association" rather than
+  WAFInvalidParameterException - the pool is an accepted protectable resource.
+- `wafv2 list-resources-for-web-acl --resource-type COGNITO_USER_POOL` accepts the enum
+  in il-central-1.
+- AWS regional-availability data: the full WAFV2 API surface, including `AssociateWebACL`,
+  is `isAvailableIn` il-central-1.
+- `wafv2 check-capacity --scope REGIONAL` in-region validated the rate rule below (2 WCU).
+Rule sketch (REGIONAL web ACL, default action Allow, associated to the customer pool):
+1. `rate-limit-unauth-ops` - rate-based, aggregate per IP, limit 100 per 5 min, Block;
+   scope-down: `x-amz-target` header matches `AWSCognitoIdentityProviderService.` +
+   SignUp / ConfirmSignUp / ResendConfirmationCode / InitiateAuth / RespondToAuthChallenge.
+2. `rate-limit-all` - rate-based per IP, limit 500 per 5 min, Block (backstop).
+Thresholds are MVP guesses erring loose (IL mobile CGNAT stacks users behind one IP); tune
+from CloudWatch sampled requests. CAPTCHA is Block-only deferred: the SPA calls cognito-idp
+directly, so CAPTCHA would require the WAF JS integration SDK - revisit post-MVP.
+**Depends:** none. **Blocks:** T8.
 
 ### T1 - Customer pool + app-client configuration (infra/identity-stack)
 - Enable `selfSignUpEnabled` on the customer pool (public `SignUp` becomes the registration
@@ -84,10 +98,13 @@ revisit. **Depends:** none. **Blocks:** T8.
 - Infra: grant the sender read on the runtime-config table.
 **Depends:** none (independent files). **Blocks:** T12.
 
-### T3 - Contracts cleanup (packages/contracts)
-Remove ticket / `/auth/start` / `/auth/verify` / `/auth/session` / `/auth/register` / `/me` /
-passkey-ceremony schemas. Add the small admin ban-tooling request/response schemas (T10).
-Keep wallet schemas untouched. **Depends:** none. **Blocks:** T4, T5, T10.
+### T3 - Contracts: add ban-tooling schemas, deprecate the obsolete auth surface
+Add the small admin ban-tooling request/response schemas (T10). Mark the obsolete schemas
+(ticket / `/auth/start` / `/auth/verify` / `/auth/session` / `/auth/register` / `/me` /
+passkey-ceremony) `@deprecated - removed by ADR-0006, deleted in T8` but do NOT delete them
+yet: their last consumers (app-auth source, app-core auth routes) go away in T5/T8, and
+deleting schemas first would break the build for every intermediate wave. Keep wallet
+schemas untouched. **Depends:** none. **Blocks:** T4, T5, T10.
 
 ### T4 - SPA: self-contained user module (Cognito-native auth) + UserChip
 Build ALL auth functionality as one encapsulated module, `apps/web/src/user/`, consumed by
@@ -156,6 +173,9 @@ Aurora (ADR-0006 decision 7). **Depends:** T1. **Blocks:** T12.
 - Attach the WAF web ACL from T0 to the customer pool (or record the fallback).
 - Delete `packages/auth` and `packages/webauthn`; remove them from infra devDependencies
   (filtered turbo Deploy build breaks otherwise - red check-deploy is blocking).
+- Delete the app-auth auth source (`services/app-auth/src/auth/`, context/handler auth
+  wiring) as part of the rename, and the now-consumerless deprecated contract schemas from
+  T3 (ticket / start / verify / session / register / me / passkey-ceremony).
 - ASCII-only in any new resource descriptions.
 **Depends:** T0, T4, T5. **Blocks:** T12.
 
