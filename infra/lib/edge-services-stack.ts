@@ -97,9 +97,9 @@ export class EdgeServicesStack extends Stack {
     const retailerProxy = makeFn("RetailerProxy", "retailer-proxy");
     this.retailerProxyFn = retailerProxy;
     // generateLink upserts the shared Product (ADR-0004: the proxy owns the Product write; the
-    // in-VPC caller writes the Recommendation).
+    // in-VPC caller writes the Recommendation — the proxy holds NO recommendation grant,
+    // least-privilege per ADR-0002; the poll slice adds what listOrders actually needs).
     props.productTable.grantReadWriteData(retailerProxy);
-    props.recommendationTable.grantReadWriteData(retailerProxy);
     props.retailerSecret.grantRead(retailerProxy);
     retailerProxy.addEnvironment("RETAILER_SECRET_ARN", props.retailerSecret.secretArn);
     retailerProxy.addEnvironment("PRODUCT_TABLE", props.productTable.tableName);

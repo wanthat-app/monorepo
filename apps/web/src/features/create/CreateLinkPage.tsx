@@ -213,7 +213,10 @@ export function CreateLinkPage() {
   };
 
   const isSummary = resolved !== null;
-  const estimate = resolved?.estimate ?? null;
+  // Prefer the recommendation's estimate: it reflects the SNAPSHOTTED split locked at the link's
+  // original creation (a re-created link keeps its old economics — ADR-0008), while the resolve
+  // estimate is current policy and can diverge after an admin rate change.
+  const estimate = recommendation?.estimate ?? resolved?.estimate ?? null;
   const youEarn = estimate?.referrer.estimated
     ? formatMoneyMinor(
         estimate.referrer.estimated.amountMinor,
