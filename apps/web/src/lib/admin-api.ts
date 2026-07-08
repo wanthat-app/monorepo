@@ -1,4 +1,5 @@
 import type {
+  CatalogStats,
   CognitoDeleteUserResponse,
   ConfigKey,
   ConfigValue,
@@ -68,6 +69,7 @@ export const adminApi = {
     }),
   statsOverview: (token: string) => adminRequest<StatsOverview>("/admin/stats/overview", token),
   usersStats: (token: string) => adminRequest<UsersStats>("/admin/stats/users", token),
+  catalogStats: (token: string) => adminRequest<CatalogStats>("/admin/stats/catalog", token),
   // Activity page: paged audit-log feed (+ dev OTP codes merged server-side on page 1 in dev).
   listActivity: (token: string, opts: { page?: number; pageSize?: number } = {}) => {
     const params = new URLSearchParams();
@@ -104,4 +106,4 @@ export const adminApi = {
     }),
 };
 
-export type { UsersStats };
+export type { CatalogStats, UsersStats };

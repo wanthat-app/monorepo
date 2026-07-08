@@ -1,5 +1,11 @@
 import { createDb } from "@wanthat/db";
-import { DevOtpSinkRepo, getDocClient, RuntimeConfigRepo } from "@wanthat/dynamo";
+import {
+  DevOtpSinkRepo,
+  getDocClient,
+  ProductRepo,
+  RecommendationRepo,
+  RuntimeConfigRepo,
+} from "@wanthat/dynamo";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -12,6 +18,9 @@ type Db = ReturnType<typeof createDb>;
 export interface AdminContext {
   db: Db;
   config: RuntimeConfigRepo;
+  /** Read-only (stats): the transactional entity counters live in these tables. */
+  products: ProductRepo;
+  recommendations: RecommendationRepo;
   /** Dev only — undefined in prod (no table, no env var; fail-closed). */
   devOtpSink?: DevOtpSinkRepo;
 }
@@ -36,6 +45,11 @@ export function getContext(): AdminContext {
       caCerts: process.env.DB_CA_CERT,
     }),
     config: new RuntimeConfigRepo(getDocClient(region), requireEnv("RUNTIME_CONFIG_TABLE")),
+    products: new ProductRepo(getDocClient(region), requireEnv("PRODUCT_TABLE")),
+    recommendations: new RecommendationRepo(
+      getDocClient(region),
+      requireEnv("RECOMMENDATION_TABLE"),
+    ),
     // Dev only: DEV_OTP_SINK_TABLE is set solely where the sink table exists (never prod).
     ...(devOtpSinkTable
       ? { devOtpSink: new DevOtpSinkRepo(getDocClient(region), devOtpSinkTable) }

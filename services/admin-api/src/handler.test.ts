@@ -3,9 +3,13 @@ import { describe, expect, it, vi } from "vitest";
 const { ctx } = vi.hoisted(() => ({
   ctx: {
     config: { getAll: vi.fn().mockResolvedValue([]), put: vi.fn() },
+    products: { count: vi.fn().mockResolvedValue(0) },
+    recommendations: { count: vi.fn().mockResolvedValue(0) },
     db: {},
   } as {
     config: { getAll: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
+    products: { count: ReturnType<typeof vi.fn> };
+    recommendations: { count: ReturnType<typeof vi.fn> };
     db: object;
     devOtpSink?: { scanAll: ReturnType<typeof vi.fn> };
   },
@@ -40,6 +44,21 @@ describe("admin-api authorisation", () => {
   it("403s a non-admin on /admin routes", async () => {
     const res = await app.request("/admin/config", {}, memberEnv);
     expect(res.status).toBe(403);
+  });
+});
+
+describe("admin catalog stats", () => {
+  it("answers the exact totals from the transactional counters", async () => {
+    ctx.products.count.mockResolvedValue(41);
+    ctx.recommendations.count.mockResolvedValue(97);
+    const res = await app.request("/admin/stats/catalog", {}, adminEnv);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ products: 41, recommendations: 97 });
+    expect(ctx.products.count).toHaveBeenCalledWith("aliexpress");
+  });
+
+  it("403s a non-admin", async () => {
+    expect((await app.request("/admin/stats/catalog", {}, memberEnv)).status).toBe(403);
   });
 });
 
