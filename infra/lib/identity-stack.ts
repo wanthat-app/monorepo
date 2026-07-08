@@ -5,6 +5,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import {
@@ -68,7 +69,6 @@ export const SMS_MONTHLY_SPEND_LIMIT_USD: Record<WanthatEnv["name"], number> = {
 export class IdentityStack extends Stack {
   readonly userPool: cognito.UserPool;
   readonly userPoolClient: cognito.UserPoolClient;
-  readonly userPoolDomain: cognito.UserPoolDomain;
   // Separate employee/admin pool (ADR-0006 §two-pool): company staff, not customers.
   readonly employeePool: cognito.UserPool;
   readonly employeePoolClient: cognito.UserPoolClient;
@@ -225,8 +225,10 @@ export class IdentityStack extends Stack {
     props.guestAttributionTable.grantWriteData(postConfirmationFn);
     this.userPool.addTrigger(cognito.UserPoolOperation.POST_CONFIRMATION, postConfirmationFn);
 
-    // Browser origins allowed to complete the hosted-UI OAuth redirect — the same list the app/admin
-    // HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).
+    // Browser origins allowed to complete the ADMIN hosted-UI OAuth redirect — the same list the
+    // app/admin HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).
+    // The CUSTOMER flow has no redirect at all: the SPA calls Cognito's public API directly
+    // (ADR-0006), so the customer client carries no OAuth configuration.
     const origins = webOrigins(wanthatEnv);
 
     // Attribute permissions for the SPA client (ADR-0006 decision 3): the profile the SPA shows is
@@ -249,17 +251,18 @@ export class IdentityStack extends Stack {
       .withCustomAttributes("otpChannel");
 
     // Public SPA client: no secret; only the choice-based USER_AUTH flow (ADR-0006) — never
-    // userSrp/userPassword/custom. Token revocation on so /auth/signout can revoke refresh tokens.
-    const callbackUrls = origins.map((o) => `${o}/auth/callback`);
+    // userSrp/userPassword/custom, and NO OAuth/hosted-UI: the browser drives SignUp/InitiateAuth/
+    // native WEB_AUTHN against the public cognito-idp endpoint directly, so there is no redirect,
+    // no callback URL, and no customer Managed Login domain. `adminUserPassword` (the former
+    // passkey->token bridge) is gone with the app-owned ceremony. Token revocation on so the SPA
+    // can revoke refresh tokens via RevokeToken at signout.
     this.userPoolClient = this.userPool.addClient("Spa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-spa`,
       generateSecret: false,
-      // `user` = the choice-based USER_AUTH OTP flow. `adminUserPassword` enables the ADR-0006
-      // passkey->token bridge (Cognito.passkeyAdminAuth): app-auth sets an ephemeral password and
-      // exchanges it for tokens after verifying the assertion. This is an ADMIN-only flow — it is not
-      // reachable from the browser (the SPA never sees a password) — the admin token exchange (ADR-0006
-      // decision 3), our ESSENTIALS pool doesn't support the custom-challenge trigger bridge it replaced.
-      authFlows: { user: true, adminUserPassword: true },
+      authFlows: { user: true },
+      // No hosted UI for customers -> no OAuth at all. Without this, CDK silently defaults to
+      // implicit+code grants with an example.com callback (the L2's legacy default).
+      disableOAuth: true,
       // "Prevent user existence errors" deliberately OFF (LEGACY): the SPA branches sign-in vs
       // sign-up on Cognito's real user-not-found signal (ADR-0006 - unified "enter phone" flow via
       // InitiateAuth, fall back to SignUp on unknown phone). Phone enumeration is accepted for MVP;
@@ -271,27 +274,75 @@ export class IdentityStack extends Stack {
       accessTokenValidity: Duration.hours(1),
       idTokenValidity: Duration.hours(1),
       refreshTokenValidity: Duration.days(30),
-      // OAuth is only for the Managed Login passkey redirect path (PR4); the SPA's primary flow is the
-      // API-driven /auth/* JSON contract. Callback URLs are finalised in PR4 once the origin is fixed.
-      oAuth: {
-        flows: { authorizationCodeGrant: true },
-        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.PHONE, cognito.OAuthScope.PROFILE],
-        callbackUrls,
-        logoutUrls: callbackUrls,
-      },
     });
 
-    // Managed Login (hosted UI) for userless/discoverable passkey login (ADR-0006 decision 3). Domain
-    // prefix is unique per env within the account; prod can move to a custom domain in PR4.
-    this.userPoolDomain = this.userPool.addDomain("ManagedLoginDomain", {
-      cognitoDomain: { domainPrefix: `wanthat-${wanthatEnv.name}` },
-      managedLoginVersion: cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
+    // ADR-0006 decision 6: abuse control at the pool boundary. A REGIONAL web ACL (same region as
+    // the pool) rate-limits the UNAUTHENTICATED Cognito operations the browser calls directly —
+    // the requests carry an `x-amz-target` header naming the operation — with a looser all-request
+    // backstop. Thresholds are MVP guesses erring loose (IL mobile CGNAT stacks users behind one
+    // IP); tune from CloudWatch sampled requests (T0 spike, 2026-07-09). CAPTCHA deferred: it
+    // would require the WAF JS integration SDK in the SPA. ASCII-only names/descriptions.
+    const unauthOps = [
+      "SignUp",
+      "ConfirmSignUp",
+      "ResendConfirmationCode",
+      "InitiateAuth",
+      "RespondToAuthChallenge",
+    ];
+    const unauthOpMatch = (op: string): wafv2.CfnWebACL.StatementProperty => ({
+      byteMatchStatement: {
+        fieldToMatch: { singleHeader: { Name: "x-amz-target" } },
+        positionalConstraint: "EXACTLY",
+        searchString: `AWSCognitoIdentityProviderService.${op}`,
+        textTransformations: [{ priority: 0, type: "NONE" }],
+      },
     });
-    // Use Cognito's default branding for the new managed login UI (no custom assets in MVP).
-    new cognito.CfnManagedLoginBranding(this, "ManagedLoginBranding", {
-      userPoolId: this.userPool.userPoolId,
-      clientId: this.userPoolClient.userPoolClientId,
-      useCognitoProvidedValues: true,
+    const poolWebAcl = new wafv2.CfnWebACL(this, "CustomerPoolWebAcl", {
+      name: `wanthat-${wanthatEnv.name}-customer-pool`,
+      description: "Rate limits on the customer user pool unauthenticated operations (ADR-0006)",
+      scope: "REGIONAL",
+      defaultAction: { allow: {} },
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: `wanthat-${wanthatEnv.name}-customer-pool`,
+        sampledRequestsEnabled: true,
+      },
+      rules: [
+        {
+          name: "rate-limit-unauth-ops",
+          priority: 1,
+          action: { block: {} },
+          statement: {
+            rateBasedStatement: {
+              limit: 100, // per 5 minutes (the default evaluation window), per IP
+              aggregateKeyType: "IP",
+              scopeDownStatement: { orStatement: { statements: unauthOps.map(unauthOpMatch) } },
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `wanthat-${wanthatEnv.name}-customer-pool-unauth`,
+            sampledRequestsEnabled: true,
+          },
+        },
+        {
+          name: "rate-limit-all",
+          priority: 2,
+          action: { block: {} },
+          statement: {
+            rateBasedStatement: { limit: 500, aggregateKeyType: "IP" }, // per 5 min backstop
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `wanthat-${wanthatEnv.name}-customer-pool-all`,
+            sampledRequestsEnabled: true,
+          },
+        },
+      ],
+    });
+    new wafv2.CfnWebACLAssociation(this, "CustomerPoolWebAclAssociation", {
+      resourceArn: this.userPool.userPoolArn,
+      webAclArn: poolWebAcl.attrArn,
     });
 
     // SNS monthly SMS spend hard cap (ADR-0006 layer 4) — account/region-level, so set via an SDK
@@ -359,8 +410,6 @@ export class IdentityStack extends Stack {
       });
     }
 
-    // The SPA needs these to build the Managed Login authorize URL for discoverable passkey login.
-    new CfnOutput(this, "ManagedLoginBaseUrl", { value: this.userPoolDomain.baseUrl() });
     new CfnOutput(this, "UserPoolClientIdOut", { value: this.userPoolClient.userPoolClientId });
 
     // --- Employee/admin pool (ADR-0006 §two-pool) — staff identities, isolated from customers ---

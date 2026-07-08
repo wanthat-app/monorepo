@@ -1,11 +1,4 @@
-import {
-  ArnFormat,
-  CfnOutput,
-  CustomResource,
-  Duration,
-  Stack,
-  type StackProps,
-} from "aws-cdk-lib";
+import { ArnFormat, CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
 import { CorsHttpMethod, HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -17,8 +10,6 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import type * as rds from "aws-cdk-lib/aws-rds";
-import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
-import { Provider } from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import {
   applyThrottle,
@@ -46,84 +37,44 @@ export interface ApiStackProps extends StackProps {
   readonly productTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
   readonly fxRateTable: dynamodb.ITable;
-  readonly guestAttributionTable: dynamodb.ITable;
   readonly runtimeConfigTable: dynamodb.ITable;
-  readonly authChallengeTable: dynamodb.ITable;
-  readonly phoneVelocityTable: dynamodb.ITable;
-  readonly notificationOutboxTable: dynamodb.ITable;
-  readonly passkeyCredentialTable: dynamodb.ITable;
-  // In-VPC placement + Aurora (ADR-0004/0006) — app-core only.
+  // In-VPC placement + Aurora (ADR-0004/0003) — app-core only.
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
   readonly cluster: rds.IDatabaseCluster;
 }
 
 /**
- * ApiStack — the app-api compute, split into two functions behind one HTTP API (ADR-0002, ADR-0006,
- * ADR-0011, ADR-0006, ADR-0006).
+ * ApiStack — the app-api compute, split into two functions behind one HTTP API (ADR-0002,
+ * ADR-0011, ADR-0006 rev: Cognito-native auth).
  *
- * ADR-0006 resolves Managed Login vs PrivateLink by slicing the Lambdalith along its Cognito/Aurora
- * seam:
- *  - `app-auth` (NON-VPC "auth edge"): the `/auth/*` OTP + passkey flow. Reaches the Managed-Login
- *    customer pool over Cognito's public endpoint (PrivateLink is disabled for such pools) and
- *    DynamoDB over the public endpoint. Signs the registration ticket; holds no Aurora access.
- *  - `app-core` (IN-VPC "core"): `/auth/session`, `/auth/register`, `/me`, `/me/*`. Reaches Aurora as `app_rw` via IAM
- *    auth (no RDS Proxy) and DynamoDB over the gateway endpoint. Verifies the ticket; calls no
- *    Cognito, so the `cognito-idp` interface endpoint is removed (NetworkStack).
+ * Authentication has NO backend surface here: the SPA talks to Cognito's public endpoint directly
+ * (SignUp / InitiateAuth / native WEB_AUTHN — ADR-0006), so this stack carries no `/auth/*` routes,
+ * no ticket machinery, and no Cognito grants. What remains, sliced along the Aurora seam:
+ *  - `app-links` (NON-VPC "links edge"): `/products/resolve` + `/recommendations*`. DynamoDB over
+ *    the public endpoint; invokes the retailer-proxy synchronously (free from a non-VPC function,
+ *    ADR-0004). Holds no Aurora access.
+ *  - `app-core` (IN-VPC "wallet core"): `/wallet*` + `/healthz/db`. Reaches Aurora as `app_rw` via
+ *    IAM auth (no RDS Proxy); Aurora is money-only (ADR-0003 as amended by ADR-0006).
  *
- * The self-contained HMAC ticket is the sole cross-function handoff; both functions grantRead its
- * secret. A Cognito JWT authorizer guards `/me/*` and passkey enrolment; the token-issuing `/auth/*`
- * flow and `GET /healthz` stay public.
+ * The Cognito JWT authorizer guards the links + wallet routes; only `GET /healthz` (+ the db probe)
+ * stays public.
  */
 export class ApiStack extends Stack {
   readonly httpApi: HttpApi;
-  /** The non-VPC auth edge — observed by the ObservabilityStack (errors/throttles/duration). */
-  readonly appAuthFn: lambda.Function;
-  /** The in-VPC core — observed by the ObservabilityStack (errors/throttles/duration). */
+  /** The non-VPC links edge — observed by the ObservabilityStack (errors/throttles/duration). */
+  readonly appLinksFn: lambda.Function;
+  /** The in-VPC wallet core — observed by the ObservabilityStack (errors/throttles/duration). */
   readonly appCoreFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
     const { wanthatEnv } = props;
 
-    // Ed25519 keypair for registration tickets (ADR-0006, asymmetric) - generated at deploy
-    // by the ticket-keygen custom resource below, never in the repo. Only app-auth (the SIGNER)
-    // reads this secret - over the free public Secrets Manager endpoint, since it is non-VPC.
-    // app-core verifies with the PUBLIC key via plain env, so the VPC needs no secretsmanager
-    // interface endpoint. (The secret NAME still says ticket-hmac - renaming would REPLACE the
-    // secret; the generateSecretString placeholder value is overwritten by the keygen on first run.)
-    const ticketSecret = new secretsmanager.Secret(this, "AuthTicketSecret", {
-      secretName: `wanthat/${wanthatEnv.name}/auth/ticket-hmac`,
-      description: "HMAC key signing /auth registration tickets",
-      generateSecretString: { passwordLength: 48, excludePunctuation: true },
-    });
-
-    // ticket-keygen (custom resource): on first run generates the Ed25519 pair into the secret and
-    // returns the public key(s); on every later run it returns the EXISTING public keys untouched
-    // (idempotent - a deploy must never silently rotate the signing key). Non-VPC; sourceMap off so
-    // the asset hash does not churn per deploy (the db-migrator lesson).
-    const keygenFn = new NodejsFunction(this, "TicketKeygen", {
-      functionName: `wanthat-${wanthatEnv.name}-ticket-keygen`,
-      entry: serviceEntry("ticket-keygen"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
-      timeout: Duration.seconds(30),
-      bundling: { minify: true, sourceMap: false },
-    });
-    ticketSecret.grantRead(keygenFn);
-    ticketSecret.grantWrite(keygenFn);
-    const keygenProvider = new Provider(this, "TicketKeygenProvider", { onEventHandler: keygenFn });
-    const ticketKeys = new CustomResource(this, "TicketKeypair", {
-      serviceToken: keygenProvider.serviceToken,
-      properties: { secretArn: ticketSecret.secretArn },
-    });
-
-    // --- app-auth: NON-VPC auth edge (Cognito + DynamoDB) ---
-    const appAuthFn = new NodejsFunction(this, "AppAuth", {
-      functionName: `wanthat-${wanthatEnv.name}-app-auth`,
-      entry: serviceEntry("app-auth"),
+    // --- app-links: NON-VPC links edge (DynamoDB + retailer-proxy invoke; no Cognito, no Aurora) ---
+    const appLinksFn = new NodejsFunction(this, "AppLinks", {
+      functionName: `wanthat-${wanthatEnv.name}-app-links`,
+      entry: serviceEntry("app-links"),
       handler: "handler",
       runtime: LAMBDA_RUNTIME,
       architecture: LAMBDA_ARCHITECTURE,
@@ -131,28 +82,17 @@ export class ApiStack extends Stack {
       timeout: Duration.seconds(15),
       // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
       tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "AppAuthLogs", wanthatEnv),
-      // No VPC: the auth edge reaches Cognito (Managed Login) + DynamoDB over public AWS endpoints.
-      // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and this
-      // function is Cognito/DynamoDB-only (no Aurora connection pressure). Re-introduce a reserved
+      logGroup: serviceLogGroup(this, "AppLinksLogs", wanthatEnv),
+      // No VPC: the links edge reaches DynamoDB over public AWS endpoints and its sync
+      // retailer-proxy invoke is free from outside the VPC (ADR-0004 asymmetry).
+      // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and
+      // this function is DynamoDB-only (no Aurora connection pressure). Re-introduce a reserved
       // budget once the account quota is raised - see infra issue (ADR-0002).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
-        GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
-        AUTH_CHALLENGE_TABLE: props.authChallengeTable.tableName,
-        PHONE_VELOCITY_TABLE: props.phoneVelocityTable.tableName,
-        PASSKEY_CREDENTIAL_TABLE: props.passkeyCredentialTable.tableName,
-        USER_POOL_ID: props.userPool.userPoolId,
-        USER_POOL_CLIENT_ID: props.userPoolClient.userPoolClientId,
-        AUTH_TICKET_SECRET_ARN: ticketSecret.secretArn,
-        // ADR-0006: pins the WebAuthn ceremony to this site (rpId is the registrable domain; origins
-        // are the exact SPA origins) so an assertion for another origin/RP is rejected.
-        WEBAUTHN_RP_ID: wanthatEnv.domainName ?? "",
-        WEBAUTHN_ORIGINS: webOrigins(wanthatEnv).join(","),
-        // Links module (ADR-0002; served from THIS non-VPC edge so its sync retailer-proxy invoke
-        // is free — in-VPC it needed a paid lambda interface endpoint). The proxy is invoked by
-        // its deterministic NAME (no cross-stack export → deploy-order independent).
+        // Links module (ADR-0002). The proxy is invoked by its deterministic NAME (no cross-stack
+        // export -> deploy-order independent).
         PRODUCT_TABLE: props.productTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
         RETAILER_PROXY_FUNCTION: `wanthat-${wanthatEnv.name}-retailer-proxy`,
@@ -161,28 +101,19 @@ export class ApiStack extends Stack {
       },
       bundling: { minify: true, sourceMap: true },
     });
-    this.appAuthFn = appAuthFn;
-    // The signer expects keypair material in the secret - make sure the keygen CR has run (and
-    // overwritten the legacy HMAC placeholder) before this function's new code goes live.
-    appAuthFn.node.addDependency(ticketKeys);
+    this.appLinksFn = appLinksFn;
 
-    // DynamoDB: auth working tables RW, guest attribution RW, config read.
-    props.authChallengeTable.grantReadWriteData(appAuthFn);
-    props.phoneVelocityTable.grantReadWriteData(appAuthFn);
-    props.guestAttributionTable.grantReadWriteData(appAuthFn);
-    props.runtimeConfigTable.grantReadData(appAuthFn);
-    // ADR-0006: put on enrol, get on login, updateSignCount after login, query for exclude-list.
-    props.passkeyCredentialTable.grantReadWriteData(appAuthFn);
-    ticketSecret.grantRead(appAuthFn);
-    // Links module (ADR-0004 division of writes): app-auth READS products (retailer-proxy is the
-    // sole product writer), WRITES recommendations, and reads the fx cache for display conversion.
-    props.productTable.grantReadData(appAuthFn);
-    props.recommendationTable.grantReadWriteData(appAuthFn);
-    props.fxRateTable.grantReadData(appAuthFn);
+    // DynamoDB (ADR-0004 division of writes): app-links READS products (retailer-proxy is the
+    // sole product writer), WRITES recommendations, reads the fx cache for display conversion,
+    // and reads the runtime config (cashback split policy).
+    props.productTable.grantReadData(appLinksFn);
+    props.recommendationTable.grantReadWriteData(appLinksFn);
+    props.fxRateTable.grantReadData(appLinksFn);
+    props.runtimeConfigTable.grantReadData(appLinksFn);
     // Synchronous generateLink invoke — free from a non-VPC function (ADR-0004 asymmetry). ARN
     // constructed from the deterministic function name so no CloudFormation export ties this
     // stack to EdgeServices.
-    appAuthFn.addToRolePolicy(
+    appLinksFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["lambda:InvokeFunction"],
         resources: [
@@ -196,27 +127,7 @@ export class ApiStack extends Stack {
       }),
     );
 
-    // Scoped Cognito control-plane actions on this pool only (ADR-0006).
-    appAuthFn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: [
-          "cognito-idp:AdminCreateUser",
-          "cognito-idp:AdminSetUserPassword",
-          "cognito-idp:AdminGetUser",
-          "cognito-idp:AdminUpdateUserAttributes",
-          "cognito-idp:AdminInitiateAuth",
-          "cognito-idp:AdminRespondToAuthChallenge",
-          "cognito-idp:InitiateAuth",
-          "cognito-idp:RespondToAuthChallenge",
-          "cognito-idp:RevokeToken",
-          "cognito-idp:StartWebAuthnRegistration",
-          "cognito-idp:CompleteWebAuthnRegistration",
-        ],
-        resources: [props.userPool.userPoolArn],
-      }),
-    );
-
-    // --- app-core: IN-VPC core (Aurora + DynamoDB); no Cognito ---
+    // --- app-core: IN-VPC wallet core (Aurora only; ADR-0006 makes Aurora money-only) ---
     const appCoreFn = new NodejsFunction(this, "AppCore", {
       functionName: `wanthat-${wanthatEnv.name}-app-core`,
       entry: serviceEntry("app-core"),
@@ -231,24 +142,14 @@ export class ApiStack extends Stack {
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
       // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and
-      // app-core is DynamoDB-hot (Aurora holds only PII + ledger, ADR-0003), so its Aurora connection
-      // pressure is minimal vs max_connections=50. Re-introduce a reserved budget once the account
-      // quota is raised - see infra issue (ADR-0002).
+      // app-core's Aurora connection pressure is minimal vs max_connections=50. Re-introduce a
+      // reserved budget once the account quota is raised - see infra issue (ADR-0002).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
-        GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
-        RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
-        // PUBLIC verification keys (JSON array) from the keygen custom resource - not a secret, so
-        // the in-VPC core needs no Secrets Manager access at all.
-        AUTH_TICKET_PUBLIC_KEYS: ticketKeys.getAttString("publicKeys"),
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_rw",
         ...RDS_CA_ENV,
-        NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
-        // Link target for outbound messages (ADR-0019): the DEPLOYED site, never webOrigins()[0]
-        // (which is the localhost dev origin for non-prod envs).
-        APP_URL: appUrl(wanthatEnv),
       },
       bundling: rdsCaBundling,
     });
@@ -257,16 +158,8 @@ export class ApiStack extends Stack {
     // Aurora as app_rw via IAM auth (ADR-0003) - no RDS Proxy, no static credential.
     props.cluster.grantConnect(appCoreFn, "app_rw");
 
-    // DynamoDB: guest attribution RW (attribution claim), config read. (The links module and its
-    // grants live on the non-VPC app-auth above — the in-VPC core stays Aurora + these two.)
-    props.guestAttributionTable.grantReadWriteData(appCoreFn);
-    props.runtimeConfigTable.grantReadData(appCoreFn);
-    // (No ticketSecret grant: verification is secretless - Ed25519 public keys via env.)
-    // Outbox producer: write-only (no read grant) - the dispatcher owns status updates (ADR-0019).
-    props.notificationOutboxTable.grantWriteData(appCoreFn);
-
     // --- One HTTP API fronting both functions ---
-    const authIntegration = new HttpLambdaIntegration("AppAuthIntegration", appAuthFn);
+    const linksIntegration = new HttpLambdaIntegration("AppLinksIntegration", appLinksFn);
     const coreIntegration = new HttpLambdaIntegration("AppCoreIntegration", appCoreFn);
     const authorizer = new HttpJwtAuthorizer(
       "CognitoAuthorizer",
@@ -274,10 +167,10 @@ export class ApiStack extends Stack {
       { jwtAudience: [props.userPoolClient.userPoolClientId] },
     );
 
-    // CORS so the browser SPA (a different origin than execute-api) can call /auth + /me. Without it,
-    // the preflight OPTIONS falls through to an authorizer-protected route and is rejected 401, so the
-    // real request never fires. API Gateway answers OPTIONS itself (no authorizer) once this is set.
-    // Origins shared with the Cognito callback list (config.webOrigins).
+    // CORS so the browser SPA (a different origin than execute-api) can call the API. Without it,
+    // the preflight OPTIONS falls through to an authorizer-protected route and is rejected 401, so
+    // the real request never fires. API Gateway answers OPTIONS itself (no authorizer) once this is
+    // set. Origins shared with the Cognito callback list (config.webOrigins).
     this.httpApi = new HttpApi(this, "HttpApi", {
       apiName: `wanthat-${wanthatEnv.name}-app`,
       corsPreflight: {
@@ -294,105 +187,42 @@ export class ApiStack extends Stack {
     // API Gateway's built-in CORS preflight handler - an ANY route would swallow the preflight into
     // the authorizer and 401 it (breaking browser CORS).
 
-    // Liveness -> the auth edge (either function serves it).
+    // Liveness -> the links edge (either function serves it).
     this.httpApi.addRoutes({
       path: "/healthz",
       methods: [HttpMethod.GET],
-      integration: authIntegration,
+      integration: linksIntegration,
     });
 
     // DB warm-up probe -> app-core (touches Aurora). Public; the SPA fires it (fire-and-forget) on
-    // landing/auth load so the scale-to-zero resume overlaps the human reading the page / doing
-    // Face ID instead of serialising ~20s after the biometric.
+    // load so the scale-to-zero resume overlaps the human reading the page instead of serialising
+    // in front of the wallet read.
     this.httpApi.addRoutes({
       path: "/healthz/db",
       methods: [HttpMethod.GET],
       integration: coreIntegration,
     });
 
-    // Public, token-issuing auth flow -> app-auth. Explicit paths (no {proxy+}) so OPTIONS -> CORS.
-    for (const p of [
-      "/auth/start",
-      "/auth/resend",
-      "/auth/verify",
-      "/auth/refresh",
-      "/auth/signout",
-    ]) {
-      this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: authIntegration });
-    }
-
-    // Passkey LOGIN (ADR-0006, userless discoverable) -> app-auth, PUBLIC (the assertion is the
-    // credential; the user is not signed in yet). Explicit static routes so they take precedence over
-    // the authorizer-protected /auth/passkey/{proxy+} enrolment route below. GET issues a single-use
-    // challenge; POST verifies the assertion and bridges to Cognito tokens.
-    this.httpApi.addRoutes({
-      path: "/auth/passkey/login/challenge",
-      methods: [HttpMethod.GET],
-      integration: authIntegration,
-    });
-    this.httpApi.addRoutes({
-      path: "/auth/passkey/login/verify",
-      methods: [HttpMethod.POST],
-      integration: authIntegration,
-    });
-
-    // Public channel-availability projection (ADR-0019) -> app-auth. GET, no authorizer.
-    this.httpApi.addRoutes({
-      path: "/auth/config",
-      methods: [HttpMethod.GET],
-      integration: authIntegration,
-    });
-
-    // Public registration-ticket exchange -> app-core (the ticket is the credential). `/auth/session`
-    // resolves the ticket to login-vs-register (needs Aurora); `/auth/register` provisions the row.
-    for (const p of ["/auth/session", "/auth/register"]) {
-      this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: coreIntegration });
-    }
-
-    // Passkey enrolment (POST) + the member's passkey list (GET /auth/passkey/list) -> app-auth,
-    // behind the JWT authorizer (the access token is a valid pool JWT). The public login GET above
-    // is a static route, so it keeps precedence over this proxy.
-    this.httpApi.addRoutes({
-      path: "/auth/passkey/{proxy+}",
-      methods: [HttpMethod.POST, HttpMethod.GET],
-      integration: authIntegration,
-      authorizer,
-    });
-
-    // Member profile -> app-core, behind the JWT authorizer.
-    this.httpApi.addRoutes({
-      path: "/me",
-      methods: [HttpMethod.GET, HttpMethod.PATCH],
-      integration: coreIntegration,
-      authorizer,
-    });
-    this.httpApi.addRoutes({
-      path: "/me/{proxy+}",
-      methods: [HttpMethod.GET, HttpMethod.POST, HttpMethod.PATCH],
-      integration: coreIntegration,
-      authorizer,
-    });
-
-    // Links module (ADR-0002/0011) -> app-auth (non-VPC — its sync retailer-proxy invoke is free
+    // Links module (ADR-0002/0011) -> app-links (non-VPC — its sync retailer-proxy invoke is free
     // there), behind the JWT authorizer. Resolve is a POST (it can mint via the retailer-proxy);
     // recommendations carry POST create, GET list/detail and PATCH review — PATCH is already in
     // the CORS allowMethods above.
     this.httpApi.addRoutes({
       path: "/products/resolve",
       methods: [HttpMethod.POST],
-      integration: authIntegration,
+      integration: linksIntegration,
       authorizer,
     });
     this.httpApi.addRoutes({
       path: "/recommendations",
       methods: [HttpMethod.GET, HttpMethod.POST],
-      integration: authIntegration,
+      integration: linksIntegration,
       authorizer,
     });
     this.httpApi.addRoutes({
       path: "/recommendations/{proxy+}",
       methods: [HttpMethod.GET, HttpMethod.PATCH],
-      integration: authIntegration,
+      integration: linksIntegration,
       authorizer,
     });
 
@@ -420,9 +250,17 @@ export class ApiStack extends Stack {
     // ref in the currently-deployed template. CloudFormation deploys `api` before `observability`, so
     // `api` would try to delete this export while it is still in use -> "cannot delete export ... in
     // use", the failure that rolled back the dev deploy. Retaining the export for one deploy lets
-    // observability migrate to app-auth/app-core first; the follow-up PR drops this line + the export.
+    // observability migrate first; the follow-up PR drops this line + the export.
     this.exportValue(`wanthat-${wanthatEnv.name}-app-api`, {
       name: `wanthat-${wanthatEnv.name}-api:ExportsOutputRefAppApiE7BADA0120FBA170`,
+    });
+    // TRANSITIONAL (T8 rename) - REMOVE in a follow-up once every env's observability stack has
+    // redeployed. Same trap as above: the deployed observability template still imports the OLD
+    // `AppAuth` function ref export; deleting it while in use rolls the api deploy back. Retain the
+    // export (stale literal value - nothing evaluates it) for one deploy so observability can
+    // migrate to the `AppLinks` export first; the follow-up PR drops this line.
+    this.exportValue(`wanthat-${wanthatEnv.name}-app-auth`, {
+      name: `wanthat-${wanthatEnv.name}-api:ExportsOutputRefAppAuthB8BC94674D7C9325`,
     });
   }
 }

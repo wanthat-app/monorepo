@@ -30,12 +30,14 @@ export interface DataStackProps extends StackProps {
 /**
  * DataStack — the data plane (ADR-0003, ADR-0005, ADR-0006).
  *
- * DynamoDB (on-demand) holds everything that isn't PII or money: the landing projection
+ * DynamoDB (on-demand) holds everything that isn't money: the landing projection
  * (`recommendationId → affiliate url + product`, `byOwner` GSI), `guest_attribution`, the runtime
- * `config` table, the `fx_rate` cache, plus the auth working tables (`auth_challenge`,
- * `phone_velocity`, both TTL-expiring). Aurora Serverless v2 (scale-to-zero, IAM auth, no RDS Proxy)
- * holds PII + ledger. A one-shot migrator Trigger runs the schema after the cluster is created. PITR
- * on all DynamoDB tables; a Secrets Manager placeholder holds the retailer credential.
+ * `config` table, the `fx_rate` cache, and the notification outbox. The former auth working tables
+ * (`auth_challenge`, `phone_velocity`, `passkey_credential`) died with the app-owned auth
+ * ceremonies (ADR-0006: the browser talks to Cognito directly). Aurora Serverless v2
+ * (scale-to-zero, IAM auth, no RDS Proxy) holds money only. A one-shot migrator Trigger runs the
+ * schema after the cluster is created. PITR on all DynamoDB tables; a Secrets Manager placeholder
+ * holds the retailer credential.
  */
 export class DataStack extends Stack {
   readonly productTable: dynamodb.Table;
@@ -43,10 +45,7 @@ export class DataStack extends Stack {
   readonly guestAttributionTable: dynamodb.Table;
   readonly runtimeConfigTable: dynamodb.Table;
   readonly fxRateTable: dynamodb.Table;
-  readonly authChallengeTable: dynamodb.Table;
-  readonly phoneVelocityTable: dynamodb.Table;
   readonly notificationOutboxTable: dynamodb.Table;
-  readonly passkeyCredentialTable: dynamodb.Table;
   /** Absent in prod by design (fail-closed) — see the DevOtpSink construct below. */
   readonly devOtpSinkTable?: dynamodb.Table;
   readonly retailerSecret: secretsmanager.Secret;
@@ -104,21 +103,6 @@ export class DataStack extends Stack {
       ...common,
     });
 
-    // Auth OTP challenge state (ADR-0006): one item per /auth/start, carrying the Cognito session and
-    // resend cooldown. TTL-expired by `ttl` so abandoned challenges self-clean.
-    this.authChallengeTable = new dynamodb.Table(this, "AuthChallenge", {
-      partitionKey: { name: "challengeId", type: dynamodb.AttributeType.STRING },
-      timeToLiveAttribute: "ttl",
-      ...common,
-    });
-
-    // Per-phone SMS velocity counter (ADR-0006 kill-switch layer 1). Hashed phone key; TTL windows.
-    this.phoneVelocityTable = new dynamodb.Table(this, "PhoneVelocity", {
-      partitionKey: { name: "phoneHash", type: dynamodb.AttributeType.STRING },
-      timeToLiveAttribute: "ttl",
-      ...common,
-    });
-
     // ADR-0019: transactional outbox for WhatsApp notifications. In-VPC producers (app-core)
     // write over the free DynamoDB gateway endpoint; the Stream triggers the NON-VPC
     // whatsapp-dispatcher (the NAT-free bridge - no SQS interface endpoint). TTL ~30 days:
@@ -128,18 +112,6 @@ export class DataStack extends Stack {
       timeToLiveAttribute: "ttl",
       stream: dynamodb.StreamViewType.NEW_IMAGE,
       ...common,
-    });
-
-    // ADR-0006: passkey public keys we store + verify ourselves (Cognito no longer holds them).
-    // PK credentialId; byCustomerSub GSI lists a member's passkeys. Non-PII (sub + public key).
-    this.passkeyCredentialTable = new dynamodb.Table(this, "PasskeyCredential", {
-      partitionKey: { name: "credentialId", type: dynamodb.AttributeType.STRING },
-      ...common,
-    });
-    this.passkeyCredentialTable.addGlobalSecondaryIndex({
-      indexName: "byCustomerSub",
-      partitionKey: { name: "customerSub", type: dynamodb.AttributeType.STRING },
-      sortKey: { name: "createdAt", type: dynamodb.AttributeType.STRING },
     });
 
     // Dev OTP sink (auth.otpSink = "devSink", docs/dev-otp-sink.md): message-sender parks codes

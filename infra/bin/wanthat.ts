@@ -71,12 +71,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   productTable: data.productTable,
   recommendationTable: data.recommendationTable,
   fxRateTable: data.fxRateTable,
-  guestAttributionTable: data.guestAttributionTable,
   runtimeConfigTable: data.runtimeConfigTable,
-  authChallengeTable: data.authChallengeTable,
-  phoneVelocityTable: data.phoneVelocityTable,
-  notificationOutboxTable: data.notificationOutboxTable,
-  passkeyCredentialTable: data.passkeyCredentialTable,
   vpc: network.vpc,
   lambdaSg: network.lambdaSg,
   cluster: data.cluster,
@@ -132,7 +127,9 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
   spaConfig: {
     apiUrl: api.httpApi.apiEndpoint,
     adminApiUrl: admin.httpApi.apiEndpoint,
-    managedLoginUrl: identity.userPoolDomain.baseUrl(),
+    // ADR-0006: the SPA calls cognito-idp.<region>.amazonaws.com directly for every customer auth
+    // ceremony (no Managed Login for customers). A synth-time literal, not a stack output.
+    cognitoRegion: wanthatEnv.region,
     userPoolClientId: identity.userPoolClient.userPoolClientId,
     adminManagedLoginUrl: identity.employeePoolDomain.baseUrl(),
     adminPoolClientId: identity.employeePoolClient.userPoolClientId,
@@ -151,7 +148,7 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
     { label: "landing", api: edgeServices.landingApi },
   ],
   functions: [
-    { label: "app-auth", fn: api.appAuthFn },
+    { label: "app-links", fn: api.appLinksFn },
     { label: "app-core", fn: api.appCoreFn },
     { label: "admin-api", fn: admin.adminApiFn },
     { label: "admin-credentials", fn: admin.adminCredentialsFn },

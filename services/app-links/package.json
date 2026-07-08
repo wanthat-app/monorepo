@@ -1,5 +1,5 @@
 {
-  "name": "@wanthat/app-auth",
+  "name": "@wanthat/app-links",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,15 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aws-lambda-powertools/logger": "^2.8.0",
-    "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
     "@aws-sdk/client-lambda": "^3.600.0",
     "@wanthat/aliexpress": "workspace:*",
-    "@wanthat/auth": "workspace:*",
     "@wanthat/contracts": "workspace:*",
     "@wanthat/domain": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
-    "@wanthat/webauthn": "workspace:*",
     "hono": "^4.6.0"
   }
 }

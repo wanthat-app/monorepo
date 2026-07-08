@@ -28,7 +28,8 @@ export interface EdgeStackProps extends StackProps {
   readonly spaConfig: {
     readonly apiUrl: string;
     readonly adminApiUrl: string;
-    readonly managedLoginUrl: string;
+    /** Region of the Cognito customer pool — the SPA calls cognito-idp directly (ADR-0006). */
+    readonly cognitoRegion?: string;
     readonly userPoolClientId: string;
     readonly adminManagedLoginUrl: string;
     readonly adminPoolClientId: string;

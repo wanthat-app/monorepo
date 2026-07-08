@@ -170,6 +170,32 @@ Aurora (ADR-0006 decision 7). **Depends:** T1. **Blocks:** T12.
 - CAUTION - cross-stack export ordering: deleting exported resources fails on
   `cdk deploy --all` while consumers still import them; deploy consumers first
   (`--exclusively`), then the producer. Plan the two-step deploy explicitly.
+- **Two-step deploy (T12 must follow this; dev shown, s/dev/prod/ for prod).** Three export
+  removals are in play: (a) api imports the data-stack's `AuthChallenge`/`PhoneVelocity`/
+  `PasskeyCredential` table exports; (b) the us-east-1 edge imports the identity stack's
+  customer `ManagedLoginDomain` baseUrl (cross-region export) via `spaConfig.managedLoginUrl`;
+  (c) observability imports api's OLD `AppAuth` function-ref export - (c) is handled inside
+  api-stack by a TRANSITIONAL retained export (`...ExportsOutputRefAppAuthB8BC94674D7C9325`,
+  stale literal value; drop it in a follow-up PR after every env's observability has
+  redeployed), because observability cannot deploy first - the `AppLinks` export it needs
+  does not exist until api deploys. From the repo root, after `pnpm build` (edge needs
+  `apps/web/dist` at synth) and a reviewed `pnpm diff`:
+
+  ```bash
+  # Step 1 - consumers of the removed exports stop importing them (and the rename lands):
+  #   api: app-auth -> app-links (CFN REPLACEMENT of fn + log group - expected, pre-release),
+  #        drops the three table imports, deletes ticket-keygen + AuthTicketSecret;
+  #   edge: config.json drops managedLoginUrl, gains cognitoRegion (a synth-time literal).
+  cd infra
+  pnpm exec cdk deploy wanthat-dev-api wanthat-dev-edge --exclusively --require-approval never
+
+  # Step 2 - producers drop the now-unreferenced exports + everything else converges:
+  #   data: deletes the AuthChallenge/PhoneVelocity/PasskeyCredential tables + exports;
+  #   identity: deletes the customer ManagedLoginDomain/branding + its cross-region export,
+  #             drops adminUserPassword, attaches the customer-pool WAF web ACL;
+  #   observability: re-points the app-auth alarms/widgets at the AppLinks export.
+  pnpm exec cdk deploy --all --require-approval never --concurrency 4
+  ```
 - Attach the WAF web ACL from T0 to the customer pool (or record the fallback).
 - Delete `packages/auth` and `packages/webauthn`; remove them from infra devDependencies
   (filtered turbo Deploy build breaks otherwise - red check-deploy is blocking).
