@@ -3,7 +3,7 @@ import { meApi } from "./api";
 import { getConfig } from "./config";
 
 /**
- * Discoverable (userless) passkey login via Cognito Managed Login (ADR-0020). The raw Cognito API
+ * Discoverable (userless) passkey login via Cognito Managed Login (ADR-0006). The raw Cognito API
  * can't do username-less WebAuthn, so we redirect to the hosted UI and complete the OAuth
  * authorization-code + PKCE exchange **in the browser** (the in-VPC API can't reach the hosted token
  * endpoint). The resulting tokens are then used as a normal Bearer session.

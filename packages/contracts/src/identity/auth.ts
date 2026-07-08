@@ -16,13 +16,13 @@ export const AuthSession = z.object({ tokens: AuthTokens, customer: CustomerProf
 export type AuthSession = z.infer<typeof AuthSession>;
 
 /**
- * OTP delivery channel (ADR-0023). REQUIRED in requests — the UI picks it (from GET /auth/config)
+ * OTP delivery channel (ADR-0019). REQUIRED in requests — the UI picks it (from GET /auth/config)
  * and states it explicitly; the server never defaults or silently switches a channel.
  */
 export const OtpChannel = z.enum(["whatsapp", "sms"]);
 export type OtpChannel = z.infer<typeof OtpChannel>;
 
-/** Languages our Meta templates are approved in (ADR-0023). */
+/** Languages our Meta templates are approved in (ADR-0019). */
 export const MessageLanguage = z.enum(["he", "en"]);
 export type MessageLanguage = z.infer<typeof MessageLanguage>;
 
@@ -36,7 +36,7 @@ export type AuthConfigResponse = z.infer<typeof AuthConfigResponse>;
 
 // POST /auth/start — phone-only entry (login-or-register, uniform/enumeration-safe). `locale` is
 // the SPA's active UI language; app-auth writes it to the Cognito `locale` attribute so the
-// message-sender picks the template language (app-core is in-VPC and cannot, ADR-0020).
+// message-sender picks the template language (app-core is in-VPC and cannot, ADR-0006).
 export const AuthStartBody = z.object({
   phone: PhoneE164,
   channel: OtpChannel,
@@ -73,7 +73,7 @@ export const AuthVerifyBody = z.object({
 });
 export type AuthVerifyBody = z.infer<typeof AuthVerifyBody>;
 
-// `/auth/verify` runs on the non-VPC `app-auth` edge (Cognito-only, ADR-0020), which cannot read
+// `/auth/verify` runs on the non-VPC `app-auth` edge (Cognito-only, ADR-0006), which cannot read
 // Aurora — so it cannot decide login-vs-register. On success it just hands off a signed, self-contained
 // ticket; the client then calls `/auth/session` to resolve it. (The login-vs-register decision moved
 // there from `/auth/verify`.)
@@ -119,7 +119,7 @@ export const PasskeyRegisterOptionsBody = z.object({
 export type PasskeyRegisterOptionsBody = z.infer<typeof PasskeyRegisterOptionsBody>;
 
 // The server generates + stores the challenge (single-use); the client echoes `challengeId` back at
-// verify so app-auth can look it up (ADR-0022 — we own the WebAuthn ceremony now, not Cognito).
+// verify so app-auth can look it up (ADR-0006 — we own the WebAuthn ceremony now, not Cognito).
 export const PasskeyRegisterOptionsResponse = z.object({
   challengeId: z.string(),
   options: PublicKeyCredentialCreationOptionsJSON,
@@ -143,7 +143,7 @@ export type PasskeyRegisterVerifyResponse = z.infer<typeof PasskeyRegisterVerify
 export const PasskeyListResponse = z.object({ passkeys: z.array(Passkey) });
 export type PasskeyListResponse = z.infer<typeof PasskeyListResponse>;
 
-// GET /auth/passkey/login/challenge — begin a USERLESS discoverable passkey login (ADR-0022). No
+// GET /auth/passkey/login/challenge — begin a USERLESS discoverable passkey login (ADR-0006). No
 // username/phone: the discoverable credential resolves itself (userHandle = the Cognito sub). Public.
 // The `options` carry an EMPTY allowCredentials + a single-use challenge; `challengeId` is echoed at
 // verify. This enables conditional UI (Slice 2) — the passkey offers itself, no prompt.
@@ -154,9 +154,9 @@ export const PasskeyLoginChallengeResponse = z.object({
 export type PasskeyLoginChallengeResponse = z.infer<typeof PasskeyLoginChallengeResponse>;
 
 // POST /auth/passkey/login/verify — app-auth verifies the assertion against the stored public key,
-// resolves the sub from the credential, bridges to Cognito (the admin token exchange, ADR-0022
+// resolves the sub from the credential, bridges to Cognito (the admin token exchange, ADR-0006
 // decision 3), and hands off the SAME signed ticket as /auth/verify so /auth/session resolves the
-// member (ADR-0020/0024). It ALSO returns the minted `tokens` directly: a passkey credential maps to
+// member (ADR-0006). It ALSO returns the minted `tokens` directly: a passkey credential maps to
 // an existing member by construction (no register branch), so an Aurora-free caller — the /p/
 // referral landing, ADR-0007 — persists the session and redirects without touching /auth/session.
 // /auth keeps exchanging the ticket (it needs the customer profile for /home).

@@ -22,7 +22,7 @@ const ReviewItem = z.object({
 /**
  * The stored recommendation projection (ADR-0003/0007): a member's shareable rec of a product,
  * PK `recommendationId`, GSI `byOwner` (`ownerId`, `createdAt`). `ownerId` is the member's
- * canonical id — the Cognito sub (ADR-0025) — so the create path stays Aurora-free (ADR-0004).
+ * canonical id — the Cognito sub (ADR-0020) — so the create path stays Aurora-free (ADR-0004).
  * The product fields (+ `affiliateUrl`) are denormalised so the landing redirect resolves in
  * ONE lookup (ADR-0007), and `cashback` is the split snapshot that LOCKS the link's economics
  * at creation (ADR-0008). `clicks`/`conversions` are fed by the funnel (later slice).

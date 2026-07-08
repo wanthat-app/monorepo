@@ -11,7 +11,7 @@ import { hasStoredSession, persistRefreshToken, useSession } from "../../lib/ses
 import { Button, Screen, Spinner } from "../../ui/components";
 
 /**
- * Referral landing (ADR-0007/0024) — the dynamic, SPA-rendered `/p/{id}` page. The landing SERVICE
+ * Referral landing (ADR-0007/0006) — the dynamic, SPA-rendered `/p/{id}` page. The landing SERVICE
  * server-renders only the OG tags + a content snapshot for bots; this page is what humans get.
  *
  * Design rule: CONTENT FIRST — the product card renders immediately and unconditionally; auth is a

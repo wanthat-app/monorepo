@@ -6,7 +6,7 @@ import {
 import type { StoredCredential } from "./register";
 
 /**
- * Build USERLESS authentication options for conditional UI (ADR-0022): EMPTY allowCredentials so a
+ * Build USERLESS authentication options for conditional UI (ADR-0006): EMPTY allowCredentials so a
  * discoverable passkey resolves itself; UV required. Persist the returned `challenge` (single-use).
  */
 export async function buildAuthenticationOptions(args: { rpID: string }) {

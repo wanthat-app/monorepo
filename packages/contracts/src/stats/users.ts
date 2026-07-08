@@ -9,7 +9,7 @@ export const UsersDailySignup = z.object({
 export type UsersDailySignup = z.infer<typeof UsersDailySignup>;
 
 /**
- * GET /admin/stats/users — real customer metrics for the admin dashboard (ADR-0002/0020). All derived
+ * GET /admin/stats/users — real customer metrics for the admin dashboard (ADR-0002/0006). All derived
  * from the Aurora `customer` table (read-only as `app_ro`): a total, status split, recent-signup
  * windows, and a 30-day daily-signup trend. Day boundaries are Asia/Jerusalem (the operating market).
  */

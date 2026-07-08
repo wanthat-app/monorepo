@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
-- **Related:** [ADR-0007](0007-landing-path-and-latency.md) (OG landing is server-side; cookieless), [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (auth via our `/auth/*`)
+- **Related:** [ADR-0007](0007-landing-path-and-latency.md) (OG landing is server-side; cookieless), [ADR-0006](0006-cognito-native-auth-and-pii.md) (Cognito-native auth from the browser)
 
 ## Context
 
@@ -26,7 +26,7 @@ app is cookieless (ADR-0007) and Israeli (Hebrew/RTL primary).
   a pure SPA.
 - **Next.js SSR (OpenNext/Lambda)** — contradicts the static-S3 EdgeStack and adds a compute
   surface; OG unfurling is already solved by the landing Lambda. Rejected.
-- **AWS Amplify auth** — unnecessary weight; our API fronts Cognito (ADR-0006), so a thin client
+- **AWS Amplify auth** — unnecessary weight; the SPA calls Cognito's public API directly with a thin client (ADR-0006), so a thin client
   suffices.
 
 ## Consequences

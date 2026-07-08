@@ -22,14 +22,14 @@ function requireEnv(name: string): string {
 
 export interface AuthContext {
   region: string;
-  /** Read-only by design: the config table is single-writer (admin-api) — ADR-0023 spec. */
+  /** Read-only by design: the config table is single-writer (admin-api) — ADR-0019 spec. */
   config: RuntimeConfigReader;
   challenges: AuthChallengeRepo;
   velocity: PhoneVelocityRepo;
   guests: GuestAttributionRepo;
   cognito: Cognito;
   tickets: TicketSigner;
-  /** Own-store passkey credentials (ADR-0022) — `app-auth` verifies WebAuthn itself, not Cognito. */
+  /** Own-store passkey credentials (ADR-0006) — `app-auth` verifies WebAuthn itself, not Cognito. */
   passkeys: PasskeyCredentialRepo;
   /** Links module (ADR-0002; served from this non-VPC edge so the retailer-proxy invoke is free —
    * the in-VPC placement would need a paid lambda interface endpoint, ADR-0004). */
@@ -39,7 +39,7 @@ export interface AuthContext {
   fx: FxRateRepo;
   /** Canonical SPA origin for shareUrl (env APP_URL). */
   appUrl: string;
-  /** WebAuthn Relying Party identity (ADR-0022): `rpId` is the site's registrable domain;
+  /** WebAuthn Relying Party identity (ADR-0006): `rpId` is the site's registrable domain;
    * `origins` are the exact origins the SPA is served from. Both pin `verifyRegistration`/
    * `verifyAuthentication` to this site so an assertion for another origin/RP is rejected. */
   webauthn: { rpId: string; origins: string[] };
@@ -49,7 +49,7 @@ let cached: AuthContext | undefined;
 
 /**
  * Build the per-container dependency graph once and reuse it across warm invocations. The non-VPC
- * auth edge (ADR-0020) reaches Cognito + DynamoDB over public AWS endpoints; the ticket signing key
+ * auth edge (ADR-0006) reaches Cognito + DynamoDB over public AWS endpoints; the ticket signing key
  * is lazy/cached inside {@link TicketSigner}. No Aurora — that seam belongs to `app-core`.
  */
 export function getContext(): AuthContext {

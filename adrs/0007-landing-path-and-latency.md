@@ -1,13 +1,13 @@
 # ADR 0007 — Landing path, latency & front door
 
-- **Status:** Accepted *(consolidated 2026-07-07: former ADR-0018 — the HTTP-API front door — is
+- **Status:** Accepted *(consolidated 2026-07-07: a former HTTP-API front-door ADR is
   merged into this record; the Function-URL mechanism it replaced is preserved under Alternatives)*
 - **Date:** 2026-06-28 (front door revised 2026-06-29; consolidated 2026-07-07)
 - **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (redirect projection),
   [ADR-0004](0004-network-topology-nat-free-egress.md) (non-VPC),
   [ADR-0008](0008-consumer-attribution-model.md) (attribution at click),
   [ADR-0011](0011-backend-service-stack.md) (HTTP API),
-  [ADR-0019](0019-edge-front-door-cloudfront.md) (CloudFront)
+  [ADR-0018](0018-edge-front-door-cloudfront.md) (CloudFront)
 
 ## Context
 
@@ -37,7 +37,7 @@ authorizer), behind CloudFront on `/p/*`.** Two parts:
    the rest of the app and is **Aurora-free** (a member is recognised by a valid Cognito refresh —
    tokens, not profile):
    - **member** (stored session) → recognised → redirect to the store with attribution;
-   - **returning passkey device, no session** → automatic biometric login (ADR-0022) → redirect;
+   - **returning passkey device, no session** → one-prompt native passkey login with the remembered phone (ADR-0006) → redirect;
    - **neither** → signup / login / continue-as-guest (`guestId` in localStorage, ADR-0008).
    The resolve step assembles `custom_parameters` — `ref` (the `recommendation_id`) plus the
    consumer key (`c` customer / `g` guest) — onto the product-level affiliate URL and emits the

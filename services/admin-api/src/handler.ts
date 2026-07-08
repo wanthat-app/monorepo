@@ -1,5 +1,5 @@
 /**
- * Admin API (ADR-0002, ADR-0020) — a separate in-VPC Lambda with its own role/exposure, behind its
+ * Admin API (ADR-0002, ADR-0006) — a separate in-VPC Lambda with its own role/exposure, behind its
  * own HTTP API + JWT authorizer (every route gated; no public probe). HTTP routing via Hono.
  *
  * Owns the runtime-config panel (the sole CONFIG writer), operational stats, and the users page

@@ -43,7 +43,7 @@ export function meRouter(): Hono<{ Bindings: Bindings }> {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
-    // TODO(app-auth): cognito attribute sync. app-core is Cognito-free (ADR-0020), so an email change
+    // TODO(app-auth): cognito attribute sync. app-core is Cognito-free (ADR-0006), so an email change
     // that must propagate to the Cognito attribute is delegated to app-auth; dropped here for now.
     const profile = await updateProfile(ctx.db, sub, body);
     if (!profile) return c.json({ error: "not_found" }, 404);
@@ -58,7 +58,7 @@ export function meRouter(): Hono<{ Bindings: Bindings }> {
     if (!body) return c.json({ error: "invalid_request" }, 400);
     const ctx = getContext();
 
-    // Membership check only — the mapping stores the SUB, the canonical user id (ADR-0025); the
+    // Membership check only — the mapping stores the SUB, the canonical user id (ADR-0020); the
     // poller resolves sub → customer row via cognito_sub when it writes the ledger.
     const profile = await findByCognitoSub(ctx.db, sub);
     if (!profile) return c.json({ error: "not_found" }, 404);

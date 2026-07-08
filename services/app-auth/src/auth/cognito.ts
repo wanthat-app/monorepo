@@ -47,13 +47,13 @@ export function toAuthTokens(
 }
 
 /**
- * Thin wrapper over the Cognito admin APIs (ADR-0006/0020/0021/0024). All server-side (no app-client
+ * Thin wrapper over the Cognito admin APIs (ADR-0006/0006). All server-side (no app-client
  * secret); the non-VPC `app-auth` edge reaches Cognito over the public AWS endpoint (Managed Login
- * disables PrivateLink, ADR-0020). The unified flow creates a user on the fly for an unseen phone,
+ * disables PrivateLink, ADR-0006). The unified flow creates a user on the fly for an unseen phone,
  * then drives the choice-based USER_AUTH SMS-OTP flow. Passkeys are no longer a Cognito WEB_AUTHN
- * challenge (ADR-0022): `app-auth` owns the WebAuthn ceremony itself against our own
+ * challenge (ADR-0006): `app-auth` owns the WebAuthn ceremony itself against our own
  * `passkey_credential` store, then bridges into Cognito via `passkeyAdminAuth` (an ephemeral
- * server-set password) purely to mint tokens (ADR-0022 decision 3).
+ * server-set password) purely to mint tokens (ADR-0006 decision 3).
  */
 export class Cognito {
   private readonly client: CognitoIdentityProviderClient;
@@ -95,7 +95,7 @@ export class Cognito {
   }
 
   /**
-   * Create a CONFIRMED user for a new phone (ADR-0020): suppressed invite + a random permanent
+   * Create a CONFIRMED user for a new phone (ADR-0006): suppressed invite + a random permanent
    * password the member never uses (auth is passwordless OTP/passkey).
    *
    * The pool uses `UsernameAttributes: [email, phone_number]` (ADR-0006), so the phone IS the sign-in
@@ -169,7 +169,7 @@ export class Cognito {
   }
 
   /**
-   * Mint tokens for an already-verified passkey login (ADR-0022 decision 3, the admin token
+   * Mint tokens for an already-verified passkey login (ADR-0006 decision 3, the admin token
    * exchange). `app-auth` verified the WebAuthn assertion itself against our own `passkey_credential`
    * store; this exchanges that trust for real Cognito tokens by setting a fresh random password
    * server-side and immediately consuming it via ADMIN_USER_PASSWORD_AUTH. The password is 40+ chars,

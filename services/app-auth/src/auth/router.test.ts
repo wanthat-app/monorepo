@@ -45,7 +45,7 @@ const { logMock } = vi.hoisted(() => ({
 }));
 vi.mock("@aws-lambda-powertools/logger", () => ({ Logger: vi.fn(() => logMock) }));
 
-// The router now owns the WebAuthn ceremony itself (ADR-0022) via @wanthat/webauthn; mock its
+// The router now owns the WebAuthn ceremony itself (ADR-0006) via @wanthat/webauthn; mock its
 // build/verify functions so these tests exercise router logic, not the WebAuthn library.
 const { webauthnMock } = vi.hoisted(() => ({
   webauthnMock: {
@@ -166,7 +166,7 @@ describe("GET /auth/config", () => {
   });
 });
 
-describe("POST /auth/start — channel handling (ADR-0023)", () => {
+describe("POST /auth/start — channel handling (ADR-0019)", () => {
   beforeEach(() => {
     fake.cognito.getUserByPhone.mockResolvedValue({ username: "u", sub: SUB });
     fake.cognito.startSmsOtp.mockResolvedValue({ session: "sess" });
@@ -354,7 +354,7 @@ describe("POST /auth/resend", () => {
   });
 });
 
-describe("POST /auth/resend — channel switch (ADR-0023)", () => {
+describe("POST /auth/resend — channel switch (ADR-0019)", () => {
   const challenge = {
     challengeId: "c1",
     username: "u",
@@ -414,7 +414,7 @@ function fakeAccessToken(sub: string, username: string): string {
   return `header.${payload}.sig`;
 }
 
-describe("passkey register (ADR-0022 — own-store enrolment)", () => {
+describe("passkey register (ADR-0006 — own-store enrolment)", () => {
   const ACCESS_TOKEN = fakeAccessToken(SUB, "u");
   const credential = {
     id: "cred-1",
@@ -603,7 +603,7 @@ describe("passkey register (ADR-0022 — own-store enrolment)", () => {
   });
 });
 
-describe("GET /auth/passkey/login/challenge (ADR-0022 — userless discoverable)", () => {
+describe("GET /auth/passkey/login/challenge (ADR-0006 — userless discoverable)", () => {
   it("returns options + a challengeId, no-store, no user resolved yet", async () => {
     webauthnMock.buildAuthenticationOptions.mockResolvedValue({ challenge: "xyz" });
     const res = await app.request("/auth/passkey/login/challenge");
@@ -619,7 +619,7 @@ describe("GET /auth/passkey/login/challenge (ADR-0022 — userless discoverable)
   });
 });
 
-describe("POST /auth/passkey/login/verify (ADR-0022)", () => {
+describe("POST /auth/passkey/login/verify (ADR-0006)", () => {
   const cred = {
     id: "cred-1",
     rawId: "cred-1",

@@ -98,7 +98,7 @@ flowchart TB
 *Legend: blue = in-VPC Lambdas · green = non-VPC Lambdas · orange = data stores · purple =
 external. Solid arrows are data/HTTP; dotted arrows are async (streams, schedules, triggers).*
 
-Compute is sliced by real seams (ADR-0002, refined by ADR-0020): the **auth edge / core split**
+Compute is sliced by real seams (ADR-0002, refined by ADR-0006): the **auth edge / core split**
 (`app-auth` non-VPC ↔ `app-core` in-VPC, bridged by a signed ticket), a separate **admin-api**, the
 public **landing**, the scheduled **conversion poller** (stub) with the shared **retailer-proxy**
 (sole retailer egress, stub), and the messaging pair (**message-sender**, **whatsapp-dispatcher**).
@@ -119,17 +119,17 @@ audit log.
   `app-auth`; public ticket exchange (`/auth/session`, `/auth/register`) + JWT-authorized `/me*` →
   `app-core`. Per-surface throttling on the `$default` stage.
 - **Admin HTTP API** — separate API + authorizer bound to the **employee pool**, so a customer
-  token structurally cannot reach `/admin` (ADR-0020).
-- **Cognito, two pools** (ADR-0006/0020/0022): the **customer pool** (ESSENTIALS, choice-based
+  token structurally cannot reach `/admin` (ADR-0006).
+- **Cognito, two pools** (ADR-0006): the **customer pool** (ESSENTIALS, choice-based
   sign-in) does passwordless **OTP** (WhatsApp-default / SMS via a **custom SMS sender** →
   `message-sender`, kill-switched in DynamoDB runtime config) and mints tokens for passkey logins
   via the **admin token exchange**; the **employee pool** (email + mandatory TOTP) guards admin.
-- **Passkeys are app-managed** (ADR-0022): the WebAuthn ceremony, credential store
+- **Passkeys are app-managed** (ADR-0006): the WebAuthn ceremony, credential store
   (`passkey_credential` in DynamoDB) and assertion verification live on `app-auth`
   (`@wanthat/webauthn`); Cognito only issues the session tokens. Automatic biometric login:
   auto-modal armed on document focus (returning devices) / conditional-UI autofill (first-time),
   OTP as universal fallback.
-- **Registration ticket** (ADR-0020): `app-auth` signs `{sub, phone, tokens, exp}` with an
+- **Registration ticket** (ADR-0006): `app-auth` signs `{sub, phone, tokens, exp}` with an
   **Ed25519 private key** (Secrets Manager, generated once by the `ticket-keygen` custom
   resource); `app-core` verifies with the **public key from env** — no secret reads in the VPC.
 
@@ -146,7 +146,7 @@ audit log.
   SPA shell (bots get previews; humans boot the SPA, which runs the same session/passkey machinery
   as the app and never touches Aurora). Emits impression/click log lines → Firehose. (ADR-0007.)
 - **message-sender** *(non-VPC)* — Cognito custom-SMS-sender target: decrypts the OTP, delivers
-  WhatsApp-first / SMS (ADR-0023); dev uses a TTL'd `dev_otp_sink` table instead of live sends.
+  WhatsApp-first / SMS (ADR-0019); dev uses a TTL'd `dev_otp_sink` table instead of live sends.
 - **whatsapp-dispatcher** *(non-VPC)* — consumes the `notification_outbox` DynamoDB stream
   (at-least-once, idempotent on `status`) and sends templated messages (`optin_welcome`);
   kill-switched.
@@ -183,7 +183,7 @@ audit log.
 ### 3.5 Network (NAT-free — ADR-0004)
 Only Aurora and the functions that touch it (`app-core`, `admin-api`, poller-writer, `db-migrator`)
 are in the VPC; they reach DynamoDB via the free gateway endpoint. **Zero paid interface
-endpoints** — nothing in the VPC calls Cognito (ADR-0020 split) or reads Secrets Manager (Ed25519
+endpoints** — nothing in the VPC calls Cognito (ADR-0006 split) or reads Secrets Manager (Ed25519
 verification is env-config; the migrator uses IAM DB auth). Everything else runs outside the VPC
 over public AWS endpoints (IAM-authenticated + TLS; ingress is only ever the HTTP APIs). **No NAT
 Gateway, no RDS Proxy.** Retailer APIs are IPv4-only, reached only from `retailer-proxy`.

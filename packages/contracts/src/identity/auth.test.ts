@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { CONFIG_DEFAULTS, parseConfigValue } from "../config/keys";
 import { AuthConfigResponse, AuthResendBody, AuthStartBody, OtpChannel } from "./auth";
 
-describe("OTP channel contracts (ADR-0023)", () => {
+describe("OTP channel contracts (ADR-0019)", () => {
   it("requires an explicit channel on /auth/start — no server-side default", () => {
     expect(AuthStartBody.safeParse({ phone: "+972541234567" }).success).toBe(false);
     expect(AuthStartBody.safeParse({ phone: "+972541234567", channel: "whatsapp" }).success).toBe(

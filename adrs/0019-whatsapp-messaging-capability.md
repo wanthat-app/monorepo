@@ -1,10 +1,10 @@
-# ADR 0023 — WhatsApp messaging capability (OTP + notifications), Custom SMS Sender + End User Messaging Social
+# ADR 0019 — WhatsApp messaging capability (OTP + notifications), Custom SMS Sender + End User Messaging Social
 
 - **Status:** Proposed (execution-ready; build in a later slice)
 - **Date:** 2026-07-01
-- **Refines:** [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (delivers the deferred alternate OTP
+- **Refines:** [ADR-0006](0006-cognito-native-auth-and-pii.md) (delivers the alternate OTP
   channel it told us to leave room for)
-- **Related:** [ADR-0020](0020-auth-foundation.md), [ADR-0020](0020-auth-foundation.md)
+- **Related:** [ADR-0006](0006-cognito-native-auth-and-pii.md)
   (Custom SMS Sender is a separate Cognito-invoked non-VPC Lambda), [ADR-0003](0003-datastore-aurora-and-dynamodb.md),
   [ADR-0004](0004-network-topology-nat-free-egress.md)
 
@@ -30,7 +30,7 @@ explicitly left the OTP send-channel abstractable for exactly this.
    Cognito-invoked) intercepts the OTP Cognito would SMS and delivers it via WhatsApp, with **SMS
    fallback**. **WhatsApp is the default channel** (user decision), overridable per request. Optimistic
    send (no synchronous delivery error; the resend screen offers SMS). Channel is conveyed via a
-   `custom:otpChannel` user attribute set by app-auth's `/auth/start`.
+   `custom:otpChannel` user attribute — set at `SignUp` (rides `UserAttributes`) or edited post-auth; the sender itself enforces the kill switches and falls back to an enabled channel (ADR-0006).
 
 4. **Notifications: transactional outbox on DynamoDB Streams (NAT-free bridge).** In-VPC producers
    (app-core) write a `notification_outbox` item over the free DynamoDB gateway endpoint; a Stream
@@ -53,7 +53,7 @@ explicitly left the OTP send-channel abstractable for exactly this.
 - **Full Custom Auth Challenge flow** — more control but a bigger rewrite; the Custom SMS Sender keeps
   the native `SMS_OTP` flow and just swaps delivery. Accepted the optimistic-send tradeoff.
 - **SQS + interface VPC endpoint** for the in-VPC->non-VPC notification bridge — native DLQ/retry but a
-  paid endpoint against ADR-0020's "remove endpoints" direction; DynamoDB-Streams outbox chosen.
+  paid endpoint against the no-paid-endpoints direction (ADR-0006); DynamoDB-Streams outbox chosen.
 - **Twilio Verify** — turnkey but ~$0.05/verification markup and a third-party PII processor.
 
 ## Consequences

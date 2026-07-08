@@ -1,4 +1,4 @@
-# ADR 0019 — Edge front door: one CloudFront distribution (SPA + landing), us-east-1
+# ADR 0018 — Edge front door: one CloudFront distribution (SPA + landing), us-east-1
 
 - **Status:** Accepted
 - **Date:** 2026-06-29
@@ -7,7 +7,7 @@
 ## Context
 
 Several earlier ADRs name an "EdgeStack" without pinning its composition: ADR-0016 serves the SPA as
-"static files from S3 + CloudFront (EdgeStack)"; ADR-0007/0018 front the landing `/p/*` path with
+"static files from S3 + CloudFront (EdgeStack)"; ADR-0007/0007 front the landing `/p/*` path with
 "CloudFront → landing HTTP API." This ADR fixes how those compose into one distribution, what it does
 **not** front, and why it must be a separate region.
 

@@ -3,14 +3,14 @@ import { type DynamoDBDocumentClient, GetCommand, PutCommand } from "@aws-sdk/li
 
 export interface GuestAttribution {
   guestId: string;
-  /** The member's canonical id — the Cognito sub (ADR-0025). */
+  /** The member's canonical id — the Cognito sub (ADR-0020). */
   sub: string;
   claimedAt: string;
 }
 
 /**
  * Repository over the `guest_attribution` table (ADR-0008) — maps an anonymous `guestId` to the
- * member who later registered (by canonical `sub`, ADR-0025), so a conversion attributed to the
+ * member who later registered (by canonical `sub`, ADR-0020), so a conversion attributed to the
  * guest can be resolved to a member. Best-effort and **first-claim-wins**: a guestId already
  * mapped is not overwritten.
  */

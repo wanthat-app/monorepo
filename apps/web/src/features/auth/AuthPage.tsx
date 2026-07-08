@@ -34,7 +34,7 @@ const LOCALE_BY_LANG: Record<string, string> = { he: "he-IL", en: "en-US" };
 /**
  * UC1 Onboard + UC2 Sign-in. One unified phone-OTP flow: a phone that has no profile yet branches to
  * the registration step (name + email + language + Terms), then a Face ID enrolment step; a known
- * phone signs straight in. Wherever this browser supports passkeys (ADR-0022), a userless
+ * phone signs straight in. Wherever this browser supports passkeys (ADR-0006), a userless
  * discoverable passkey login button is offered up front, above the phone form — the OS shows a
  * modal picker of the member's passkeys for this origin; OTP is always the fallback.
  */
@@ -74,7 +74,7 @@ export function AuthPage() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  // Channel choice (ADR-0023): the UI owns the default and the recovery path. Availability comes
+  // Channel choice (ADR-0019): the UI owns the default and the recovery path. Availability comes
   // from /auth/config; until (or unless) it loads, sms-only keeps the flow working.
   const [channels, setChannels] = useState<OtpChannel[]>(["sms"]);
   const [channel, setChannel] = useState<OtpChannel>("sms");
@@ -97,7 +97,7 @@ export function AuthPage() {
       .catch(() => {}); // advisory only — the server re-checks on /auth/start
   }, []);
 
-  // Automatic passkey login on load (ADR-0022). Two regimes, chosen once per mount:
+  // Automatic passkey login on load (ADR-0006). Two regimes, chosen once per mount:
   //  - Immediate mode supported (Chrome 149+) → the ZERO-STORAGE path: on the member's first
   //    interaction fire a `uiMode:"immediate"` get() — the sheet pops iff a locally-available
   //    passkey exists (including ones synced from another device) and rejects silently otherwise,
@@ -198,7 +198,7 @@ export function AuthPage() {
   const onVerify = () =>
     run(async () => {
       // /auth/verify (app-auth) only hands back a ticket; /auth/session (app-core) resolves it to a
-      // login or a registration prompt, since that decision needs Aurora (ADR-0020).
+      // login or a registration prompt, since that decision needs Aurora (ADR-0006).
       const { registrationTicket } = await authApi.verify(challengeId, code);
       const res = await authApi.session(registrationTicket);
       if (res.status === "authenticated") {
@@ -281,7 +281,7 @@ export function AuthPage() {
                   type="tel"
                   inputMode="tel"
                   // `webauthn` makes this field the conditional-UI autofill target: focusing it surfaces
-                  // the member's passkeys for this origin (ADR-0022 Slice 2), armed in the effect above.
+                  // the member's passkeys for this origin (ADR-0006 Slice 2), armed in the effect above.
                   autoComplete="tel webauthn"
                   placeholder="50 123 4567"
                   value={phone}

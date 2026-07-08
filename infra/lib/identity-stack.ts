@@ -18,7 +18,7 @@ import {
 
 export interface IdentityStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
-  /** From DataStack — message-sender reads whatsapp.phoneNumberId at send time (ADR-0023). */
+  /** From DataStack — message-sender reads whatsapp.phoneNumberId at send time (ADR-0019). */
   readonly runtimeConfigTable: dynamodb.ITable;
   /** From DataStack — message-sender's dev-only OTP park (docs/dev-otp-sink.md), write-only grant. */
   /** Dev OTP sink table — absent in prod by design (fail-closed; docs/dev-otp-sink.md). */
@@ -34,18 +34,18 @@ export const SMS_MONTHLY_SPEND_LIMIT_USD: Record<WanthatEnv["name"], number> = {
 };
 
 /**
- * IdentityStack — Cognito (ADR-0006, ADR-0020).
+ * IdentityStack — Cognito (ADR-0006, ADR-0006).
  *
  * A passwordless user pool: phone-first sign-in with native SMS OTP **and** passkeys as first-auth
  * factors (the choice-based `USER_AUTH` flow), Essentials feature plan. The public SPA app client
  * carries the JWT as a Bearer header (no secret, ADR-0007). Managed Login (hosted UI) is provisioned
  * for the userless/discoverable passkey path (PR4 reconciles it with the API-driven contract).
  *
- * No Post-Confirmation trigger (ADR-0020): the `customer` row is provisioned by `/auth/register`,
+ * No Post-Confirmation trigger (ADR-0006): the `customer` row is provisioned by `/auth/register`,
  * since `first_name`/`last_name` are only known then. The SMS kill switch is the DynamoDB
  * `auth.smsEnabled` config key (read by app-api), backstopped here by the SNS monthly spend cap.
  *
- * **Two pools, by population (ADR-0020 §two-pool).** Customers and employees are different
+ * **Two pools, by population (ADR-0006 §two-pool).** Customers and employees are different
  * populations with different trust levels and lifecycles, so they get separate user pools rather than
  * one pool split by group. The `employeePool` below is for company staff: **no self-signup**
  * (provisioned only), email + **mandatory TOTP MFA** (no SMS), its own Managed Login hosted UI. The
@@ -57,11 +57,11 @@ export class IdentityStack extends Stack {
   readonly userPool: cognito.UserPool;
   readonly userPoolClient: cognito.UserPoolClient;
   readonly userPoolDomain: cognito.UserPoolDomain;
-  // Separate employee/admin pool (ADR-0020 §two-pool): company staff, not customers.
+  // Separate employee/admin pool (ADR-0006 §two-pool): company staff, not customers.
   readonly employeePool: cognito.UserPool;
   readonly employeePoolClient: cognito.UserPoolClient;
   readonly employeePoolDomain: cognito.UserPoolDomain;
-  /** ADR-0023: the Cognito custom-SMS-sender executor — observed by ObservabilityStack. */
+  /** ADR-0019: the Cognito custom-SMS-sender executor — observed by ObservabilityStack. */
   readonly messageSenderFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: IdentityStackProps) {
@@ -69,11 +69,11 @@ export class IdentityStack extends Stack {
     const { wanthatEnv } = props;
     const isProd = wanthatEnv.name === "prod";
 
-    // ADR-0023: Cognito encrypts the OTP code for the custom sender trigger with this key (via
+    // ADR-0019: Cognito encrypts the OTP code for the custom sender trigger with this key (via
     // the AWS Encryption SDK); message-sender holds the decrypt grant. Fixed cost ~1 USD/month.
     const customSenderKey = new kms.Key(this, "CustomSenderKey", {
       enableKeyRotation: true,
-      description: `wanthat-${wanthatEnv.name} Cognito custom-sender OTP code encryption (ADR-0023)`,
+      description: `wanthat-${wanthatEnv.name} Cognito custom-sender OTP code encryption (ADR-0019)`,
     });
 
     this.userPool = new cognito.UserPool(this, "UserPool", {
@@ -84,7 +84,7 @@ export class IdentityStack extends Stack {
         phoneNumber: { required: true, mutable: true },
         email: { required: false, mutable: true },
       },
-      // ADR-0023: the OTP delivery channel for the message-sender trigger. Written by app-auth on
+      // ADR-0019: the OTP delivery channel for the message-sender trigger. Written by app-auth on
       // every /auth/start + /auth/resend; the sender FAILS if it is missing (never defaults).
       customAttributes: {
         otpChannel: new cognito.StringAttribute({ mutable: true, minLen: 3, maxLen: 8 }),
@@ -121,7 +121,7 @@ export class IdentityStack extends Stack {
       precedence: 10,
     });
 
-    // ADR-0023: pure OTP executor. IMPORTANT: once this trigger is attached, Cognito sends NO SMS
+    // ADR-0019: pure OTP executor. IMPORTANT: once this trigger is attached, Cognito sends NO SMS
     // natively - this function owns ALL OTP delivery (WhatsApp via End User Messaging Social, SMS
     // via SNS Publish), routed ONLY by the custom:otpChannel attribute. It reads no kill switches
     // and never falls back across channels; a throw fails the callers AdminInitiateAuth, which
@@ -182,10 +182,10 @@ export class IdentityStack extends Stack {
     this.userPoolClient = this.userPool.addClient("Spa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-spa`,
       generateSecret: false,
-      // `user` = the choice-based USER_AUTH OTP flow. `adminUserPassword` enables the ADR-0022
+      // `user` = the choice-based USER_AUTH OTP flow. `adminUserPassword` enables the ADR-0006
       // passkey->token bridge (Cognito.passkeyAdminAuth): app-auth sets an ephemeral password and
       // exchanges it for tokens after verifying the assertion. This is an ADMIN-only flow — it is not
-      // reachable from the browser (the SPA never sees a password) — the admin token exchange (ADR-0022
+      // reachable from the browser (the SPA never sees a password) — the admin token exchange (ADR-0006
       // decision 3), our ESSENTIALS pool doesn't support the custom-challenge trigger bridge it replaced.
       authFlows: { user: true, adminUserPassword: true },
       enableTokenRevocation: true,
@@ -202,7 +202,7 @@ export class IdentityStack extends Stack {
       },
     });
 
-    // Managed Login (hosted UI) for userless/discoverable passkey login (ADR-0020 decision 3). Domain
+    // Managed Login (hosted UI) for userless/discoverable passkey login (ADR-0006 decision 3). Domain
     // prefix is unique per env within the account; prod can move to a custom domain in PR4.
     this.userPoolDomain = this.userPool.addDomain("ManagedLoginDomain", {
       cognitoDomain: { domainPrefix: `wanthat-${wanthatEnv.name}` },
@@ -284,7 +284,7 @@ export class IdentityStack extends Stack {
     new CfnOutput(this, "ManagedLoginBaseUrl", { value: this.userPoolDomain.baseUrl() });
     new CfnOutput(this, "UserPoolClientIdOut", { value: this.userPoolClient.userPoolClientId });
 
-    // --- Employee/admin pool (ADR-0020 §two-pool) — staff identities, isolated from customers ---
+    // --- Employee/admin pool (ADR-0006 §two-pool) — staff identities, isolated from customers ---
     this.employeePool = new cognito.UserPool(this, "EmployeePool", {
       userPoolName: `wanthat-${wanthatEnv.name}-employees`,
       featurePlan: cognito.FeaturePlan.ESSENTIALS,

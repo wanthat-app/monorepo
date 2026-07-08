@@ -154,7 +154,7 @@ export const serviceEntry = (service: string): string =>
   path.join(REPO_ROOT, "services", service, "src", "handler.ts");
 
 /**
- * Amazon RDS CA trust for in-VPC Aurora connections (ADR-0003/0020).
+ * Amazon RDS CA trust for in-VPC Aurora connections (ADR-0003/0006).
  *
  * Aurora presents a server cert that chains to a **private** Amazon RDS root CA, which is **not** in
  * Node's default trust store — so `pg`'s `rejectUnauthorized: true` fails unless that CA is trusted.

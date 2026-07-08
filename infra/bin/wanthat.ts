@@ -82,7 +82,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
 const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   ...common,
   crossRegionReferences: true,
-  // Admin API authorizes against the employee pool (ADR-0020 §two-pool); app-api keeps the customer
+  // Admin API authorizes against the employee pool (ADR-0006 §two-pool); app-api keeps the customer
   // pool above. A customer token therefore can't reach /admin.
   employeePool: identity.employeePool,
   employeePoolClient: identity.employeePoolClient,
@@ -111,7 +111,7 @@ const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-serv
   retailerSecret: data.retailerSecret,
 });
 
-// WhatsAppStack (ADR-0023): the notification dispatcher. Depends only on DataStack; deploys
+// WhatsAppStack (ADR-0019): the notification dispatcher. Depends only on DataStack; deploys
 // before Observability (which watches its Lambda).
 const whatsapp = new WhatsAppStack(app, stackName(wanthatEnv, "whatsapp"), {
   ...common,

@@ -1,4 +1,4 @@
-# ADR 0026 — Retailer API throttling: sequential calls + single ban-window retry (INTERIM)
+# ADR 0021 — Retailer API throttling: sequential calls + single ban-window retry (INTERIM)
 
 - **Status:** Accepted (temporary — revise before scale; see *Revisit triggers*)
 - **Date:** 2026-07-08

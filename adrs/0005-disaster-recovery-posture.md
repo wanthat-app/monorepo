@@ -2,7 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
-- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (datastores), [ADR-0006](0006-identity-sms-otp-and-passkeys.md) (Cognito replication limit)
+- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (datastores), [ADR-0006](0006-cognito-native-auth-and-pii.md) (Cognito replication limit; PII in Cognito)
 
 ## Context
 
@@ -48,10 +48,11 @@ e.g. user export/restore).
 
 - A region incident has a **defined recovery path** (restore from cross-region backups) at RTO
   hours — acceptable for 99.5%.
-- Cross-region backups copy **Israeli PII into the EU (`eu-central-1`)** — within the IL/EU
-  residency tolerance; recorded here as a conscious data flow.
-- Identity (Cognito) has **no cross-region recovery in MVP** — a known, accepted limitation given
-  the SLA and the residency-driven region choice.
+- Cross-region backups copy the **money ledger** into the EU (`eu-central-1`) — since
+  ADR-0006 the ledger carries no customer PII (sub-keyed), shrinking that data flow.
+- Identity **and all customer PII** (Cognito, ADR-0006) have **no cross-region recovery in
+  MVP** — a known, accepted limitation given the SLA and the residency-driven region choice;
+  the scope grew from credentials to profile PII when ADR-0006 moved PII into the pool.
 
 ## Revisit when
 

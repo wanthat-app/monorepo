@@ -27,7 +27,7 @@ import {
 
 export interface AdminStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
-  // Employee/admin pool, not the customer pool (ADR-0020 §two-pool): a customer token structurally
+  // Employee/admin pool, not the customer pool (ADR-0006 §two-pool): a customer token structurally
   // can't satisfy this authorizer, so it can't reach /admin. The in-handler `admin` group check stays
   // as defence-in-depth.
   readonly employeePool: cognito.IUserPool;
@@ -52,7 +52,7 @@ export interface AdminStackProps extends StackProps {
 
 /**
  * AdminStack — the admin API as a separate in-VPC Lambda with its own role and exposure (ADR-0002,
- * ADR-0020). Behind its own HTTP API + JWT authorizer; the admin-group check is re-enforced
+ * ADR-0006). Behind its own HTTP API + JWT authorizer; the admin-group check is re-enforced
  * in-handler. Reaches Aurora as `app_ro`; the users page's guarded hard delete goes through the
  * admin_delete_customer SECURITY DEFINER function (0004) - the one mutation exposed to app_ro,
  * with tables staying read-only. Writes the runtime `config` table (the admin panel). `/healthz`
@@ -94,7 +94,7 @@ export class AdminStack extends Stack {
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_ro",
-        // Trust the Amazon RDS CA so the in-VPC TLS connection to Aurora verifies (ADR-0020) — the
+        // Trust the Amazon RDS CA so the in-VPC TLS connection to Aurora verifies (ADR-0006) — the
         // same setup app-core/app-auth use. Without it pg throws "unable to get local issuer
         // certificate" and every DB-backed admin route (stats) fails. Pairs with rdsCaBundling below.
         ...RDS_CA_ENV,

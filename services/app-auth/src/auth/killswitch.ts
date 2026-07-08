@@ -7,7 +7,7 @@ export interface OtpChannelAvailability {
 }
 
 /**
- * Which OTP channels are currently available (ADR-0020 sms kill switch; ADR-0023 whatsapp).
+ * Which OTP channels are currently available (ADR-0006 sms kill switch; ADR-0019 whatsapp).
  * ONE predicate feeds both GET /auth/config (what the UI may offer) and the start/resend gates
  * (what the API accepts), so they cannot drift. WhatsApp needs its switch on AND an onboarded
  * origination identity. A requested-but-unavailable channel is an explicit 503 — never a silent

@@ -26,7 +26,7 @@ import { UsersView } from "./UsersView";
  * KPI plus placeholder stats) and a Configuration editor that maps the typed config keys onto sliders,
  * a segmented FX-source toggle and switches, batching all dirty keys through a single save bar.
  *
- * Authenticated against the **employee** Cognito pool (ADR-0020 §two-pool), separate from the customer
+ * Authenticated against the **employee** Cognito pool (ADR-0006 §two-pool), separate from the customer
  * session: an admin token is obtained via the employee hosted UI (`/admin/callback`). Without one we
  * redirect to that login; the `admin` group gates the UI client-side and admin-api re-enforces it. The
  * layout follows the document direction (RTL for Hebrew, the default) via logical properties.

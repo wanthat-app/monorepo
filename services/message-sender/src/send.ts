@@ -44,7 +44,7 @@ export interface SendDeps {
 }
 
 /**
- * Pure executor (ADR-0023, spec rev 2): deliver the OTP via EXACTLY the requested channel or
+ * Pure executor (ADR-0019, spec rev 2): deliver the OTP via EXACTLY the requested channel or
  * throw. No channel defaults, no kill-switch reads, no WhatsApp->SMS fallback — a throw fails the
  * initiating AdminInitiateAuth (UnexpectedLambdaException), app-auth maps it to `send_failed`,
  * and falling back is the UI's decision, not this function's.

@@ -1,6 +1,6 @@
 /**
  * ticket-keygen — CloudFormation custom resource (via CDK's `cr.Provider`) that provisions the
- * Ed25519 keypair signing the auth registration tickets (ADR-0020/0021, asymmetric).
+ * Ed25519 keypair signing the auth registration tickets (ADR-0006, asymmetric).
  *
  * On Create it generates the pair and writes `{privateKeyPem, publicKeys}` into the AuthTicketSecret
  * (the PRIVATE key never leaves Secrets Manager; only non-VPC app-auth reads it, over the free

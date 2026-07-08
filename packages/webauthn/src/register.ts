@@ -10,7 +10,7 @@ export interface StoredCredential {
 }
 
 /**
- * Build registration options for a DISCOVERABLE platform passkey (ADR-0022): resident key required,
+ * Build registration options for a DISCOVERABLE platform passkey (ADR-0006): resident key required,
  * user verification required, platform authenticator, attestation none. userHandle = the customer's
  * Cognito sub, so a later userless login assertion resolves the user. The returned object's
  * `challenge` MUST be persisted server-side (single-use) to check at verify.

@@ -1,8 +1,8 @@
-# ADR 0025 — Canonical user identifier: the Cognito `sub`
+# ADR 0020 — Canonical user identifier: the Cognito `sub`
 
 - **Status:** Accepted
 - **Date:** 2026-07-09
-- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (datastore), [ADR-0008](0008-consumer-attribution-model.md) (attribution), [ADR-0020](0020-auth-foundation.md) (auth foundation)
+- **Related:** [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (datastore), [ADR-0008](0008-consumer-attribution-model.md) (attribution), [ADR-0006](0006-cognito-native-auth-and-pii.md) (auth + PII)
 
 ## Context
 
@@ -22,10 +22,9 @@ attribution `custom_parameters` (`c` = sub), invoke payloads, events, and logs.
 
 - Every service gets the sub for free from the gateway-verified JWT — no datastore read, so
   Aurora-free paths stay Aurora-free.
-- `customer.id` survives **only inside Aurora** as the table's PK and the target of relational
-  FKs (`wallet_entry.customer_id`); `customer.cognito_sub` (unique) is the join point. Anything
-  crossing a service or store boundary carries the sub, and the in-VPC writers (poller, wallet)
-  resolve sub → row where a FK is needed.
+- Since ADR-0006 there is no `customer` table: Aurora money rows (`wallet_entry`,
+  `audit_log`) are keyed **directly by the sub**. Anything crossing a service or store
+  boundary carries the sub; no resolution step exists.
 - Both are opaque uuids; neither is PII (ADR-0008 posture unchanged).
 
 ## Alternatives considered
@@ -36,7 +35,6 @@ attribution `custom_parameters` (`c` = sub), invoke payloads, events, and logs.
 
 ## Consequences
 
-- A future Cognito pool migration would rotate subs and require a re-mapping pass — accepted;
-  `customer.cognito_sub` is already the anchor such a migration would rewrite.
-- The conversion poller resolves `c`/attributed sub → `customer` via `cognito_sub` when writing
-  ledger rows.
+- A future Cognito pool migration would rotate subs and require a re-mapping pass over the
+  sub-keyed money rows — accepted.
+- The conversion poller writes ledger rows keyed by the `c`/attributed sub directly.

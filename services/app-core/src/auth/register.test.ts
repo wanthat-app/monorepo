@@ -147,7 +147,7 @@ describe("POST /auth/register", () => {
     expect(dbMock.insertCustomer).not.toHaveBeenCalled();
   });
 
-  it("enqueues the optin_welcome outbox item after provisioning (ADR-0023)", async () => {
+  it("enqueues the optin_welcome outbox item after provisioning (ADR-0019)", async () => {
     fake.tickets.verify.mockResolvedValue(ticket);
     dbMock.findByCognitoSub.mockResolvedValue(undefined);
     dbMock.insertCustomer.mockResolvedValue(customer);

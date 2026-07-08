@@ -86,8 +86,8 @@ header; `landing` serves an OG landing page and resolves identity client-side (m
   `il-central-1`.
 - **Key decisions (ADRs):** monorepo + Zod contracts (0001); four-unit compute topology +
   DB-grant least-privilege (0002); polyglot Aurora + DynamoDB, no RDS Proxy (0003); NAT-free
-  non-VPC chaining (0004); single-region active + cross-region backups (0005); SMS OTP +
-  passkeys + SMS kill switch (0006); redirect resolves in DynamoDB, relaxed-but-reachable p95
+  non-VPC chaining (0004); single-region active + cross-region backups (0005); Cognito-native auth +
+  customer PII in Cognito (0006); redirect resolves in DynamoDB, relaxed-but-reachable p95
   (0007); attribution via `custom_parameters`, no click-log lookup (0008); conversion via
   scheduled `order.listbyindex` poller, not a webhook (0009).
 - **Lambda layout:** function source in `services/*`, infra in `infra/`, shared logic in

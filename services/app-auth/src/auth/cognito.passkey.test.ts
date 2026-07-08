@@ -11,7 +11,7 @@ import { Cognito } from "./cognito";
 const c = new Cognito("pool", "client", "il-central-1");
 beforeEach(() => vi.clearAllMocks());
 
-describe("passkeyAdminAuth (ADR-0022 bridge — ephemeral password on ESSENTIALS)", () => {
+describe("passkeyAdminAuth (ADR-0006 bridge — ephemeral password on ESSENTIALS)", () => {
   it("sets a fresh password then exchanges it via ADMIN_USER_PASSWORD_AUTH, returning tokens", async () => {
     send.mockResolvedValueOnce({}).mockResolvedValueOnce({
       AuthenticationResult: { AccessToken: "a", IdToken: "i", RefreshToken: "r", ExpiresIn: 3600 },

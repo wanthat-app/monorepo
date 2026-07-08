@@ -21,14 +21,14 @@ import {
 
 export interface DataStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
-  /** From NetworkStack — Aurora + the in-VPC migrator live here (ADR-0004/0020). */
+  /** From NetworkStack — Aurora + the in-VPC migrator live here (ADR-0004/0006). */
   readonly vpc: ec2.IVpc;
   readonly auroraSg: ec2.ISecurityGroup;
   readonly lambdaSg: ec2.ISecurityGroup;
 }
 
 /**
- * DataStack — the data plane (ADR-0003, ADR-0005, ADR-0020).
+ * DataStack — the data plane (ADR-0003, ADR-0005, ADR-0006).
  *
  * DynamoDB (on-demand) holds everything that isn't PII or money: the landing projection
  * (`recommendationId → affiliate url + product`, `byOwner` GSI), `guest_attribution`, the runtime
@@ -104,7 +104,7 @@ export class DataStack extends Stack {
       ...common,
     });
 
-    // Auth OTP challenge state (ADR-0020): one item per /auth/start, carrying the Cognito session and
+    // Auth OTP challenge state (ADR-0006): one item per /auth/start, carrying the Cognito session and
     // resend cooldown. TTL-expired by `ttl` so abandoned challenges self-clean.
     this.authChallengeTable = new dynamodb.Table(this, "AuthChallenge", {
       partitionKey: { name: "challengeId", type: dynamodb.AttributeType.STRING },
@@ -119,7 +119,7 @@ export class DataStack extends Stack {
       ...common,
     });
 
-    // ADR-0023: transactional outbox for WhatsApp notifications. In-VPC producers (app-core)
+    // ADR-0019: transactional outbox for WhatsApp notifications. In-VPC producers (app-core)
     // write over the free DynamoDB gateway endpoint; the Stream triggers the NON-VPC
     // whatsapp-dispatcher (the NAT-free bridge - no SQS interface endpoint). TTL ~30 days:
     // items skipped while the kill switch is off age out by design.
@@ -130,7 +130,7 @@ export class DataStack extends Stack {
       ...common,
     });
 
-    // ADR-0022: passkey public keys we store + verify ourselves (Cognito no longer holds them).
+    // ADR-0006: passkey public keys we store + verify ourselves (Cognito no longer holds them).
     // PK credentialId; byCustomerSub GSI lists a member's passkeys. Non-PII (sub + public key).
     this.passkeyCredentialTable = new dynamodb.Table(this, "PasskeyCredential", {
       partitionKey: { name: "credentialId", type: dynamodb.AttributeType.STRING },
@@ -187,7 +187,7 @@ export class DataStack extends Stack {
       removalPolicy,
     });
 
-    // --- One-shot migration runner (ADR-0012/0020) ---
+    // --- One-shot migration runner (ADR-0012/0006) ---
     // A NodejsFunction (so esbuild bundles the TS handler + pg/kysely) wrapped by triggers.Trigger,
     // NOT triggers.TriggerFunction (which is a plain lambda.Function and would not bundle). Connects
     // as wanthat_migrator via IAM auth (0003) - no Secrets Manager read, so the VPC keeps no
@@ -218,7 +218,7 @@ export class DataStack extends Stack {
         DB_HOST: this.cluster.clusterEndpoint.hostname,
         DB_PORT: String(this.cluster.clusterEndpoint.port),
         DB_NAME: "wanthat",
-        // Trust the Amazon RDS CA so the migrator's TLS connection to Aurora verifies (ADR-0020).
+        // Trust the Amazon RDS CA so the migrator's TLS connection to Aurora verifies (ADR-0006).
         ...RDS_CA_ENV,
         // Where the bundled .sql migrations live in the artifact (esbuild bundles only JS).
         ...MIGRATIONS_DIR_ENV,

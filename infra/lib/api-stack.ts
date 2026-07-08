@@ -33,7 +33,7 @@ import {
   webOrigins,
 } from "./config";
 
-/** The deployed SPA origin for links we send out (ADR-0023). Synth fails loudly on an env without a domain. */
+/** The deployed SPA origin for links we send out (ADR-0019). Synth fails loudly on an env without a domain. */
 function appUrl(wanthatEnv: WanthatEnv): string {
   if (!wanthatEnv.domainName) throw new Error(`appUrl: env ${wanthatEnv.name} has no domainName`);
   return `https://${wanthatEnv.domainName}`;
@@ -52,7 +52,7 @@ export interface ApiStackProps extends StackProps {
   readonly phoneVelocityTable: dynamodb.ITable;
   readonly notificationOutboxTable: dynamodb.ITable;
   readonly passkeyCredentialTable: dynamodb.ITable;
-  // In-VPC placement + Aurora (ADR-0004/0020/0021) — app-core only.
+  // In-VPC placement + Aurora (ADR-0004/0006) — app-core only.
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
   readonly cluster: rds.IDatabaseCluster;
@@ -60,9 +60,9 @@ export interface ApiStackProps extends StackProps {
 
 /**
  * ApiStack — the app-api compute, split into two functions behind one HTTP API (ADR-0002, ADR-0006,
- * ADR-0011, ADR-0020, ADR-0020).
+ * ADR-0011, ADR-0006, ADR-0006).
  *
- * ADR-0020 resolves Managed Login vs PrivateLink by slicing the Lambdalith along its Cognito/Aurora
+ * ADR-0006 resolves Managed Login vs PrivateLink by slicing the Lambdalith along its Cognito/Aurora
  * seam:
  *  - `app-auth` (NON-VPC "auth edge"): the `/auth/*` OTP + passkey flow. Reaches the Managed-Login
  *    customer pool over Cognito's public endpoint (PrivateLink is disabled for such pools) and
@@ -86,7 +86,7 @@ export class ApiStack extends Stack {
     super(scope, id, props);
     const { wanthatEnv } = props;
 
-    // Ed25519 keypair for registration tickets (ADR-0020/0021, asymmetric) - generated at deploy
+    // Ed25519 keypair for registration tickets (ADR-0006, asymmetric) - generated at deploy
     // by the ticket-keygen custom resource below, never in the repo. Only app-auth (the SIGNER)
     // reads this secret - over the free public Secrets Manager endpoint, since it is non-VPC.
     // app-core verifies with the PUBLIC key via plain env, so the VPC needs no secretsmanager
@@ -146,7 +146,7 @@ export class ApiStack extends Stack {
         USER_POOL_ID: props.userPool.userPoolId,
         USER_POOL_CLIENT_ID: props.userPoolClient.userPoolClientId,
         AUTH_TICKET_SECRET_ARN: ticketSecret.secretArn,
-        // ADR-0022: pins the WebAuthn ceremony to this site (rpId is the registrable domain; origins
+        // ADR-0006: pins the WebAuthn ceremony to this site (rpId is the registrable domain; origins
         // are the exact SPA origins) so an assertion for another origin/RP is rejected.
         WEBAUTHN_RP_ID: wanthatEnv.domainName ?? "",
         WEBAUTHN_ORIGINS: webOrigins(wanthatEnv).join(","),
@@ -171,7 +171,7 @@ export class ApiStack extends Stack {
     props.phoneVelocityTable.grantReadWriteData(appAuthFn);
     props.guestAttributionTable.grantReadWriteData(appAuthFn);
     props.runtimeConfigTable.grantReadData(appAuthFn);
-    // ADR-0022: put on enrol, get on login, updateSignCount after login, query for exclude-list.
+    // ADR-0006: put on enrol, get on login, updateSignCount after login, query for exclude-list.
     props.passkeyCredentialTable.grantReadWriteData(appAuthFn);
     ticketSecret.grantRead(appAuthFn);
     // Links module (ADR-0004 division of writes): app-auth READS products (retailer-proxy is the
@@ -196,7 +196,7 @@ export class ApiStack extends Stack {
       }),
     );
 
-    // Scoped Cognito control-plane actions on this pool only (ADR-0020).
+    // Scoped Cognito control-plane actions on this pool only (ADR-0006).
     appAuthFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: [
@@ -246,7 +246,7 @@ export class ApiStack extends Stack {
         DB_USER: "app_rw",
         ...RDS_CA_ENV,
         NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
-        // Link target for outbound messages (ADR-0023): the DEPLOYED site, never webOrigins()[0]
+        // Link target for outbound messages (ADR-0019): the DEPLOYED site, never webOrigins()[0]
         // (which is the localhost dev origin for non-prod envs).
         APP_URL: appUrl(wanthatEnv),
       },
@@ -262,7 +262,7 @@ export class ApiStack extends Stack {
     props.guestAttributionTable.grantReadWriteData(appCoreFn);
     props.runtimeConfigTable.grantReadData(appCoreFn);
     // (No ticketSecret grant: verification is secretless - Ed25519 public keys via env.)
-    // Outbox producer: write-only (no read grant) - the dispatcher owns status updates (ADR-0023).
+    // Outbox producer: write-only (no read grant) - the dispatcher owns status updates (ADR-0019).
     props.notificationOutboxTable.grantWriteData(appCoreFn);
 
     // --- One HTTP API fronting both functions ---
@@ -321,7 +321,7 @@ export class ApiStack extends Stack {
       this.httpApi.addRoutes({ path: p, methods: [HttpMethod.POST], integration: authIntegration });
     }
 
-    // Passkey LOGIN (ADR-0022, userless discoverable) -> app-auth, PUBLIC (the assertion is the
+    // Passkey LOGIN (ADR-0006, userless discoverable) -> app-auth, PUBLIC (the assertion is the
     // credential; the user is not signed in yet). Explicit static routes so they take precedence over
     // the authorizer-protected /auth/passkey/{proxy+} enrolment route below. GET issues a single-use
     // challenge; POST verifies the assertion and bridges to Cognito tokens.
@@ -336,7 +336,7 @@ export class ApiStack extends Stack {
       integration: authIntegration,
     });
 
-    // Public channel-availability projection (ADR-0023) -> app-auth. GET, no authorizer.
+    // Public channel-availability projection (ADR-0019) -> app-auth. GET, no authorizer.
     this.httpApi.addRoutes({
       path: "/auth/config",
       methods: [HttpMethod.GET],
@@ -415,7 +415,7 @@ export class ApiStack extends Stack {
     new CfnOutput(this, "UserPoolId", { value: props.userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: props.userPoolClient.userPoolClientId });
 
-    // TRANSITIONAL (ADR-0020 split) - REMOVE in a follow-up once every env's observability stack has
+    // TRANSITIONAL (ADR-0006 split) - REMOVE in a follow-up once every env's observability stack has
     // redeployed. The old `AppApi` Lambda was deleted, but wanthat-{env}-observability still imports its
     // ref in the currently-deployed template. CloudFormation deploys `api` before `observability`, so
     // `api` would try to delete this export while it is still in use -> "cannot delete export ... in

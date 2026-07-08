@@ -58,7 +58,7 @@ export function warmDb(): void {
 }
 
 export const authApi = {
-  // Channel availability projection (ADR-0023) — fetched pre-login to render the channel choice.
+  // Channel availability projection (ADR-0019) — fetched pre-login to render the channel choice.
   config: () => request<AuthConfigResponse>("/auth/config"),
   start: (phone: string, channel: OtpChannel, locale?: MessageLanguage) =>
     request<AuthStartResponse>("/auth/start", {
@@ -98,7 +98,7 @@ export const authApi = {
       body: { challengeId, credential },
       token,
     }),
-  // Userless discoverable passkey login (ADR-0022): no phone/username, the server sends an empty
+  // Userless discoverable passkey login (ADR-0006): no phone/username, the server sends an empty
   // allowCredentials so the OS shows the member's passkeys for this origin.
   passkeyLoginChallenge: () =>
     request<PasskeyLoginChallengeResponse>("/auth/passkey/login/challenge"),

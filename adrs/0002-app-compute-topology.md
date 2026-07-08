@@ -17,9 +17,10 @@ money-writing and admin surfaces.
 
 ### Four compute units, each at a real seam
 
-1. **`identity + links + wallet` Lambdalith** — one Lambda, internal HTTP framework, behind an
-   API Gateway HTTP API. `identity` + `wallet` share Aurora and an atomic transaction at
-   registration (customer + empty wallet); `links` writes products/recommendations to DynamoDB.
+1. **`links + wallet` Lambdalith** — one Lambda, internal HTTP framework, behind an
+   API Gateway HTTP API. `wallet` reads the Aurora money ledger; `links` writes
+   products/recommendations to DynamoDB. There is no `identity` module: authentication is
+   Cognito-native from the browser and customer PII lives in Cognito (ADR-0006).
    Similar modest load → keeping them together keeps the function warm and the surface small.
 2. **`admin`** — its own Lambda. Different audience (internal operators), highest privilege (the
    only app surface that may write money, via audited adjustments), and different exposure
@@ -45,7 +46,7 @@ Plus one shared egress function:
 
 ### VPC placement
 
-The only thing that pins a function to the VPC is **Aurora access** (PII + money — ADR-0003).
+The only thing that pins a function to the VPC is **Aurora access** (money — ADR-0003/0006).
 Aurora-touching code (Lambdalith, admin, poller-writer) runs **in-VPC and connects directly to
 Aurora via IAM database authentication — no RDS Proxy**. **Reserved-concurrency caps** on these
 low-concurrency functions keep total connections under Aurora `max_connections`. Everything else

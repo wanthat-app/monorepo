@@ -53,7 +53,7 @@ export const PollerIntervalMinutes = z.number().int().min(1).max(1440);
 export const PollerLookbackHours = z.number().int().min(1).max(2160);
 
 /**
- * SMS-OTP kill switch (ADR-0006, ADR-0020). When `false`, `app-api` short-circuits any Cognito SMS
+ * SMS-OTP kill switch (ADR-0006, ADR-0006). When `false`, `app-api` short-circuits any Cognito SMS
  * send before it is attempted — the layered defence against an SMS-pumping abuse spike, flippable at
  * runtime (admin panel or an automated alarm action) without a redeploy. Lives here (DynamoDB
  * `config`) rather than SSM so the in-VPC Lambdalith reads it over the existing DynamoDB gateway
@@ -76,11 +76,11 @@ export const AuthSmsMaxPerWindow = z.number().int().min(1).max(20);
 export const AuthSmsLockoutMinutes = z.number().int().min(1).max(1440);
 
 /**
- * WhatsApp-OTP kill switch (ADR-0023). Ships `false`; flipped on after Meta/WABA onboarding.
+ * WhatsApp-OTP kill switch (ADR-0019). Ships `false`; flipped on after Meta/WABA onboarding.
  * Gates the `whatsapp` channel in app-auth's availability predicate + GET /auth/config.
  */
 export const AuthWhatsappEnabled = z.boolean();
-/** Which channel GET /auth/config tells the UI to preselect (ADR-0023: whatsapp from day 1). */
+/** Which channel GET /auth/config tells the UI to preselect (ADR-0019: whatsapp from day 1). */
 export const AuthDefaultOtpChannel = z.enum(["whatsapp", "sms"]);
 /**
  * AWS End User Messaging Social origination identity ("phone-number-id-..."), unknown until
@@ -89,7 +89,7 @@ export const AuthDefaultOtpChannel = z.enum(["whatsapp", "sms"]);
  */
 export const WhatsappPhoneNumberId = z.string().max(120);
 
-/** Kill switch for the outbox-driven WhatsApp notifications (optin_welcome) — ADR-0023. */
+/** Kill switch for the outbox-driven WhatsApp notifications (optin_welcome) — ADR-0019. */
 export const NotificationsWhatsappEnabled = z.boolean();
 
 /**
@@ -174,11 +174,11 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   // At most 5 OTP sends per phone per lockout window; tighten during an SMS-pumping spike.
   "auth.smsMaxPerWindow": 5,
   "auth.smsLockoutMinutes": 180, // 3h lockout once a phone trips the per-window cap
-  // WhatsApp ships kill-switched OFF until Meta/WABA onboarding completes (ADR-0023).
+  // WhatsApp ships kill-switched OFF until Meta/WABA onboarding completes (ADR-0019).
   "auth.whatsappEnabled": false,
   "auth.defaultOtpChannel": "whatsapp",
   "whatsapp.phoneNumberId": "",
-  // Notifications WhatsApp kill switch (ADR-0023) — ships OFF.
+  // Notifications WhatsApp kill switch (ADR-0019) — ships OFF.
   "notifications.whatsappEnabled": false,
   // real delivery by default; dev flips to devSink while SMS/WhatsApp are blocked
   "auth.otpSink": "delivery",

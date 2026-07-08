@@ -42,7 +42,7 @@ export function deviceHasPasskey(): boolean {
 
 /**
  * Whether this browser supports WebAuthn *conditional UI* (autofill) — the passkey offering itself in
- * a field's autofill (ADR-0022 Slice 2). When true we arm {@link loginWithPasskeyAutofill} alongside
+ * a field's autofill (ADR-0006 Slice 2). When true we arm {@link loginWithPasskeyAutofill} alongside
  * the always-visible modal button ({@link loginWithPasskey}). Never throws.
  */
 export async function passkeyAutofillSupported(): Promise<boolean> {
@@ -176,7 +176,7 @@ async function runLoginCeremony(mode: LoginMode) {
 }
 
 /**
- * Userless discoverable passkey login (ADR-0022): no phone/username anywhere. The server's login
+ * Userless discoverable passkey login (ADR-0006): no phone/username anywhere. The server's login
  * challenge carries an empty allowCredentials, so the OS shows a modal picker with the member's
  * passkeys registered for this origin; the member taps one and authenticates biometrically. Same
  * origin as enrolment, so the passkey's RP-ID matches — no hosted-UI redirect. Throws on
@@ -215,7 +215,7 @@ export async function loginWithPasskeyTokens(opts?: {
 }
 
 /**
- * Arm WebAuthn *conditional UI* (autofill) for userless discoverable login (ADR-0022 Slice 2). The
+ * Arm WebAuthn *conditional UI* (autofill) for userless discoverable login (ADR-0006 Slice 2). The
  * passkey offers itself in the autofill of a field marked `autocomplete="… webauthn"`; this promise
  * stays pending until the member picks it and authenticates biometrically, then resolves a session.
  * Same empty-allowCredentials challenge as the modal path — only `useBrowserAutofill` differs. Only
@@ -248,7 +248,7 @@ async function finishPasskeyLogin(
   return { tokens: res.tokens, customer: res.customer };
 }
 
-/** The i18n key suffix for the biometric label matching this device (ADR-0022 decision 1). */
+/** The i18n key suffix for the biometric label matching this device (ADR-0006 decision 1). */
 export function biometricLabelKey(): "faceId" | "touchId" | "windowsHello" | "generic" {
   if (typeof navigator === "undefined") return "generic";
   const ua = navigator.userAgent;

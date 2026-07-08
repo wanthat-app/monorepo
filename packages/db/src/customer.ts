@@ -3,7 +3,7 @@ import { type Kysely, sql } from "kysely";
 import type { Database } from "./schema";
 
 /**
- * Customer (PII) data access (ADR-0003, ADR-0020) — the only writer/reader of the Aurora `customer`
+ * Customer (PII) data access (ADR-0003, ADR-0006) — the only writer/reader of the Aurora `customer`
  * table outside migrations. Rows are mapped to the `CustomerProfile` contract and **Zod-validated**
  * on the way out, so a malformed row fails loudly at the boundary rather than leaking a bad shape.
  *
@@ -84,7 +84,7 @@ export interface NewCustomer {
 
 /**
  * Insert a customer at registration. Idempotent under retries: `ON CONFLICT (cognito_sub) DO NOTHING`
- * means a duplicate `/auth/register` returns the existing row rather than erroring (ADR-0020).
+ * means a duplicate `/auth/register` returns the existing row rather than erroring (ADR-0006).
  * A genuine insert also appends the `user_registered` audit row (0005) in the same transaction —
  * registration is the beginning of the customer's wallet, so it is an audited event; the
  * idempotent re-register path appends nothing, exactly as it inserts nothing.
