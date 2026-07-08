@@ -164,3 +164,65 @@ export const walletApi = {
       { token },
     ),
 };
+
+/** Wire types for the create-link surface (Money travels as decimal strings — see MoneyWire). */
+export interface ProductWire {
+  storeId: "aliexpress";
+  storeProductId: string;
+  title: string;
+  imageUrl: string | null;
+  price: MoneyWire | null;
+  commissionBps: number;
+  createdAt: string;
+  updatedAt: string;
+}
+export interface CashbackShareWire {
+  rateBps: number;
+  estimated: MoneyWire | null;
+}
+export interface CashbackEstimateWire {
+  referrer: CashbackShareWire;
+  consumer: CashbackShareWire;
+}
+export interface ReviewWire {
+  rating?: number;
+  text: string;
+}
+export interface RecommendationWire {
+  recommendationId: string;
+  shareUrl: string;
+  product: ProductWire;
+  cashback: { referrerBps: number; consumerBps: number };
+  estimate: CashbackEstimateWire;
+  review: ReviewWire | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export const linksApi = {
+  // Paste URL → the shared product + a current-policy cashback estimate. The server mints the
+  // product-level affiliate link on first resolve; the URL itself is never fetched by the SPA.
+  resolveProduct: (token: string, url: string) =>
+    request<{ product: ProductWire; estimate: CashbackEstimateWire }>("/products/resolve", {
+      method: "POST",
+      body: { url },
+      token,
+    }),
+  // Mint my shareable link for a resolved product (idempotent on owner+product server-side).
+  createRecommendation: (
+    token: string,
+    body: { storeId: "aliexpress"; storeProductId: string; review?: ReviewWire },
+  ) =>
+    request<{ recommendation: RecommendationWire }>("/recommendations", {
+      method: "POST",
+      body,
+      token,
+    }),
+  // Set or clear my review on an existing link (the summary screen edits it in place).
+  updateReview: (token: string, recommendationId: string, review: ReviewWire | null) =>
+    request<{ recommendation: RecommendationWire }>(`/recommendations/${recommendationId}`, {
+      method: "PATCH",
+      body: { review },
+      token,
+    }),
+};

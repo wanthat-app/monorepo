@@ -65,6 +65,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   crossRegionReferences: true,
   userPool: identity.userPool,
   userPoolClient: identity.userPoolClient,
+  productTable: data.productTable,
   recommendationTable: data.recommendationTable,
   guestAttributionTable: data.guestAttributionTable,
   runtimeConfigTable: data.runtimeConfigTable,
@@ -100,6 +101,7 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
 const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-services"), {
   ...common,
   crossRegionReferences: true, // landing apiId is consumed by the us-east-1 EdgeStack
+  productTable: data.productTable,
   recommendationTable: data.recommendationTable,
   guestAttributionTable: data.guestAttributionTable,
   runtimeConfigTable: data.runtimeConfigTable,

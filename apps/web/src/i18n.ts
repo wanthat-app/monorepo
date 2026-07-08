@@ -93,6 +93,36 @@ const en = {
       adjustment: "Adjustment",
       withdrawal: "Withdrawal",
     },
+    turnLinkTitle: "Turn a link into cashback", // (design)
+    turnLinkSub: "Paste any AliExpress product and share your reward link.", // (design)
+    pastePlaceholder: "Paste product link…", // (design)
+  },
+  create: {
+    title: "Create a link", // (design)
+    linkLabel: "AliExpress product link", // (design)
+    pastePlaceholder: "Paste product link…", // (design)
+    hint: "Paste a link — we'll pull the product automatically.", // (design)
+    cta: "Create cashback link", // (design)
+    pulling: "Pulling product details…", // (design)
+    unsupported: "Only AliExpress product links are supported right now.",
+    notConfigured: "Link creation isn't available right now. Please try again later.",
+    resolveFailed: "We couldn't pull that product. Please try again.",
+    linkReady: "Your link is ready", // (design)
+    detailsPulled: "Details pulled from AliExpress", // (design)
+    youEarnSale: "You earn / sale", // (design)
+    theyEarn: "They earn", // (design)
+    reviewLabel: "Add your review (optional)", // (design)
+    reviewPlaceholder: "Tell your friends why you recommend it…", // (design)
+    reviewHint: "Friends see this as your personal recommendation when they open the link.", // (design)
+    shareManyNote:
+      "Share with as many friends as you like — you earn {{amount}} every time one of them buys.", // (design, parameterised)
+    shareManyNoteNoAmount:
+      "Share with as many friends as you like — you earn cashback every time one of them buys.",
+    copy: "Copy", // (design)
+    copied: "Copied!", // (design)
+    share: "Share with friends", // (design)
+    done: "Done", // (design)
+    createFailed: "We couldn't create your link. Please try again.",
   },
   admin: {
     brand: "wanthat",
@@ -359,6 +389,34 @@ const he: typeof en = {
       adjustment: "התאמה",
       withdrawal: "משיכה",
     },
+    turnLinkTitle: "הפכו קישור לקאשבק",
+    turnLinkSub: "הדביקו מוצר מ-AliExpress ושתפו קישור תגמול.",
+    pastePlaceholder: "הדביקו קישור למוצר…",
+  },
+  create: {
+    title: "יצירת קישור",
+    linkLabel: "קישור למוצר ב-AliExpress",
+    pastePlaceholder: "הדביקו קישור למוצר…",
+    hint: "הדביקו קישור — נשלוף את המוצר אוטומטית.",
+    cta: "צרו קישור קאשבק",
+    pulling: "שולפים פרטי מוצר…",
+    unsupported: "כרגע נתמכים רק קישורי מוצר מ-AliExpress.",
+    notConfigured: "יצירת קישורים אינה זמינה כרגע. נסו שוב מאוחר יותר.",
+    resolveFailed: "לא הצלחנו לשלוף את המוצר. נסו שוב.",
+    linkReady: "הקישור שלכם מוכן",
+    detailsPulled: "הפרטים נשלפו מ-AliExpress",
+    youEarnSale: "אתם מרוויחים / מכירה",
+    theyEarn: "הם מרוויחים",
+    reviewLabel: "הוסיפו המלצה (לא חובה)",
+    reviewPlaceholder: "ספרו לחברים למה אתם ממליצים…",
+    reviewHint: "החברים יראו את זה כהמלצה אישית שלכם כשיפתחו את הקישור.",
+    shareManyNote: "שתפו עם כמה חברים שתרצו — אתם מרוויחים {{amount}} בכל פעם שמישהו מהם קונה.",
+    shareManyNoteNoAmount: "שתפו עם כמה חברים שתרצו — אתם מרוויחים קאשבק בכל פעם שמישהו מהם קונה.",
+    copy: "העתק",
+    copied: "הועתק!",
+    share: "שיתוף עם חברים",
+    done: "סיום",
+    createFailed: "לא הצלחנו ליצור את הקישור. נסו שוב.",
   },
   admin: {
     brand: "wanthat",

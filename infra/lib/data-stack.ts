@@ -38,6 +38,7 @@ export interface DataStackProps extends StackProps {
  * on all DynamoDB tables; a Secrets Manager placeholder holds the retailer credential.
  */
 export class DataStack extends Stack {
+  readonly productTable: dynamodb.Table;
   readonly recommendationTable: dynamodb.Table;
   readonly guestAttributionTable: dynamodb.Table;
   readonly runtimeConfigTable: dynamodb.Table;
@@ -60,6 +61,16 @@ export class DataStack extends Stack {
       pointInTimeRecoverySpecification: { pointInTimeRecoveryEnabled: true },
       removalPolicy,
     } as const;
+
+    // The shared retailer product (ADR-0003): fetched/minted once, reused across every member who
+    // recommends it. Keyed by the store + its native product id; carries the product-level
+    // affiliate URL (ADR-0008: ONE link.generate per product). Written by retailer-proxy
+    // (ADR-0004), read by app-core's links module.
+    this.productTable = new dynamodb.Table(this, "Product", {
+      partitionKey: { name: "storeId", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "storeProductId", type: dynamodb.AttributeType.STRING },
+      ...common,
+    });
 
     this.recommendationTable = new dynamodb.Table(this, "Recommendation", {
       partitionKey: { name: "recommendationId", type: dynamodb.AttributeType.STRING },

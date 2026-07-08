@@ -19,6 +19,8 @@
   "dependencies": {
     "@aws-sdk/client-dynamodb": "^3.600.0",
     "@aws-sdk/lib-dynamodb": "^3.600.0",
-    "@wanthat/contracts": "workspace:*"
+    "@aws-sdk/util-dynamodb": "^3.600.0",
+    "@wanthat/contracts": "workspace:*",
+    "zod": "^3.23.0"
   }
 }

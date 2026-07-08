@@ -1,4 +1,11 @@
-import { CfnOutput, CustomResource, Duration, Stack, type StackProps } from "aws-cdk-lib";
+import {
+  ArnFormat,
+  CfnOutput,
+  CustomResource,
+  Duration,
+  Stack,
+  type StackProps,
+} from "aws-cdk-lib";
 import { CorsHttpMethod, HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -36,6 +43,7 @@ export interface ApiStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
   readonly userPool: cognito.IUserPool;
   readonly userPoolClient: cognito.IUserPoolClient;
+  readonly productTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
   readonly guestAttributionTable: dynamodb.ITable;
   readonly runtimeConfigTable: dynamodb.ITable;
@@ -208,6 +216,12 @@ export class ApiStack extends Stack {
         DB_USER: "app_rw",
         ...RDS_CA_ENV,
         NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
+        // Links module (ADR-0002/0004): products + recommendations in DynamoDB; the retailer-proxy
+        // is invoked by its deterministic NAME (no cross-stack export, so Api and EdgeServices
+        // stay deploy-order independent) over the VPC's lambda interface endpoint.
+        PRODUCT_TABLE: props.productTable.tableName,
+        RECOMMENDATION_TABLE: props.recommendationTable.tableName,
+        RETAILER_PROXY_FUNCTION: `wanthat-${wanthatEnv.name}-retailer-proxy`,
         // Link target for outbound messages (ADR-0023): the DEPLOYED site, never webOrigins()[0]
         // (which is the localhost dev origin for non-prod envs).
         APP_URL: appUrl(wanthatEnv),
@@ -222,6 +236,25 @@ export class ApiStack extends Stack {
     // DynamoDB: guest attribution RW (attribution claim), config read.
     props.guestAttributionTable.grantReadWriteData(appCoreFn);
     props.runtimeConfigTable.grantReadData(appCoreFn);
+    // Links module (ADR-0004 division of writes): app-core READS products (retailer-proxy is the
+    // sole product writer) and WRITES recommendations.
+    props.productTable.grantReadData(appCoreFn);
+    props.recommendationTable.grantReadWriteData(appCoreFn);
+    // Synchronous generateLink invoke (ADR-0004). ARN constructed from the deterministic function
+    // name so no CloudFormation export ties this stack to EdgeServices.
+    appCoreFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        resources: [
+          this.formatArn({
+            service: "lambda",
+            resource: "function",
+            resourceName: `wanthat-${wanthatEnv.name}-retailer-proxy`,
+            arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+          }),
+        ],
+      }),
+    );
     // (No ticketSecret grant: verification is secretless - Ed25519 public keys via env.)
     // Outbox producer: write-only (no read grant) - the dispatcher owns status updates (ADR-0023).
     props.notificationOutboxTable.grantWriteData(appCoreFn);
@@ -330,6 +363,28 @@ export class ApiStack extends Stack {
     this.httpApi.addRoutes({
       path: "/me/{proxy+}",
       methods: [HttpMethod.GET, HttpMethod.POST, HttpMethod.PATCH],
+      integration: coreIntegration,
+      authorizer,
+    });
+
+    // Links module (ADR-0002/0011) -> app-core, behind the JWT authorizer. Resolve is a POST
+    // (it can mint via the retailer-proxy); recommendations carry POST create, GET list/detail
+    // and PATCH review — PATCH is already in the CORS allowMethods above.
+    this.httpApi.addRoutes({
+      path: "/products/resolve",
+      methods: [HttpMethod.POST],
+      integration: coreIntegration,
+      authorizer,
+    });
+    this.httpApi.addRoutes({
+      path: "/recommendations",
+      methods: [HttpMethod.GET, HttpMethod.POST],
+      integration: coreIntegration,
+      authorizer,
+    });
+    this.httpApi.addRoutes({
+      path: "/recommendations/{proxy+}",
+      methods: [HttpMethod.GET, HttpMethod.PATCH],
       integration: coreIntegration,
       authorizer,
     });
