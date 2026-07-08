@@ -20,7 +20,7 @@ import {
   UpdateRecommendationResponse,
 } from "@wanthat/contracts";
 import { splitCommission } from "@wanthat/domain";
-import { needsEnrichment, type ProductItem, type RecommendationItem } from "@wanthat/dynamo";
+import type { ProductItem, RecommendationItem } from "@wanthat/dynamo";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { type Bindings, subFromClaims } from "../claims";
@@ -173,13 +173,11 @@ export function productsRouter(): Hono<{ Bindings: Bindings }> {
     if (!candidate) return c.json({ error: "unsupported_url" }, 400);
 
     const ctx = getContext();
+    // Every stored row is a FULL product (all-or-nothing writes in the proxy), so any hit serves.
     let item: ProductItem | undefined =
       candidate.kind === "product"
         ? await ctx.products.get(candidate.storeId, candidate.storeProductId)
         : undefined;
-    // A row still carrying placeholder metadata (a past productdetail failure) is not a cache
-    // hit — the proxy retries enrichment (keeping the existing affiliate link) instead.
-    if (item && needsEnrichment(item)) item = undefined;
     if (!item) {
       const minted = await ctx.retailerProxy.generateLink(candidate.url);
       if (minted.status === "error") {

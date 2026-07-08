@@ -129,28 +129,6 @@ describe("POST /products/resolve", () => {
     expect(fake.retailerProxy.generateLink).toHaveBeenCalledWith(URL_OK);
   });
 
-  it("treats a cached-but-placeholder product as a miss so the proxy retries enrichment", async () => {
-    const pending = {
-      ...PRODUCT_ITEM,
-      title: "AliExpress item 1005006123456789",
-      imageUrl: null,
-      price: null,
-      commissionBps: 0,
-      metadataPending: true,
-    };
-    fake.products.get.mockResolvedValueOnce(pending).mockResolvedValueOnce(PRODUCT_ITEM);
-    fake.retailerProxy.generateLink.mockResolvedValue({
-      status: "ok",
-      product: PRODUCT_ITEM,
-      affiliateUrl: PRODUCT_ITEM.affiliateUrl,
-    });
-    const res = await req("/products/resolve", "POST", { url: URL_OK });
-    expect(res.status).toBe(200);
-    expect(fake.retailerProxy.generateLink).toHaveBeenCalledWith(URL_OK);
-    const data = await json<{ product: { title: string } }>(res);
-    expect(data.product.title).toBe(PRODUCT_ITEM.title);
-  });
-
   it("carries the cached display rate + fx margin when the pair is cached, null otherwise", async () => {
     fake.products.get.mockResolvedValue(PRODUCT_ITEM);
     const noRate = await req("/products/resolve", "POST", { url: URL_OK });
