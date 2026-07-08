@@ -54,3 +54,4 @@ ds-bundle/
 .design-sync/sb-reference/
 apps/web/storybook-static/
 apps/web/dist/
+.claude/
