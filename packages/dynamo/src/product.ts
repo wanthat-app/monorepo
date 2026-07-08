@@ -1,5 +1,7 @@
+import { TransactionCanceledException } from "@aws-sdk/client-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import { GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, TransactWriteCommand } from "@aws-sdk/lib-dynamodb";
+import { unmarshall } from "@aws-sdk/util-dynamodb";
 import type { StoreId } from "@wanthat/contracts";
 import { z } from "zod";
 
@@ -12,6 +14,15 @@ const MoneyItem = z.object({
   amountMinor: z.string().regex(/^-?\d+$/),
   currency: z.string().regex(/^[A-Z]{3}$/),
 });
+
+/**
+ * Sentinel sort key of the per-store counter item: `{ storeId, storeProductId: "#counter",
+ * itemCount: N }`. `#` sits outside the product-id alphabet (`\d{6,20}`), so it can never
+ * collide with a real product, and the item carries no `createdAt` — a future time-ordering GSI
+ * excludes it for free (sparse index). Incremented in the SAME transaction as the conditional
+ * create, so the count exactly equals the number of stored products at all times.
+ */
+export const PRODUCT_COUNTER_SK = "#counter";
 
 /**
  * The stored shared product (ADR-0003): the contract `Product` fields plus the product-level
@@ -31,13 +42,13 @@ export const ProductItem = z.object({
 });
 export type ProductItem = z.infer<typeof ProductItem>;
 
-/** What a mint/re-mint writes; timestamps are managed by the repo. */
+/** What a mint writes; timestamps are managed by the repo. */
 export type ProductUpsert = Omit<ProductItem, "createdAt" | "updatedAt">;
 
 /**
- * Repository over the `product` table (ADR-0003) — the shared catalog item, fetched once and
- * reused across every member who recommends it. Upsert preserves `createdAt` on re-mint so the
- * first-seen time survives metadata refreshes.
+ * Repository over the `product` table (ADR-0003) — the shared catalog item, minted once and
+ * reused across every member who recommends it. Rows are written create-once with everything in
+ * hand (all-or-nothing, 2026-07-08 decision) — there is no partial state and no refresh path.
  */
 export class ProductRepo {
   constructor(
@@ -59,26 +70,65 @@ export class ProductRepo {
     return res.Item ? ProductItem.parse(res.Item) : undefined;
   }
 
-  async upsert(product: ProductUpsert, now: string): Promise<ProductItem> {
-    const validated = ProductItem.omit({ createdAt: true, updatedAt: true }).parse(product);
+  /**
+   * First-write-wins create + counter increment, atomically (one TransactWriteItems): the
+   * per-store counter moves only when the conditional put succeeds, so a concurrent-mint loser
+   * neither overwrites the winner nor double-counts — `created: false` returns the EXISTING row.
+   */
+  async create(
+    product: ProductUpsert,
+    now: string,
+  ): Promise<{ item: ProductItem; created: boolean }> {
+    const validated = ProductItem.parse({ ...product, createdAt: now, updatedAt: now });
+    try {
+      await this.doc.send(
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              Put: {
+                TableName: this.tableName,
+                Item: validated,
+                ConditionExpression: "attribute_not_exists(storeId)",
+                ReturnValuesOnConditionCheckFailure: "ALL_OLD",
+              },
+            },
+            {
+              Update: {
+                TableName: this.tableName,
+                Key: { storeId: validated.storeId, storeProductId: PRODUCT_COUNTER_SK },
+                UpdateExpression: "ADD itemCount :one",
+                ExpressionAttributeValues: { ":one": 1 },
+              },
+            },
+          ],
+        }),
+      );
+      return { item: validated, created: true };
+    } catch (err) {
+      const existing = existingFromCancellation(err);
+      if (existing) return { item: ProductItem.parse(existing), created: false };
+      throw err;
+    }
+  }
+
+  /** Exact number of stored products for `storeId` (the transactional counter item). */
+  async count(storeId: StoreId): Promise<number> {
     const res = await this.doc.send(
-      new UpdateCommand({
+      new GetCommand({
         TableName: this.tableName,
-        Key: { storeId: validated.storeId, storeProductId: validated.storeProductId },
-        UpdateExpression:
-          "SET title = :title, imageUrl = :imageUrl, price = :price, commissionBps = :commissionBps, " +
-          "affiliateUrl = :affiliateUrl, updatedAt = :now, createdAt = if_not_exists(createdAt, :now)",
-        ExpressionAttributeValues: {
-          ":title": validated.title,
-          ":imageUrl": validated.imageUrl,
-          ":price": validated.price,
-          ":commissionBps": validated.commissionBps,
-          ":affiliateUrl": validated.affiliateUrl,
-          ":now": now,
-        },
-        ReturnValues: "ALL_NEW",
+        Key: { storeId, storeProductId: PRODUCT_COUNTER_SK },
       }),
     );
-    return ProductItem.parse(res.Attributes);
+    return Number(res.Item?.itemCount ?? 0);
   }
+}
+
+/**
+ * The pre-existing row from a transaction cancelled by its conditional put (the doc client
+ * leaves CancellationReasons marshalled), or undefined when the failure was something else.
+ */
+export function existingFromCancellation(err: unknown): Record<string, unknown> | undefined {
+  if (!(err instanceof TransactionCanceledException)) return undefined;
+  const conditional = err.CancellationReasons?.find((r) => r.Code === "ConditionalCheckFailed");
+  return conditional?.Item ? unmarshall(conditional.Item as never) : undefined;
 }

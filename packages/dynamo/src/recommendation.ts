@@ -1,8 +1,13 @@
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import { GetCommand, PutCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
-import { unmarshall } from "@aws-sdk/util-dynamodb";
+import {
+  GetCommand,
+  QueryCommand,
+  TransactWriteCommand,
+  UpdateCommand,
+} from "@aws-sdk/lib-dynamodb";
 import { z } from "zod";
+import { existingFromCancellation } from "./product";
 
 const MoneyItem = z.object({
   amountMinor: z.string().regex(/^-?\d+$/),
@@ -56,6 +61,14 @@ export interface RecommendationPage {
   lastKey: Record<string, unknown> | undefined;
 }
 
+/**
+ * Sentinel PK of the counter item: `{ recommendationId: "#counter", itemCount: N }`. `#` sits
+ * outside the recommendation-id alphabet (base62 / legacy uuid), and the item carries no
+ * `ownerId`/`createdAt`, so the `byOwner` GSI (and any future time GSI) excludes it — sparse
+ * index. Incremented in the SAME transaction as the conditional create: exact by construction.
+ */
+export const RECOMMENDATION_COUNTER_PK = "#counter";
+
 /** Repository over the `recommendation` table (ADR-0003). */
 export class RecommendationRepo {
   constructor(
@@ -64,32 +77,53 @@ export class RecommendationRepo {
   ) {}
 
   /**
-   * First-write-wins create. The caller derives `recommendationId` deterministically from
-   * (owner, product), so a replay lands on the same key: `created: false` returns the EXISTING
-   * item (with its original cashback snapshot — ADR-0008 locks economics at first creation).
+   * First-write-wins create + counter increment, atomically (one TransactWriteItems). The caller
+   * derives `recommendationId` deterministically from (owner, product), so a replay lands on the
+   * same key: the whole transaction cancels — no double-count — and `created: false` returns the
+   * EXISTING item (with its original cashback snapshot — ADR-0008 locks economics at creation).
    */
   async create(item: RecommendationItem): Promise<{ item: RecommendationItem; created: boolean }> {
     const validated = RecommendationItem.parse(item);
     try {
       await this.doc.send(
-        new PutCommand({
-          TableName: this.tableName,
-          Item: validated,
-          ConditionExpression: "attribute_not_exists(recommendationId)",
-          ReturnValuesOnConditionCheckFailure: "ALL_OLD",
+        new TransactWriteCommand({
+          TransactItems: [
+            {
+              Put: {
+                TableName: this.tableName,
+                Item: validated,
+                ConditionExpression: "attribute_not_exists(recommendationId)",
+                ReturnValuesOnConditionCheckFailure: "ALL_OLD",
+              },
+            },
+            {
+              Update: {
+                TableName: this.tableName,
+                Key: { recommendationId: RECOMMENDATION_COUNTER_PK },
+                UpdateExpression: "ADD itemCount :one",
+                ExpressionAttributeValues: { ":one": 1 },
+              },
+            },
+          ],
         }),
       );
       return { item: validated, created: true };
     } catch (err) {
-      if (err instanceof ConditionalCheckFailedException && err.Item) {
-        // The doc client leaves the failure payload marshalled — unwrap it before parsing.
-        return {
-          item: RecommendationItem.parse(unmarshall(err.Item as never)),
-          created: false,
-        };
-      }
+      const existing = existingFromCancellation(err);
+      if (existing) return { item: RecommendationItem.parse(existing), created: false };
       throw err;
     }
+  }
+
+  /** Exact number of stored recommendations (the transactional counter item). */
+  async count(): Promise<number> {
+    const res = await this.doc.send(
+      new GetCommand({
+        TableName: this.tableName,
+        Key: { recommendationId: RECOMMENDATION_COUNTER_PK },
+      }),
+    );
+    return Number(res.Item?.itemCount ?? 0);
   }
 
   async get(recommendationId: string): Promise<RecommendationItem | undefined> {

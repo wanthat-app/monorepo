@@ -23,8 +23,9 @@ export {
 } from "./notification-outbox";
 export { type PasskeyCredentialItem, PasskeyCredentialRepo } from "./passkey-credential";
 export { PhoneVelocityRepo } from "./phone-velocity";
-export { ProductItem, ProductRepo, type ProductUpsert } from "./product";
+export { PRODUCT_COUNTER_SK, ProductItem, ProductRepo, type ProductUpsert } from "./product";
 export {
+  RECOMMENDATION_COUNTER_PK,
   RecommendationItem,
   type RecommendationPage,
   RecommendationRepo,

@@ -1,8 +1,15 @@
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import {
+  ConditionalCheckFailedException,
+  TransactionCanceledException,
+} from "@aws-sdk/client-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { marshall } from "@aws-sdk/util-dynamodb";
 import { describe, expect, it } from "vitest";
-import { type RecommendationItem, RecommendationRepo } from "./recommendation";
+import {
+  RECOMMENDATION_COUNTER_PK,
+  type RecommendationItem,
+  RecommendationRepo,
+} from "./recommendation";
 
 const NOW = "2026-07-08T10:00:00.000Z";
 const REC: RecommendationItem = {
@@ -35,28 +42,53 @@ function stub(respond: (name: string, input: Record<string, unknown>) => unknown
 }
 
 describe("RecommendationRepo.create", () => {
-  it("creates first-write-wins with a not-exists condition", async () => {
+  it("creates first-write-wins AND increments the counter in ONE transaction", async () => {
     const { doc, calls } = stub(() => ({}));
     const repo = new RecommendationRepo(doc, "recommendation");
     const res = await repo.create(REC);
     expect(res).toEqual({ item: REC, created: true });
-    expect(calls[0]?.name).toBe("PutCommand");
-    expect(calls[0]?.input.ConditionExpression).toBe("attribute_not_exists(recommendationId)");
+    expect(calls[0]?.name).toBe("TransactWriteCommand");
+    const tx = calls[0]?.input.TransactItems as Array<Record<string, never>>;
+    expect(tx).toHaveLength(2);
+    expect(tx[0]?.Put).toMatchObject({
+      ConditionExpression: "attribute_not_exists(recommendationId)",
+      Item: REC,
+    });
+    expect(tx[1]?.Update).toMatchObject({
+      Key: { recommendationId: RECOMMENDATION_COUNTER_PK },
+      UpdateExpression: "ADD itemCount :one",
+    });
   });
 
-  it("returns the EXISTING item (original snapshot) when the id was already created", async () => {
+  it("returns the EXISTING item (original snapshot, no double-count) on replay", async () => {
     const existing = { ...REC, cashback: { referrerBps: 4000, consumerBps: 500 } };
     const { doc } = stub(() => {
-      throw new ConditionalCheckFailedException({
-        message: "exists",
+      throw new TransactionCanceledException({
+        message: "cancelled",
         $metadata: {},
-        Item: marshall(existing) as never,
+        CancellationReasons: [
+          { Code: "ConditionalCheckFailed", Item: marshall(existing) as never },
+          { Code: "None" },
+        ],
       });
     });
     const repo = new RecommendationRepo(doc, "recommendation");
     const res = await repo.create(REC);
     expect(res.created).toBe(false);
     expect(res.item.cashback).toEqual({ referrerBps: 4000, consumerBps: 500 });
+  });
+});
+
+describe("RecommendationRepo.count", () => {
+  it("reads the sentinel counter item (0 before the first link)", async () => {
+    const { doc, calls } = stub(() => ({
+      Item: { recommendationId: RECOMMENDATION_COUNTER_PK, itemCount: 7 },
+    }));
+    expect(await new RecommendationRepo(doc, "recommendation").count()).toBe(7);
+    expect(calls[0]?.input.Key).toEqual({ recommendationId: RECOMMENDATION_COUNTER_PK });
+
+    const empty = stub(() => ({}));
+    expect(await new RecommendationRepo(empty.doc, "recommendation").count()).toBe(0);
   });
 });
 
