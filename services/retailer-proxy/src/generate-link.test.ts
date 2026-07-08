@@ -1,5 +1,6 @@
 import { Logger } from "@aws-lambda-powertools/logger";
 import type { AliExpressClient, AliExpressProductDetail } from "@wanthat/aliexpress";
+import { AliExpressApiError } from "@wanthat/aliexpress";
 import type { ProductItem, ProductRepo, ProductUpsert } from "@wanthat/dynamo";
 import { describe, expect, it } from "vitest";
 import { generateLink } from "./generate-link";
@@ -188,8 +189,8 @@ describe("generateLink", () => {
     expect(upserts).toHaveLength(0);
   });
 
-  it("persists placeholder metadata when productdetail fails (best-effort)", async () => {
-    const { products } = fakeProducts();
+  it("persists placeholder metadata FLAGGED pending when productdetail fails (best-effort)", async () => {
+    const { products, upserts } = fakeProducts();
     const res = await generateLink(URL, {
       products,
       client: async () =>
@@ -206,5 +207,86 @@ describe("generateLink", () => {
     expect(res.product.imageUrl).toBeNull();
     expect(res.product.price).toBeNull();
     expect(res.product.commissionBps).toBe(0);
+    // Flagged so the NEXT resolve retries enrichment instead of serving the junk forever.
+    expect(upserts[0]?.metadataPending).toBe(true);
+  });
+
+  it("retries productdetail ONCE after the throttle window on ApiCallLimit", async () => {
+    const { products, upserts } = fakeProducts();
+    const waits: number[] = [];
+    let calls = 0;
+    const res = await generateLink(URL, {
+      products,
+      client: async () =>
+        fakeClient({
+          detail: async () => {
+            calls += 1;
+            if (calls === 1)
+              throw new AliExpressApiError("ApiCallLimit", "frequency exceeds the limit");
+            return DETAIL;
+          },
+        }),
+      logger,
+      sleep: async (ms) => {
+        waits.push(ms);
+      },
+      now: () => NOW,
+    });
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(calls).toBe(2);
+    expect(waits).toEqual([1200]);
+    expect(res.product.title).toBe(DETAIL.title);
+    expect(upserts[0]?.metadataPending).toBe(false);
+  });
+
+  it("enriches a pending row without re-minting (keeps the stored affiliate link)", async () => {
+    const pending: ProductItem = {
+      storeId: "aliexpress",
+      storeProductId: "1005006123456789",
+      title: "AliExpress item 1005006123456789",
+      imageUrl: null,
+      price: null,
+      commissionBps: 0,
+      affiliateUrl: "https://s.click.aliexpress.com/e/_original",
+      metadataPending: true,
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+    };
+    const { products, upserts } = fakeProducts(pending);
+    const res = await generateLink(URL, {
+      products,
+      client: async () =>
+        fakeClient({
+          generate: async () => {
+            throw new Error("must not re-mint");
+          },
+        }),
+      logger,
+      now: () => NOW,
+    });
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(res.affiliateUrl).toBe("https://s.click.aliexpress.com/e/_original");
+    expect(res.product.title).toBe(DETAIL.title);
+    expect(upserts[0]?.metadataPending).toBe(false);
+  });
+
+  it("serves a pending row as-is while the credential is unpopulated (link still works)", async () => {
+    const pending: ProductItem = {
+      storeId: "aliexpress",
+      storeProductId: "1005006123456789",
+      title: "AliExpress item 1005006123456789",
+      imageUrl: null,
+      price: null,
+      commissionBps: 0,
+      affiliateUrl: "https://s.click.aliexpress.com/e/_original",
+      metadataPending: true,
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+    };
+    const { products, upserts } = fakeProducts(pending);
+    const res = await generateLink(URL, { products, client: async () => null, logger });
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(res.affiliateUrl).toBe("https://s.click.aliexpress.com/e/_original");
+    expect(upserts).toHaveLength(0);
   });
 });

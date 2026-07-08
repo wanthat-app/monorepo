@@ -20,7 +20,7 @@ import {
   UpdateRecommendationResponse,
 } from "@wanthat/contracts";
 import { splitCommission } from "@wanthat/domain";
-import type { ProductItem, RecommendationItem } from "@wanthat/dynamo";
+import { needsEnrichment, type ProductItem, type RecommendationItem } from "@wanthat/dynamo";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { type Bindings, subFromClaims } from "../claims";
@@ -177,6 +177,9 @@ export function productsRouter(): Hono<{ Bindings: Bindings }> {
       candidate.kind === "product"
         ? await ctx.products.get(candidate.storeId, candidate.storeProductId)
         : undefined;
+    // A row still carrying placeholder metadata (a past productdetail failure) is not a cache
+    // hit — the proxy retries enrichment (keeping the existing affiliate link) instead.
+    if (item && needsEnrichment(item)) item = undefined;
     if (!item) {
       const minted = await ctx.retailerProxy.generateLink(candidate.url);
       if (minted.status === "error") {

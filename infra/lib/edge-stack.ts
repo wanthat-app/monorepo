@@ -185,12 +185,20 @@ export class EdgeStack extends Stack {
     // deploy. `config.json` is a second source in the SAME deployment (not a separate BucketDeployment,
     // which would prune the other's files); the SPA fetches it at load so it needs no build-time env.
     // Token values are substituted at deploy time by the BucketDeployment custom resource.
+    //
+    // Cache-Control: no-cache on EVERYTHING here. Without it S3 sends no Cache-Control and
+    // BROWSERS cache index.html heuristically, so a user keeps referencing an old bundle even
+    // after the CloudFront invalidation below (made the create-link validation look broken).
+    // no-cache still allows conditional revalidation (ETag 304s), so the cost is one cheap
+    // round-trip per load; the hashed /assets/* files change name per build, so a fancier
+    // long-cache split is not worth a second deployment construct at this size.
     new s3deploy.BucketDeployment(this, "SpaDeployment", {
       destinationBucket: siteBucket,
       sources: [
         s3deploy.Source.asset(path.join(REPO_ROOT, "apps", "web", "dist")),
         s3deploy.Source.jsonData("config.json", props.spaConfig),
       ],
+      cacheControl: [s3deploy.CacheControl.noCache()],
       distribution: this.distribution,
       distributionPaths: ["/*"],
     });
