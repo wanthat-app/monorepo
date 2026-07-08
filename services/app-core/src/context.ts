@@ -1,6 +1,4 @@
-import { TicketVerifier } from "@wanthat/auth";
 import { createDb } from "@wanthat/db";
-import { GuestAttributionRepo, getDocClient, NotificationOutboxRepo } from "@wanthat/dynamo";
 
 /** The Kysely handle type, derived from createDb so app-core needs no direct kysely dependency. */
 type Db = ReturnType<typeof createDb>;
@@ -14,24 +12,19 @@ function requireEnv(name: string): string {
 export interface CoreContext {
   region: string;
   db: Db;
-  guests: GuestAttributionRepo;
-  tickets: TicketVerifier;
-  outbox: NotificationOutboxRepo;
-  /** Canonical SPA origin for links in outbound messages (env APP_URL). */
-  appUrl: string;
 }
 
 let cached: CoreContext | undefined;
 
 /**
- * Build the per-container dependency graph once and reuse it across warm invocations. The in-VPC core
- * (ADR-0006) reaches Aurora as `app_rw` via IAM auth (no RDS Proxy) and DynamoDB over the gateway
- * endpoint; it verifies the registration ticket but calls NO Cognito control-plane API.
+ * Build the per-container dependency graph once and reuse it across warm invocations. The in-VPC
+ * wallet service (ADR-0006 rev: Cognito-native auth) reaches Aurora as `app_rw` via IAM auth (no
+ * RDS Proxy). Aurora is money-only: the sole dependency here is the pg pool for the wallet ledger
+ * and the /healthz/db probe.
  */
 export function getContext(): CoreContext {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
-  const doc = getDocClient(region);
   cached = {
     region,
     db: createDb({
@@ -42,12 +35,6 @@ export function getContext(): CoreContext {
       region,
       caCerts: process.env.DB_CA_CERT,
     }),
-    guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
-    // Verification is secretless (Ed25519 PUBLIC keys via env) - app-core reads NO Secrets Manager,
-    // which is what lets the VPC drop its secretsmanager interface endpoint.
-    tickets: new TicketVerifier(requireEnv("AUTH_TICKET_PUBLIC_KEYS")),
-    outbox: new NotificationOutboxRepo(doc, requireEnv("NOTIFICATION_OUTBOX_TABLE")),
-    appUrl: requireEnv("APP_URL"),
   };
   return cached;
 }

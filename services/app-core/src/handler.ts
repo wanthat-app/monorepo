@@ -1,20 +1,20 @@
 /**
- * app-core — the in-VPC "core" (ADR-0006), behind the shared app HTTP API.
+ * app-core — the in-VPC wallet service (ADR-0006 rev: Cognito-native auth), behind the shared app
+ * HTTP API.
  *
- * Serves the endpoints that touch Aurora: `/auth/register`, `/me`, `/me/*` (and later wallet). Stays
- * IN-VPC with IAM DB auth (ADR-0003) and reserved concurrency; DynamoDB over the free gateway
- * endpoint. It verifies the registration ticket minted by `app-auth` but calls NO Cognito
- * control-plane API, so it needs no Cognito egress (the `cognito-idp` interface endpoint is removed).
- * HTTP routing via Hono (ADR-0011); request bodies validated with the shared Zod contracts.
+ * Serves ONLY the endpoints that touch Aurora money data: `/wallet`, `/wallet/entries` (stubs until
+ * the conversion-poller slice) plus the `/healthz` probes. Authentication is fully Cognito-native —
+ * the former `/auth/session`, `/auth/register`, and `/me` routes are deleted; anything not served
+ * here falls through to Hono's default 404 (the gateway still routes the old paths at this Lambda
+ * until the T8 infra teardown). Stays IN-VPC with IAM DB auth (ADR-0003) and reserved concurrency.
+ * HTTP routing via Hono (ADR-0011); responses validated with the shared Zod contracts.
  */
 
 import { waitForDb } from "@wanthat/db";
 import { Hono } from "hono";
 import type { LambdaEvent } from "hono/aws-lambda";
 import { handle } from "hono/aws-lambda";
-import { authRouter } from "./auth/register";
 import { getContext } from "./context";
-import { meRouter } from "./me/router";
 import { walletRouter } from "./wallet/router";
 
 const SERVICE = "app-core";
@@ -24,22 +24,18 @@ const app = new Hono<{ Bindings: { event: LambdaEvent } }>();
 app.get("/healthz", (c) => c.json({ ok: true, service: SERVICE }));
 
 // DB warm-up probe: `select 1` against Aurora so a client can kick off the scale-to-zero resume
-// EARLY. The SPA fires this (fire-and-forget) when the landing/auth page loads, overlapping the
-// ~20s resume with the human reading the page / doing Face ID instead of serialising it after the
-// biometric (measured 20–22s /auth/session tails; Lambda init was only ~0.4s). Public like
-// /auth/session — an abuser could keep Aurora awake, but no more than by calling /auth/session.
+// EARLY. The SPA fires this (fire-and-forget) when it knows a wallet read is coming, overlapping
+// the ~20s resume with the human instead of serialising it behind the first /wallet call. Public —
+// an abuser could keep Aurora awake, but reserved concurrency caps the blast radius.
 app.get("/healthz/db", async (c) => {
   const started = Date.now();
   await waitForDb(getContext().db, { attempts: 1 });
   return c.json({ ok: true, service: SERVICE, ms: Date.now() - started });
 });
 
-// `/auth/session` + `/auth/register` are unauthenticated by design (a valid ticket is the credential);
-// `/me` sits behind the JWT authorizer at the gateway and reads the verified claims.
-app.route("/auth", authRouter());
-app.route("/me", meRouter());
+// `/wallet` sits behind the JWT authorizer at the gateway and reads the verified claims.
 app.route("/wallet", walletRouter());
-// The links module lives on the NON-VPC app-auth edge (Aurora-free path; the sync retailer-proxy
+// The links module lives on the NON-VPC app-links edge (Aurora-free path; the sync retailer-proxy
 // invoke is free there — in-VPC it would need a paid lambda interface endpoint, ADR-0004).
 
 // Log any uncaught handler error (otherwise Hono returns 500 with no trace) so an in-VPC connection
@@ -48,9 +44,6 @@ app.onError((err, c) => {
   console.error(`${SERVICE} error on ${c.req.method} ${c.req.path}:`, err);
   return c.json({ error: "internal_error", service: SERVICE }, 500);
 });
-
-// Anything still unimplemented — a clean 501 rather than a 404.
-app.all("*", (c) => c.json({ error: "not_implemented", service: SERVICE, path: c.req.path }, 501));
 
 export const handler = handle(app);
 export { app };
