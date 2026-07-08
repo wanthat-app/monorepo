@@ -230,6 +230,12 @@ const en = {
       save: "Save credentials",
       saved: "Credentials updated.",
       error: "Failed to update credentials.",
+      trackingId: "Tracking ID",
+      trackingIdDesc:
+        "Sent on every affiliate link and echoed in order reports. Must match a tracking ID that exists in the AliExpress affiliate console.",
+      trackingIdSave: "Save tracking ID",
+      trackingIdSaved: "Tracking ID updated.",
+      trackingIdError: "Failed to update the tracking ID.",
     },
     save: {
       unsaved: "You have unsaved changes.",
@@ -523,6 +529,12 @@ const he: typeof en = {
       save: "שמירת פרטי גישה",
       saved: "פרטי הגישה עודכנו.",
       error: "עדכון פרטי הגישה נכשל.",
+      trackingId: "Tracking ID",
+      trackingIdDesc:
+        "נשלח בכל קישור שותפים ומוחזר בדוחות ההזמנות. חייב להתאים ל-Tracking ID קיים בקונסולת השותפים של AliExpress.",
+      trackingIdSave: "שמירת Tracking ID",
+      trackingIdSaved: "ה-Tracking ID עודכן.",
+      trackingIdError: "עדכון ה-Tracking ID נכשל.",
     },
     save: {
       unsaved: "יש לך שינויים שלא נשמרו.",

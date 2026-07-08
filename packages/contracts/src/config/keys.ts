@@ -93,6 +93,14 @@ export const WhatsappPhoneNumberId = z.string().max(120);
 export const NotificationsWhatsappEnabled = z.boolean();
 
 /**
+ * The AliExpress tracking id sent as `tracking_id` on every affiliate call (SDD §8.1: ONE per
+ * network, never per-user — attribution rides `custom_parameters`, ADR-0008). Must match a
+ * tracking id that exists in the AliExpress affiliate portal; the portal's auto-created one is
+ * named `default`. Runtime config (admin panel, next to the credentials) — no redeploy to change.
+ */
+export const RetailerAliexpressTrackingId = z.string().trim().min(1).max(64);
+
+/**
  * Where message-sender routes decrypted OTP codes. `delivery` = the real channel (WhatsApp/SMS).
  * `devSink` = a TTL'd DynamoDB item a developer reads via the CLI — unblocks end-to-end user
  * creation while both real channels are blocked (SMS sandbox cap / Meta onboarding). The sender
@@ -118,6 +126,7 @@ export const CONFIG_KEYS = [
   "whatsapp.phoneNumberId",
   "notifications.whatsappEnabled",
   "auth.otpSink",
+  "retailer.aliexpressTrackingId",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -141,6 +150,7 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "whatsapp.phoneNumberId": WhatsappPhoneNumberId,
   "notifications.whatsappEnabled": NotificationsWhatsappEnabled,
   "auth.otpSink": AuthOtpSink,
+  "retailer.aliexpressTrackingId": RetailerAliexpressTrackingId,
 };
 
 /**
@@ -172,6 +182,8 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "notifications.whatsappEnabled": false,
   // real delivery by default; dev flips to devSink while SMS/WhatsApp are blocked
   "auth.otpSink": "delivery",
+  // The AliExpress portal's auto-created tracking id; replace via admin once a named one exists.
+  "retailer.aliexpressTrackingId": "default",
 };
 
 /** Validate a value against its key's schema — use in the config API handler before persisting. */

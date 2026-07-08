@@ -188,6 +188,11 @@ export interface ReviewWire {
   rating?: number;
   text: string;
 }
+/** Cached settlement→display rate + FX margin for client-side ₪ conversion (see contracts DisplayFx). */
+export interface DisplayFxWire {
+  rate: { base: string; quote: string; rate: string; asOf: string };
+  commissionBps: number;
+}
 export interface RecommendationWire {
   recommendationId: string;
   shareUrl: string;
@@ -203,7 +208,11 @@ export const linksApi = {
   // Paste URL → the shared product + a current-policy cashback estimate. The server mints the
   // product-level affiliate link on first resolve; the URL itself is never fetched by the SPA.
   resolveProduct: (token: string, url: string) =>
-    request<{ product: ProductWire; estimate: CashbackEstimateWire }>("/products/resolve", {
+    request<{
+      product: ProductWire;
+      estimate: CashbackEstimateWire;
+      displayFx: DisplayFxWire | null;
+    }>("/products/resolve", {
       method: "POST",
       body: { url },
       token,

@@ -42,7 +42,8 @@ outside it. Retailer egress happens only from non-VPC functions. No NAT Gateway.
 | Function | In VPC? | Reaches | Internet egress |
 |---|---|---|---|
 | Landing | No | DynamoDB (`recommendation_id→url`) | none |
-| Lambdalith / admin | Yes | Aurora, DynamoDB (gateway endpoint) | none |
+| App edge (`app-auth`, incl. the `links` module — ADR-0020 split) | No | Cognito, DynamoDB, Retailer Proxy (Invoke) | none |
+| Core / admin (`app-core`, `admin-api`) | Yes | Aurora, DynamoDB (gateway endpoint) | none |
 | **Retailer Proxy** | No | retailer API, Secrets Mgr, DynamoDB | yes (direct) |
 | Poller **writer** | Yes | Aurora only | none |
 
@@ -57,12 +58,14 @@ cannot reach the Invoke API without a paid interface endpoint:
 - **Poll flow** — `EventBridge Scheduler → Retailer Proxy.listOrders` (calls retailer, resolves
   `guest_attribution` in DynamoDB) `→ invokes in-VPC writer` (Aurora ledger + audit). The
   non-VPC side initiates → **no interface endpoint, $0**.
-- **Link generation** — touches **no Aurora** (products + recommendations are DynamoDB, ADR-0003).
-  The in-VPC Lambdalith (`links` module) invokes `Retailer Proxy.generateLink` **synchronously**
-  (the user waits for the affiliate URL) — needing **one Lambda interface endpoint (~$7/mo/AZ)** —
-  which mints/reuses the product-level affiliate URL and upserts the **Product** in DynamoDB; the
-  Lambdalith then writes the member's **Recommendation** in DynamoDB. *$0 alternative: front
-  `POST /links` with the Retailer Proxy directly (no in-VPC hop), since the whole path is Aurora-free.*
+- **Link generation** — touches **no Aurora** (products + recommendations are DynamoDB, ADR-0003),
+  so the `links` module runs on the **non-VPC app edge** (`app-auth`, the ADR-0020 split's
+  non-VPC half) and invokes `Retailer Proxy.generateLink` **synchronously** (the user waits for
+  the affiliate URL) as a free non-VPC→Lambda call — **no interface endpoint, $0**, the same
+  asymmetry the poll flow uses. The proxy mints/reuses the product-level affiliate URL and
+  upserts the **Product** in DynamoDB; the caller then writes the member's **Recommendation**.
+  The retailer credential still never leaves the proxy, and the JWT-authorized route stays on
+  the app HTTP API rather than exposing the proxy itself.
 
 ### In-VPC connectivity
 
@@ -80,12 +83,19 @@ function with zero internet still logs normally. Net: no NAT and no interface en
   reintroduce a paid NAT Gateway.
 - **NAT instance (e.g. fck-nat, ~$4/mo)** — kept only as a fallback if the fetcher split is ever
   undesirable; it's an EC2 to patch, against the serverless grain.
+- **Links module in the in-VPC core + a `lambda` interface endpoint (~$7/mo/AZ)** — the original
+  placement (briefly deployed, PR #110): kept the links routes on the in-VPC function at the cost
+  of the one paid endpoint. Replaced the same week by the non-VPC edge placement above, which
+  serves the identical routes for $0; the endpoint was removed (2026-07-08 consolidation).
+- **Fronting `POST /links` with the Retailer Proxy directly** — also $0, but it would hang a
+  public, JWT-authorized HTTP surface on the credential-holding proxy; keeping the proxy
+  invoke-only preserves "attack surface == sensitivity boundary" below.
 
 ## Consequences
 
-- **Standing network cost ≈ one Lambda interface endpoint (~$7/mo)** for synchronous link
-  generation, otherwise ~$0 (no NAT, no RDS Proxy, free DynamoDB gateway endpoint). The poll
-  path adds nothing.
+- **Standing network cost ≈ $0** (no NAT, no RDS Proxy, no interface endpoints, free DynamoDB
+  gateway endpoint). Both retailer-proxy flows — the sync link generation and the scheduled
+  poll — are initiated from non-VPC functions, so neither needs a paid endpoint.
 - **Attack surface == sensitivity boundary:** the public, viral, anonymous redirect path touches
   only one non-PII DynamoDB table — no Aurora reach, no VPC foothold, no PII, no money.
 - **Egress containment retained** on the in-VPC money/PII functions; the only internet-facing

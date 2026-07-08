@@ -1,11 +1,14 @@
 import { useMutation } from "@tanstack/react-query";
+import { convertMinor } from "@wanthat/domain";
 import { type ClipboardEvent, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
   ApiError,
   type CashbackEstimateWire,
+  type DisplayFxWire,
   linksApi,
+  type MoneyWire,
   type ProductWire,
   type RecommendationWire,
 } from "../../lib/api";
@@ -106,6 +109,7 @@ export function CreateLinkPage() {
   const [resolved, setResolved] = useState<{
     product: ProductWire;
     estimate: CashbackEstimateWire;
+    displayFx: DisplayFxWire | null;
   } | null>(null);
   const [recommendation, setRecommendation] = useState<RecommendationWire | null>(null);
   const [review, setReview] = useState("");
@@ -217,18 +221,26 @@ export function CreateLinkPage() {
   // original creation (a re-created link keeps its old economics — ADR-0008), while the resolve
   // estimate is current policy and can diverge after an admin rate change.
   const estimate = recommendation?.estimate ?? resolved?.estimate ?? null;
-  const youEarn = estimate?.referrer.estimated
-    ? formatMoneyMinor(
-        estimate.referrer.estimated.amountMinor,
-        estimate.referrer.estimated.currency,
-      )
-    : null;
-  const theyEarn = estimate?.consumer.estimated
-    ? formatMoneyMinor(
-        estimate.consumer.estimated.amountMinor,
-        estimate.consumer.estimated.currency,
-      )
-    : null;
+  const fx = resolved?.displayFx ?? null;
+
+  // Display conversion (contracts DisplayFx): amounts arrive in the settlement currency (USD) and
+  // are shown in ₪ when the cached rate covers them. Cashback figures carry the FX margin so the
+  // shown amount matches what a withdrawal would actually yield; the product price converts at
+  // the pure rate (it is information, not money we pay out). No rate → settlement currency as-is.
+  const display = (money: MoneyWire | null | undefined, cashback: boolean): string | null => {
+    if (!money) return null;
+    if (fx && money.currency === fx.rate.base) {
+      const minor = convertMinor(
+        BigInt(money.amountMinor),
+        fx.rate.rate,
+        cashback ? fx.commissionBps : 0,
+      );
+      return formatMoneyMinor(minor.toString(), fx.rate.quote);
+    }
+    return formatMoneyMinor(money.amountMinor, money.currency);
+  };
+  const youEarn = display(estimate?.referrer.estimated, true);
+  const theyEarn = display(estimate?.consumer.estimated, true);
 
   return (
     <div className="min-h-screen bg-page">
@@ -290,14 +302,7 @@ export function CreateLinkPage() {
             <ProductCard
               src={resolved.product.imageUrl ?? undefined}
               title={resolved.product.title}
-              price={
-                resolved.product.price
-                  ? formatMoneyMinor(
-                      resolved.product.price.amountMinor,
-                      resolved.product.price.currency,
-                    )
-                  : undefined
-              }
+              price={display(resolved.product.price, false) ?? undefined}
               meta="AliExpress"
             />
 

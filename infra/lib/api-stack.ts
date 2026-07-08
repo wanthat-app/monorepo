@@ -45,6 +45,7 @@ export interface ApiStackProps extends StackProps {
   readonly userPoolClient: cognito.IUserPoolClient;
   readonly productTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
+  readonly fxRateTable: dynamodb.ITable;
   readonly guestAttributionTable: dynamodb.ITable;
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly authChallengeTable: dynamodb.ITable;
@@ -149,6 +150,14 @@ export class ApiStack extends Stack {
         // are the exact SPA origins) so an assertion for another origin/RP is rejected.
         WEBAUTHN_RP_ID: wanthatEnv.domainName ?? "",
         WEBAUTHN_ORIGINS: webOrigins(wanthatEnv).join(","),
+        // Links module (ADR-0002; served from THIS non-VPC edge so its sync retailer-proxy invoke
+        // is free — in-VPC it needed a paid lambda interface endpoint). The proxy is invoked by
+        // its deterministic NAME (no cross-stack export → deploy-order independent).
+        PRODUCT_TABLE: props.productTable.tableName,
+        RECOMMENDATION_TABLE: props.recommendationTable.tableName,
+        RETAILER_PROXY_FUNCTION: `wanthat-${wanthatEnv.name}-retailer-proxy`,
+        FX_RATE_TABLE: props.fxRateTable.tableName,
+        APP_URL: appUrl(wanthatEnv),
       },
       bundling: { minify: true, sourceMap: true },
     });
@@ -165,6 +174,27 @@ export class ApiStack extends Stack {
     // ADR-0022: put on enrol, get on login, updateSignCount after login, query for exclude-list.
     props.passkeyCredentialTable.grantReadWriteData(appAuthFn);
     ticketSecret.grantRead(appAuthFn);
+    // Links module (ADR-0004 division of writes): app-auth READS products (retailer-proxy is the
+    // sole product writer), WRITES recommendations, and reads the fx cache for display conversion.
+    props.productTable.grantReadData(appAuthFn);
+    props.recommendationTable.grantReadWriteData(appAuthFn);
+    props.fxRateTable.grantReadData(appAuthFn);
+    // Synchronous generateLink invoke — free from a non-VPC function (ADR-0004 asymmetry). ARN
+    // constructed from the deterministic function name so no CloudFormation export ties this
+    // stack to EdgeServices.
+    appAuthFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        resources: [
+          this.formatArn({
+            service: "lambda",
+            resource: "function",
+            resourceName: `wanthat-${wanthatEnv.name}-retailer-proxy`,
+            arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+          }),
+        ],
+      }),
+    );
 
     // Scoped Cognito control-plane actions on this pool only (ADR-0020).
     appAuthFn.addToRolePolicy(
@@ -216,12 +246,6 @@ export class ApiStack extends Stack {
         DB_USER: "app_rw",
         ...RDS_CA_ENV,
         NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
-        // Links module (ADR-0002/0004): products + recommendations in DynamoDB; the retailer-proxy
-        // is invoked by its deterministic NAME (no cross-stack export, so Api and EdgeServices
-        // stay deploy-order independent) over the VPC's lambda interface endpoint.
-        PRODUCT_TABLE: props.productTable.tableName,
-        RECOMMENDATION_TABLE: props.recommendationTable.tableName,
-        RETAILER_PROXY_FUNCTION: `wanthat-${wanthatEnv.name}-retailer-proxy`,
         // Link target for outbound messages (ADR-0023): the DEPLOYED site, never webOrigins()[0]
         // (which is the localhost dev origin for non-prod envs).
         APP_URL: appUrl(wanthatEnv),
@@ -233,28 +257,10 @@ export class ApiStack extends Stack {
     // Aurora as app_rw via IAM auth (ADR-0003) - no RDS Proxy, no static credential.
     props.cluster.grantConnect(appCoreFn, "app_rw");
 
-    // DynamoDB: guest attribution RW (attribution claim), config read.
+    // DynamoDB: guest attribution RW (attribution claim), config read. (The links module and its
+    // grants live on the non-VPC app-auth above — the in-VPC core stays Aurora + these two.)
     props.guestAttributionTable.grantReadWriteData(appCoreFn);
     props.runtimeConfigTable.grantReadData(appCoreFn);
-    // Links module (ADR-0004 division of writes): app-core READS products (retailer-proxy is the
-    // sole product writer) and WRITES recommendations.
-    props.productTable.grantReadData(appCoreFn);
-    props.recommendationTable.grantReadWriteData(appCoreFn);
-    // Synchronous generateLink invoke (ADR-0004). ARN constructed from the deterministic function
-    // name so no CloudFormation export ties this stack to EdgeServices.
-    appCoreFn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ["lambda:InvokeFunction"],
-        resources: [
-          this.formatArn({
-            service: "lambda",
-            resource: "function",
-            resourceName: `wanthat-${wanthatEnv.name}-retailer-proxy`,
-            arnFormat: ArnFormat.COLON_RESOURCE_NAME,
-          }),
-        ],
-      }),
-    );
     // (No ticketSecret grant: verification is secretless - Ed25519 public keys via env.)
     // Outbox producer: write-only (no read grant) - the dispatcher owns status updates (ADR-0023).
     props.notificationOutboxTable.grantWriteData(appCoreFn);
@@ -367,25 +373,26 @@ export class ApiStack extends Stack {
       authorizer,
     });
 
-    // Links module (ADR-0002/0011) -> app-core, behind the JWT authorizer. Resolve is a POST
-    // (it can mint via the retailer-proxy); recommendations carry POST create, GET list/detail
-    // and PATCH review — PATCH is already in the CORS allowMethods above.
+    // Links module (ADR-0002/0011) -> app-auth (non-VPC — its sync retailer-proxy invoke is free
+    // there), behind the JWT authorizer. Resolve is a POST (it can mint via the retailer-proxy);
+    // recommendations carry POST create, GET list/detail and PATCH review — PATCH is already in
+    // the CORS allowMethods above.
     this.httpApi.addRoutes({
       path: "/products/resolve",
       methods: [HttpMethod.POST],
-      integration: coreIntegration,
+      integration: authIntegration,
       authorizer,
     });
     this.httpApi.addRoutes({
       path: "/recommendations",
       methods: [HttpMethod.GET, HttpMethod.POST],
-      integration: coreIntegration,
+      integration: authIntegration,
       authorizer,
     });
     this.httpApi.addRoutes({
       path: "/recommendations/{proxy+}",
       methods: [HttpMethod.GET, HttpMethod.PATCH],
-      integration: coreIntegration,
+      integration: authIntegration,
       authorizer,
     });
 

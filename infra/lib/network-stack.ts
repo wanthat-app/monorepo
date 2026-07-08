@@ -16,12 +16,11 @@ export interface NetworkStackProps extends StackProps {
  * SG — not EC2 instances.)
  *
  * NAT-free (ADR-0004): `natGateways: 0`, a single PRIVATE_ISOLATED subnet group. DynamoDB is reached
- * through a free gateway endpoint. Per ADR-0020 the in-VPC `app-core` no longer calls Cognito (the
- * `/auth/*` flow moved to the non-VPC `app-auth` edge), so the `cognito-idp` interface endpoint is
- * removed. One paid interface endpoint remains: `lambda` — the ADR-0004 link-generation path (the
- * in-VPC `app-core` links module synchronously invokes the non-VPC retailer-proxy while the user
- * waits; the poll flow needs nothing, its non-VPC side initiates). Everything else stays out of
- * the VPC.
+ * through a free gateway endpoint. NO interface endpoints (they bill hourly per AZ): `cognito-idp`
+ * went with the ADR-0020 split, `secretsmanager` with the secretless in-VPC auth, and the brief
+ * `lambda` endpoint (PR #110's link generation) went when the links module moved to the non-VPC
+ * `app-auth` edge — a non-VPC function invokes the retailer-proxy for free, so nothing in the VPC
+ * needs the Lambda Invoke API. Everything else stays out of the VPC.
  *
  * Two SGs split the trust boundary: `lambdaSg` (in-VPC functions) is allowed to reach `auroraSg`
  * (the cluster) on 5432; nothing else can.
@@ -65,15 +64,11 @@ export class NetworkStack extends Stack {
       service: ec2.GatewayVpcEndpointAwsService.DYNAMODB,
     });
 
-    // The ONE paid interface endpoint (~$7/mo/AZ, ADR-0004 accepts it for link generation): the
-    // in-VPC app-core `links` module invokes the non-VPC retailer-proxy SYNCHRONOUSLY (the user is
-    // waiting for the affiliate URL), and without NAT the Lambda Invoke API is unreachable from a
-    // PRIVATE_ISOLATED subnet any other way. History for the other endpoints: `cognito-idp` went
-    // with the ADR-0020 split (app-core stopped calling Cognito) and `secretsmanager` became
-    // unnecessary once nothing in the VPC read secrets - ticket verification moved to Ed25519
-    // PUBLIC keys in plain env (app-core) and the migrator moved to IAM DB auth as wanthat_migrator.
-    this.vpc.addInterfaceEndpoint("LambdaEndpoint", {
-      service: ec2.InterfaceVpcEndpointAwsService.LAMBDA,
-    });
+    // NO interface endpoints (they bill hourly per AZ). History: `cognito-idp` went with the
+    // ADR-0020 split (app-core stopped calling Cognito); `secretsmanager` became unnecessary once
+    // nothing in the VPC read secrets (Ed25519 PUBLIC keys in plain env + IAM DB auth migrator);
+    // and the short-lived `lambda` endpoint (PR #110 link generation) went when the links module
+    // moved to the non-VPC app-auth edge - the sync retailer-proxy invoke is free from there. The
+    // in-VPC functions' only AWS dependencies are Aurora (in-VPC) + DynamoDB (free gateway endpoint).
   }
 }

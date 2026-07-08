@@ -1,15 +1,6 @@
 import { TicketVerifier } from "@wanthat/auth";
 import { createDb } from "@wanthat/db";
-import {
-  GuestAttributionRepo,
-  getDocClient,
-  NotificationOutboxRepo,
-  ProductRepo,
-  RecommendationRepo,
-  type RuntimeConfigReader,
-  RuntimeConfigRepo,
-} from "@wanthat/dynamo";
-import { RetailerProxyClient } from "./links/proxy-client";
+import { GuestAttributionRepo, getDocClient, NotificationOutboxRepo } from "@wanthat/dynamo";
 
 /** The Kysely handle type, derived from createDb so app-core needs no direct kysely dependency. */
 type Db = ReturnType<typeof createDb>;
@@ -26,12 +17,7 @@ export interface CoreContext {
   guests: GuestAttributionRepo;
   tickets: TicketVerifier;
   outbox: NotificationOutboxRepo;
-  /** Links module (ADR-0002/0004): DynamoDB-only + one sync retailer-proxy invoke. */
-  products: ProductRepo;
-  recommendations: RecommendationRepo;
-  config: RuntimeConfigReader;
-  retailerProxy: RetailerProxyClient;
-  /** Canonical SPA origin for links in outbound messages + shareUrl (env APP_URL). */
+  /** Canonical SPA origin for links in outbound messages (env APP_URL). */
   appUrl: string;
 }
 
@@ -61,10 +47,6 @@ export function getContext(): CoreContext {
     // which is what lets the VPC drop its secretsmanager interface endpoint.
     tickets: new TicketVerifier(requireEnv("AUTH_TICKET_PUBLIC_KEYS")),
     outbox: new NotificationOutboxRepo(doc, requireEnv("NOTIFICATION_OUTBOX_TABLE")),
-    products: new ProductRepo(doc, requireEnv("PRODUCT_TABLE")),
-    recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
-    config: new RuntimeConfigRepo(doc, requireEnv("RUNTIME_CONFIG_TABLE")),
-    retailerProxy: new RetailerProxyClient(requireEnv("RETAILER_PROXY_FUNCTION")),
     appUrl: requireEnv("APP_URL"),
   };
   return cached;
