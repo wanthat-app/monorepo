@@ -1,4 +1,7 @@
-import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
+import {
+  ConditionalCheckFailedException,
+  TransactionCanceledException,
+} from "@aws-sdk/client-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import {
   GetCommand,
@@ -187,4 +190,70 @@ export class RecommendationRepo {
       lastKey: res.LastEvaluatedKey,
     };
   }
+
+  /**
+   * Delete EVERY recommendation of `ownerId` (user erasure — ADR-0006 §8). Pages through the
+   * `byOwner` GSI (keys only), then deletes each item in a per-item TransactWriteItems that pairs
+   * the existence-conditional Delete with a counter `ADD itemCount -1` — the exact mirror of
+   * `create`'s conditional Put + `ADD itemCount 1`, so the sentinel counter stays exact by
+   * construction: a concurrently-vanished item cancels the WHOLE transaction (no decrement, not
+   * counted). Returns the number actually deleted.
+   */
+  async deleteByOwner(ownerId: string): Promise<number> {
+    let deleted = 0;
+    let startKey: Record<string, unknown> | undefined;
+    do {
+      const res = await this.doc.send(
+        new QueryCommand({
+          TableName: this.tableName,
+          IndexName: "byOwner",
+          KeyConditionExpression: "ownerId = :ownerId",
+          ExpressionAttributeValues: { ":ownerId": ownerId },
+          ProjectionExpression: "recommendationId",
+          ExclusiveStartKey: startKey,
+        }),
+      );
+      for (const item of res.Items ?? []) {
+        const { recommendationId } = z.object({ recommendationId: z.string() }).parse(item);
+        try {
+          await this.doc.send(
+            new TransactWriteCommand({
+              TransactItems: [
+                {
+                  Delete: {
+                    TableName: this.tableName,
+                    Key: { recommendationId },
+                    ConditionExpression: "attribute_exists(recommendationId)",
+                  },
+                },
+                {
+                  Update: {
+                    TableName: this.tableName,
+                    Key: { recommendationId: RECOMMENDATION_COUNTER_PK },
+                    UpdateExpression: "ADD itemCount :minusOne",
+                    ExpressionAttributeValues: { ":minusOne": -1 },
+                  },
+                },
+              ],
+            }),
+          );
+          deleted += 1;
+        } catch (err) {
+          // The item vanished between the GSI read and the delete: the conditional cancels the
+          // whole transaction (counter untouched). Anything else is a real failure.
+          if (!isConditionalCancellation(err)) throw err;
+        }
+      }
+      startKey = res.LastEvaluatedKey;
+    } while (startKey);
+    return deleted;
+  }
+}
+
+/** True when a TransactWriteItems was cancelled by one of its ConditionExpressions. */
+function isConditionalCancellation(err: unknown): boolean {
+  return (
+    err instanceof TransactionCanceledException &&
+    (err.CancellationReasons ?? []).some((r) => r.Code === "ConditionalCheckFailed")
+  );
 }
