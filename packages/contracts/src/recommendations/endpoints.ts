@@ -1,5 +1,6 @@
 import { z } from "zod";
-import { PageQuery, page, RecommendationId } from "../common";
+import { Bps, PageQuery, page, RecommendationId } from "../common";
+import { ExchangeRate } from "../fx/rate";
 import { CashbackEstimate } from "./cashback";
 import { Product, StoreId, StoreProductId } from "./product";
 import { Recommendation, RecommendationSummary } from "./recommendation";
@@ -12,7 +13,19 @@ export type ResolveProductBody = z.infer<typeof ResolveProductBody>;
 
 // `estimate` is computed from the **current** CONFIG split policy (no recommendation exists yet);
 // CreateRecommendation then snapshots that policy onto the link.
-export const ResolveProductResponse = z.object({ product: Product, estimate: CashbackEstimate });
+//
+// `displayFx` lets the SPA render amounts in the member's currency (the CashbackEstimate contract:
+// "the SPA converts ... for display convenience"): the cached settlement→display rate plus the
+// CONFIG conversion-commission margin, applied client-side via @wanthat/domain `convertMinor`.
+// Null when the cache has no rate — the SPA then shows settlement-currency amounts.
+export const DisplayFx = z.object({ rate: ExchangeRate, commissionBps: Bps });
+export type DisplayFx = z.infer<typeof DisplayFx>;
+
+export const ResolveProductResponse = z.object({
+  product: Product,
+  estimate: CashbackEstimate,
+  displayFx: DisplayFx.nullable(),
+});
 export type ResolveProductResponse = z.infer<typeof ResolveProductResponse>;
 
 // POST /recommendations — generate this member's shareable recommendation (+ optional review).

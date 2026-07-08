@@ -629,7 +629,96 @@ function IntegrationsCard({ token }: { token: string | null }) {
           </div>
         ) : null}
       </div>
+      <TrackingIdRow token={token} />
     </SectionCard>
+  );
+}
+
+/**
+ * The AliExpress tracking id (`retailer.aliexpressTrackingId`) — a plain, round-trippable config
+ * value that belongs visually with the AliExpress credentials, not the FieldMeta grid. Must name
+ * a tracking id that exists in the AliExpress portal; the retailer-proxy reads it per invoke.
+ */
+function TrackingIdRow({ token }: { token: string | null }) {
+  const { t } = useTranslation();
+  // null = still loading the stored value.
+  const [saved, setSaved] = useState<string | null>(null);
+  const [draft, setDraft] = useState("");
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  useEffect(() => {
+    if (!token) return;
+    adminApi
+      .getConfig(token, "retailer.aliexpressTrackingId")
+      .then((res) => {
+        const value = String(res.item.value);
+        setSaved(value);
+        setDraft(value);
+      })
+      .catch(() => setSaved(""));
+  }, [token]);
+
+  const canSave =
+    saved !== null && draft.trim().length > 0 && draft.trim() !== saved && state !== "saving";
+
+  const save = async () => {
+    if (!token || !canSave) return;
+    setState("saving");
+    try {
+      const item = await adminApi.putConfig(token, "retailer.aliexpressTrackingId", draft.trim());
+      setSaved(String(item.item.value));
+      setState("saved");
+    } catch {
+      setState("error");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-2.5 border-t border-[#eef2f0] py-5">
+      <div>
+        <div className="text-sm font-semibold text-ink">{t("admin.integrations.trackingId")}</div>
+        <div className="mt-0.5 text-[12.5px] text-muted">
+          {t("admin.integrations.trackingIdDesc")}
+        </div>
+      </div>
+      <form
+        className="flex flex-col gap-2.5 sm:flex-row sm:items-center"
+        onSubmit={(e) => {
+          e.preventDefault();
+          void save();
+        }}
+      >
+        <div className="flex flex-1 items-center rounded-input border border-[#e0e6e3] bg-base px-3.5 py-2.5">
+          <input
+            type="text"
+            dir="ltr"
+            aria-label={t("admin.integrations.trackingId")}
+            placeholder={saved === null ? "…" : t("admin.integrations.trackingId")}
+            value={draft}
+            onChange={(e) => {
+              setState("idle");
+              setDraft(e.target.value);
+            }}
+            className="w-full border-none bg-transparent text-sm font-semibold text-ink outline-none"
+          />
+        </div>
+        <div className="sm:w-[180px] sm:flex-shrink-0">
+          <Button type="submit" disabled={!canSave} loading={state === "saving"}>
+            {t("admin.integrations.trackingIdSave")}
+          </Button>
+        </div>
+      </form>
+      {state === "saved" ? (
+        <div className="text-[12.5px] font-semibold text-accent">
+          {t("admin.integrations.trackingIdSaved")}
+        </div>
+      ) : null}
+      {state === "error" ? (
+        <div className="text-[12.5px] font-semibold text-rejected">
+          {t("admin.integrations.trackingIdError")}
+        </div>
+      ) : null}
+    </div>
   );
 }
 

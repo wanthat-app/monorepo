@@ -14,7 +14,6 @@ import type { LambdaEvent } from "hono/aws-lambda";
 import { handle } from "hono/aws-lambda";
 import { authRouter } from "./auth/register";
 import { getContext } from "./context";
-import { productsRouter, recommendationsRouter } from "./links/router";
 import { meRouter } from "./me/router";
 import { walletRouter } from "./wallet/router";
 
@@ -40,9 +39,8 @@ app.get("/healthz/db", async (c) => {
 app.route("/auth", authRouter());
 app.route("/me", meRouter());
 app.route("/wallet", walletRouter());
-// The links module (ADR-0002): resolve products + mint recommendations, behind the JWT authorizer.
-app.route("/products", productsRouter());
-app.route("/recommendations", recommendationsRouter());
+// The links module lives on the NON-VPC app-auth edge (Aurora-free path; the sync retailer-proxy
+// invoke is free there — in-VPC it would need a paid lambda interface endpoint, ADR-0004).
 
 // Log any uncaught handler error (otherwise Hono returns 500 with no trace) so an in-VPC connection
 // failure surfaces instead of a silent Lambda timeout.

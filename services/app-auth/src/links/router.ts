@@ -2,6 +2,7 @@ import { parseAliExpressProductUrl } from "@wanthat/aliexpress";
 import type {
   CashbackEstimate,
   CashbackSplit,
+  DisplayFx as DisplayFxValue,
   GenerateLinkErrorCode,
   Product,
   Recommendation,
@@ -54,6 +55,25 @@ async function currentSplit(): Promise<CashbackSplit> {
     ctx.config.get("cashback.consumerBps"),
   ]);
   return { referrerBps: Bps.parse(referrerBps), consumerBps: Bps.parse(consumerBps) };
+}
+
+/** Display currency for the Israeli MVP; the wallet's ILS estimate uses the same convention. */
+const DISPLAY_CURRENCY = "ILS";
+
+/**
+ * The cached settlement→ILS rate + the CONFIG conversion-commission margin, for client-side
+ * display conversion (contracts `DisplayFx`). Null (→ the SPA shows settlement amounts) when the
+ * product is unpriced, already in ILS, or the fx_rate cache has no entry for the pair yet.
+ */
+async function displayFx(settlementCurrency: string | undefined): Promise<DisplayFxValue | null> {
+  if (!settlementCurrency || settlementCurrency === DISPLAY_CURRENCY) return null;
+  const ctx = getContext();
+  const [rate, commissionBps] = await Promise.all([
+    ctx.fx.get(settlementCurrency, DISPLAY_CURRENCY),
+    ctx.config.get("fx.conversionCommissionBps"),
+  ]);
+  if (!rate) return null;
+  return { rate, commissionBps: Bps.parse(commissionBps) };
 }
 
 /**
@@ -184,6 +204,7 @@ export function productsRouter(): Hono<{ Bindings: Bindings }> {
       ResolveProductResponse.parse({
         product,
         estimate: buildEstimate(item.price, item.commissionBps, split),
+        displayFx: await displayFx(item.price?.currency),
       }),
     );
   });

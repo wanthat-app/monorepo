@@ -14,6 +14,7 @@ const { fake } = vi.hoisted(() => ({
     },
     config: { get: vi.fn() },
     retailerProxy: { generateLink: vi.fn() },
+    fx: { get: vi.fn() },
     appUrl: "https://dev.wanthat.app",
   },
 }));
@@ -92,9 +93,12 @@ const json = async <T>(res: Response) => (await res.json()) as T;
 
 beforeEach(() => {
   vi.clearAllMocks();
-  fake.config.get.mockImplementation(async (key: string) =>
-    key === "cashback.referrerBps" ? 5000 : 0,
-  );
+  fake.config.get.mockImplementation(async (key: string) => {
+    if (key === "cashback.referrerBps") return 5000;
+    if (key === "fx.conversionCommissionBps") return 200;
+    return 0;
+  });
+  fake.fx.get.mockResolvedValue(undefined); // no cached rate by default → displayFx null
 });
 
 describe("POST /products/resolve", () => {
@@ -123,6 +127,21 @@ describe("POST /products/resolve", () => {
     const res = await req("/products/resolve", "POST", { url: URL_OK });
     expect(res.status).toBe(200);
     expect(fake.retailerProxy.generateLink).toHaveBeenCalledWith(URL_OK);
+  });
+
+  it("carries the cached display rate + fx margin when the pair is cached, null otherwise", async () => {
+    fake.products.get.mockResolvedValue(PRODUCT_ITEM);
+    const noRate = await req("/products/resolve", "POST", { url: URL_OK });
+    expect((await json<{ displayFx: unknown }>(noRate)).displayFx).toBeNull();
+
+    const rate = { base: "USD", quote: "ILS", rate: "3.7215", asOf: NOW };
+    fake.fx.get.mockResolvedValue(rate);
+    const withRate = await req("/products/resolve", "POST", { url: URL_OK });
+    expect((await json<{ displayFx: unknown }>(withRate)).displayFx).toEqual({
+      rate,
+      commissionBps: 200,
+    });
+    expect(fake.fx.get).toHaveBeenCalledWith("USD", "ILS");
   });
 
   it("rejects a non-AliExpress URL locally (400, no proxy invoke)", async () => {

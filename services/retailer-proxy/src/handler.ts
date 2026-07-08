@@ -10,8 +10,8 @@
  */
 import { Logger } from "@aws-lambda-powertools/logger";
 import { AliExpressClient } from "@wanthat/aliexpress";
-import { GenerateLinkRequest } from "@wanthat/contracts";
-import { getDocClient, ProductRepo } from "@wanthat/dynamo";
+import { GenerateLinkRequest, RetailerAliexpressTrackingId } from "@wanthat/contracts";
+import { getDocClient, ProductRepo, RuntimeConfigRepo } from "@wanthat/dynamo";
 import { RetailerCredentialsReader } from "./credentials";
 import { type GenerateLinkDeps, type GenerateLinkWire, generateLink } from "./generate-link";
 
@@ -40,13 +40,20 @@ let cached: GenerateLinkDeps | undefined;
 function getDeps(): GenerateLinkDeps {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
+  const doc = getDocClient(region);
   const credentials = new RetailerCredentialsReader(requireEnv("RETAILER_SECRET_ARN"));
-  const trackingId = process.env.ALIEXPRESS_TRACKING_ID ?? "wanthat";
+  const config = new RuntimeConfigRepo(doc, requireEnv("RUNTIME_CONFIG_TABLE"));
   cached = {
-    products: new ProductRepo(getDocClient(region), requireEnv("PRODUCT_TABLE")),
+    products: new ProductRepo(doc, requireEnv("PRODUCT_TABLE")),
     client: async () => {
       const creds = await credentials.get();
       if (!creds) return null;
+      // Admin-tunable (runtime config, next to the credentials): must name a tracking id that
+      // exists in the AliExpress portal. Read per client build — an admin change applies on the
+      // next invoke, no redeploy.
+      const trackingId = RetailerAliexpressTrackingId.parse(
+        await config.get("retailer.aliexpressTrackingId"),
+      );
       return new AliExpressClient({ ...creds, trackingId });
     },
     logger,

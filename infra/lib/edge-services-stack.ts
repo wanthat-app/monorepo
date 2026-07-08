@@ -101,11 +101,12 @@ export class EdgeServicesStack extends Stack {
     // least-privilege per ADR-0002; the poll slice adds what listOrders actually needs).
     props.productTable.grantReadWriteData(retailerProxy);
     props.retailerSecret.grantRead(retailerProxy);
+    // The AliExpress tracking id is runtime config (`retailer.aliexpressTrackingId`, admin-set
+    // next to the credentials) - the proxy reads it per invoke, so changing it needs no redeploy.
+    props.runtimeConfigTable.grantReadData(retailerProxy);
     retailerProxy.addEnvironment("RETAILER_SECRET_ARN", props.retailerSecret.secretArn);
     retailerProxy.addEnvironment("PRODUCT_TABLE", props.productTable.tableName);
-    // The single Wanthat tracking id registered with AliExpress (SDD 8.1 - one per network,
-    // never per-user). Update here when the portal-side tracking id changes.
-    retailerProxy.addEnvironment("ALIEXPRESS_TRACKING_ID", "wanthat");
+    retailerProxy.addEnvironment("RUNTIME_CONFIG_TABLE", props.runtimeConfigTable.tableName);
 
     // --- scheduled writers ---
     const poller = makeFn("ConversionPoller", "conversion-poller");

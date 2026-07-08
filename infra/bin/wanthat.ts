@@ -67,6 +67,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   userPoolClient: identity.userPoolClient,
   productTable: data.productTable,
   recommendationTable: data.recommendationTable,
+  fxRateTable: data.fxRateTable,
   guestAttributionTable: data.guestAttributionTable,
   runtimeConfigTable: data.runtimeConfigTable,
   authChallengeTable: data.authChallengeTable,

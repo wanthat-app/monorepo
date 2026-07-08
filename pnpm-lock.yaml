@@ -38,6 +38,9 @@ importers:
       '@wanthat/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@wanthat/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       i18next:
         specifier: ^23.15.0
         version: 23.16.8
@@ -272,12 +275,21 @@ importers:
       '@aws-sdk/client-cognito-identity-provider':
         specifier: ^3.600.0
         version: 3.1076.0
+      '@aws-sdk/client-lambda':
+        specifier: ^3.600.0
+        version: 3.1081.0
+      '@wanthat/aliexpress':
+        specifier: workspace:*
+        version: link:../../packages/aliexpress
       '@wanthat/auth':
         specifier: workspace:*
         version: link:../../packages/auth
       '@wanthat/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@wanthat/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@wanthat/dynamo':
         specifier: workspace:*
         version: link:../../packages/dynamo
@@ -293,12 +305,6 @@ importers:
       '@aws-lambda-powertools/logger':
         specifier: ^2.8.0
         version: 2.33.1
-      '@aws-sdk/client-lambda':
-        specifier: ^3.600.0
-        version: 3.1081.0
-      '@wanthat/aliexpress':
-        specifier: workspace:*
-        version: link:../../packages/aliexpress
       '@wanthat/auth':
         specifier: workspace:*
         version: link:../../packages/auth
@@ -308,9 +314,6 @@ importers:
       '@wanthat/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@wanthat/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
       '@wanthat/dynamo':
         specifier: workspace:*
         version: link:../../packages/dynamo

@@ -1,14 +1,18 @@
 import { TicketSigner } from "@wanthat/auth";
 import {
   AuthChallengeRepo,
+  FxRateRepo,
   GuestAttributionRepo,
   getDocClient,
   PasskeyCredentialRepo,
   PhoneVelocityRepo,
+  ProductRepo,
+  RecommendationRepo,
   type RuntimeConfigReader,
   RuntimeConfigRepo,
 } from "@wanthat/dynamo";
 import { Cognito } from "./auth/cognito";
+import { RetailerProxyClient } from "./links/proxy-client";
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -27,6 +31,14 @@ export interface AuthContext {
   tickets: TicketSigner;
   /** Own-store passkey credentials (ADR-0022) — `app-auth` verifies WebAuthn itself, not Cognito. */
   passkeys: PasskeyCredentialRepo;
+  /** Links module (ADR-0002; served from this non-VPC edge so the retailer-proxy invoke is free —
+   * the in-VPC placement would need a paid lambda interface endpoint, ADR-0004). */
+  products: ProductRepo;
+  recommendations: RecommendationRepo;
+  retailerProxy: RetailerProxyClient;
+  fx: FxRateRepo;
+  /** Canonical SPA origin for shareUrl (env APP_URL). */
+  appUrl: string;
   /** WebAuthn Relying Party identity (ADR-0022): `rpId` is the site's registrable domain;
    * `origins` are the exact origins the SPA is served from. Both pin `verifyRegistration`/
    * `verifyAuthentication` to this site so an assertion for another origin/RP is rejected. */
@@ -53,6 +65,11 @@ export function getContext(): AuthContext {
     cognito: new Cognito(requireEnv("USER_POOL_ID"), requireEnv("USER_POOL_CLIENT_ID"), region),
     tickets: new TicketSigner(requireEnv("AUTH_TICKET_SECRET_ARN"), region),
     passkeys: new PasskeyCredentialRepo(doc, requireEnv("PASSKEY_CREDENTIAL_TABLE")),
+    products: new ProductRepo(doc, requireEnv("PRODUCT_TABLE")),
+    recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
+    retailerProxy: new RetailerProxyClient(requireEnv("RETAILER_PROXY_FUNCTION")),
+    fx: new FxRateRepo(doc, requireEnv("FX_RATE_TABLE")),
+    appUrl: requireEnv("APP_URL"),
     webauthn: {
       rpId: requireEnv("WEBAUTHN_RP_ID"),
       origins: requireEnv("WEBAUTHN_ORIGINS")
