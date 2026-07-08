@@ -6,15 +6,21 @@ import {
 } from "./endpoints";
 
 describe("ResolveProductBody contract", () => {
-  it("accepts a product URL", () => {
+  it("accepts a product URL and whole share-button text (the URL is extracted server-side)", () => {
     expect(
       ResolveProductBody.safeParse({ url: "https://he.aliexpress.com/item/1005006123456789.html" })
         .success,
     ).toBe(true);
+    expect(
+      ResolveProductBody.safeParse({
+        url: "I just found this on AliExpress: … https://a.aliexpress.com/_c3TWMcp5",
+      }).success,
+    ).toBe(true);
   });
 
-  it("rejects a non-URL", () => {
-    expect(ResolveProductBody.safeParse({ url: "not a url" }).success).toBe(false);
+  it("rejects an empty/oversized paste", () => {
+    expect(ResolveProductBody.safeParse({ url: "  " }).success).toBe(false);
+    expect(ResolveProductBody.safeParse({ url: "x".repeat(4001) }).success).toBe(false);
     expect(ResolveProductBody.safeParse({}).success).toBe(false);
   });
 });

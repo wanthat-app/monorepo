@@ -151,6 +151,28 @@ describe("POST /products/resolve", () => {
     expect(fake.products.get).not.toHaveBeenCalled();
   });
 
+  it("resolves the whole share-button text: extracts the short link and lets the proxy expand it", async () => {
+    fake.retailerProxy.generateLink.mockResolvedValue({
+      status: "ok",
+      product: PRODUCT_ITEM,
+      affiliateUrl: PRODUCT_ITEM.affiliateUrl,
+    });
+    fake.products.get.mockResolvedValue(PRODUCT_ITEM);
+    const shareText =
+      "I just found this on AliExpress:  | USB To 5V DC Power Cable\nhttps://a.aliexpress.com/_c3TWMcp5";
+    const res = await req("/products/resolve", "POST", { url: shareText });
+    expect(res.status).toBe(200);
+    // The short link goes straight to the proxy (no local id to cache-check) — extracted, not the prose.
+    expect(fake.retailerProxy.generateLink).toHaveBeenCalledWith(
+      "https://a.aliexpress.com/_c3TWMcp5",
+    );
+    // The reread uses the identity the proxy resolved via expansion.
+    expect(fake.products.get).toHaveBeenCalledWith(
+      PRODUCT_ITEM.storeId,
+      PRODUCT_ITEM.storeProductId,
+    );
+  });
+
   it.each([
     ["retailer_not_configured", 503],
     ["upstream_error", 502],

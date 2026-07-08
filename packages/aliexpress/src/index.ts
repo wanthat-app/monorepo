@@ -6,5 +6,6 @@
  */
 
 export * from "./client";
+export * from "./short-link";
 export * from "./sign";
 export * from "./url";

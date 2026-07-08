@@ -16,9 +16,10 @@ const DETAIL: AliExpressProductDetail = {
   commissionBps: 700,
 };
 
-function fakeProducts() {
+function fakeProducts(existing?: ProductItem) {
   const upserts: ProductUpsert[] = [];
   const products = {
+    get: async (): Promise<ProductItem | undefined> => existing,
     upsert: async (product: ProductUpsert, now: string): Promise<ProductItem> => {
       upserts.push(product);
       return { ...product, createdAt: now, updatedAt: now };
@@ -56,9 +57,9 @@ describe("generateLink", () => {
     expect(upserts[0]?.affiliateUrl).toBe("https://s.click.aliexpress.com/e/_abc");
   });
 
-  it("answers unsupported_url for a non-product URL without touching the retailer", async () => {
+  it("answers unsupported_url for a non-AliExpress URL without touching the retailer", async () => {
     const { products } = fakeProducts();
-    const res = await generateLink("https://a.aliexpress.com/_mShort", {
+    const res = await generateLink("https://www.amazon.com/dp/B00X", {
       products,
       client: async () => {
         throw new Error("must not be called");
@@ -66,6 +67,89 @@ describe("generateLink", () => {
       logger,
     });
     expect(res).toEqual({ status: "error", code: "unsupported_url" });
+  });
+
+  it("reuses an already-minted product with NO retailer call (one link.generate per product)", async () => {
+    const stored: ProductItem = {
+      storeId: "aliexpress",
+      storeProductId: "1005006123456789",
+      title: "Jebao Smart Aquarium Fish Feeder",
+      imageUrl: "https://ae01.alicdn.com/kf/feeder.jpg",
+      price: { amountMinor: "2612", currency: "USD" },
+      commissionBps: 700,
+      affiliateUrl: "https://s.click.aliexpress.com/e/_abc",
+      createdAt: NOW.toISOString(),
+      updatedAt: NOW.toISOString(),
+    };
+    const { products, upserts } = fakeProducts(stored);
+    const res = await generateLink(URL, {
+      products,
+      client: async () => {
+        throw new Error("must not be called");
+      },
+      logger,
+    });
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(res.affiliateUrl).toBe(stored.affiliateUrl);
+    expect(upserts).toHaveLength(0);
+  });
+
+  it("expands the share-button text via the short link and mints from the canonical URL", async () => {
+    const shareText =
+      "I just found this on AliExpress:  | USB To 5V DC Power Cable\nhttps://a.aliexpress.com/_c3TWMcp5";
+    const canonical = "https://www.aliexpress.com/item/1005006123456789.html";
+    const sourceUrls: string[] = [];
+    const { products, upserts } = fakeProducts();
+    const redirectFetch = (async () =>
+      new Response(null, { status: 302, headers: { location: canonical } })) as typeof fetch;
+    const res = await generateLink(shareText, {
+      products,
+      client: async () =>
+        fakeClient({
+          generate: async (url?: unknown) => {
+            sourceUrls.push(String(url));
+            return "https://s.click.aliexpress.com/e/_abc";
+          },
+        }),
+      logger,
+      fetchFn: redirectFetch,
+      now: () => NOW,
+    });
+    if (res.status !== "ok") throw new Error(`expected ok, got ${JSON.stringify(res)}`);
+    expect(res.product.storeProductId).toBe("1005006123456789");
+    expect(upserts).toHaveLength(1);
+    expect(sourceUrls).toEqual([canonical]); // link.generate gets the canonical item URL, not the short link
+  });
+
+  it("answers unsupported_url when the short link dead-ends off the allow-list", async () => {
+    const { products } = fakeProducts();
+    const evilFetch = (async () =>
+      new Response(null, {
+        status: 302,
+        headers: { location: "https://evil.example/item/1005006123456789.html" },
+      })) as typeof fetch;
+    const res = await generateLink("https://a.aliexpress.com/_c3TWMcp5", {
+      products,
+      client: async () => fakeClient(),
+      logger,
+      fetchFn: evilFetch,
+    });
+    expect(res).toEqual({ status: "error", code: "unsupported_url" });
+  });
+
+  it("answers upstream_error when the expansion fetch itself fails", async () => {
+    const { products } = fakeProducts();
+    const brokenFetch = (async () => {
+      throw new Error("network down");
+    }) as typeof fetch;
+    const res = await generateLink("https://a.aliexpress.com/_c3TWMcp5", {
+      products,
+      client: async () => fakeClient(),
+      logger,
+      fetchFn: brokenFetch,
+    });
+    expect(res.status).toBe("error");
+    if (res.status === "error") expect(res.code).toBe("upstream_error");
   });
 
   it("answers retailer_not_configured while the secret is unpopulated", async () => {

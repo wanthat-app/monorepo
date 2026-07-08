@@ -6,9 +6,12 @@ import { Product, StoreId, StoreProductId } from "./product";
 import { Recommendation, RecommendationSummary } from "./recommendation";
 import { Review } from "./review";
 
-// POST /products/resolve — paste a store URL → fetch/upsert the shared product + cashback.
-// Shared across members (no re-fetch if already known); idempotent on the product identity.
-export const ResolveProductBody = z.object({ url: z.string().url() });
+// POST /products/resolve — paste a store URL OR the whole share-button text ("I just found
+// this on AliExpress: … https://a.aliexpress.com/_x…") → fetch/upsert the shared product +
+// cashback. The server extracts the first supported URL from the text; a share short-link is
+// expanded by the retailer-proxy. Shared across members (no re-fetch if already known);
+// idempotent on the product identity.
+export const ResolveProductBody = z.object({ url: z.string().trim().min(4).max(4000) });
 export type ResolveProductBody = z.infer<typeof ResolveProductBody>;
 
 // `estimate` is computed from the **current** CONFIG split policy (no recommendation exists yet);

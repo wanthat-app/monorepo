@@ -13,7 +13,7 @@ import {
   type RecommendationWire,
 } from "../../lib/api";
 import { formatMoneyMinor } from "../../lib/money";
-import { isSupportedProductUrl, looksLikeUrl } from "../../lib/product-url";
+import { extractSupportedUrl } from "../../lib/product-url";
 import { useSession } from "../../lib/session";
 import { BackButton, Button } from "../../ui/components";
 import { ProductCard, ShareLinkRow } from "../../ui/wallet";
@@ -159,21 +159,24 @@ export function CreateLinkPage() {
     return null;
   }
 
-  const startCreate = (candidate: string) => {
+  const startCreate = (text: string) => {
     if (resolve.isPending) return;
     setInputError(null);
-    if (!isSupportedProductUrl(candidate)) {
+    // The paste may be the whole share-button message — send the extracted URL, not the prose.
+    const candidate = extractSupportedUrl(text);
+    if (!candidate) {
       setInputError(t("create.unsupported"));
       return;
     }
-    resolve.mutate(candidate.trim());
+    resolve.mutate(candidate);
   };
 
-  // Auto-submit the moment a full product link lands in the field (design: onPaste → startCreate).
+  // Auto-submit the moment a supported link lands in the field — whether pasted bare or inside
+  // the share-button text (design: onPaste → startCreate).
   const onPaste = (e: ClipboardEvent<HTMLTextAreaElement>) => {
     const pasted = e.clipboardData.getData("text").trim();
     const next = (url + pasted).trim();
-    if (looksLikeUrl(next) && isSupportedProductUrl(next)) {
+    if (extractSupportedUrl(next)) {
       e.preventDefault();
       setUrl(next);
       startCreate(next);
