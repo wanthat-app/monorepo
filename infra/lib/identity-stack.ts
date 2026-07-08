@@ -23,6 +23,16 @@ export interface IdentityStackProps extends StackProps {
   /** From DataStack — message-sender's dev-only OTP park (docs/dev-otp-sink.md), write-only grant. */
   /** Dev OTP sink table — absent in prod by design (fail-closed; docs/dev-otp-sink.md). */
   readonly devOtpSinkTable?: dynamodb.ITable;
+  /** From DataStack — the post-confirmation trigger queues the optin_welcome item here (ADR-0019). */
+  readonly notificationOutboxTable: dynamodb.ITable;
+  /** From DataStack — guestId -> sub mapping, claimed best-effort at confirmation (ADR-0008). */
+  readonly guestAttributionTable: dynamodb.ITable;
+}
+
+/** The deployed SPA origin for links in outbound messages (ADR-0019). Fails loudly without a domain. */
+function appUrl(wanthatEnv: WanthatEnv): string {
+  if (!wanthatEnv.domainName) throw new Error(`appUrl: env ${wanthatEnv.name} has no domainName`);
+  return `https://${wanthatEnv.domainName}`;
 }
 
 /** Per-env SNS monthly SMS spend hard cap (USD), the kill-switch fail-safe (ADR-0006 layer 4). */
@@ -65,6 +75,8 @@ export class IdentityStack extends Stack {
   readonly employeePoolDomain: cognito.UserPoolDomain;
   /** ADR-0019: the Cognito custom-SMS-sender executor — observed by ObservabilityStack. */
   readonly messageSenderFn: lambda.Function;
+  /** ADR-0006 decision 7: the Post-Confirmation welcome/attribution trigger — observed by ObservabilityStack. */
+  readonly postConfirmationFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: IdentityStackProps) {
     super(scope, id, props);
@@ -184,6 +196,34 @@ export class IdentityStack extends Stack {
       }),
     );
     this.userPool.addTrigger(cognito.UserPoolOperation.CUSTOM_SMS_SENDER, messageSenderFn);
+
+    // ADR-0006 decision 7: the welcome notification_outbox write (formerly /auth/register) plus the
+    // best-effort guest_attribution claim move to the Post-Confirmation trigger. DynamoDB only, no
+    // Aurora — which is exactly what makes a trigger acceptable here (no VPC, no cold DB resume).
+    // The handler NEVER throws (it logs and returns the event), so an outbox or attribution failure
+    // structurally cannot block a user's ConfirmSignUp.
+    const postConfirmationFn = new NodejsFunction(this, "PostConfirmation", {
+      functionName: `wanthat-${wanthatEnv.name}-post-confirmation`,
+      entry: serviceEntry("post-confirmation"),
+      handler: "handler",
+      runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
+      memorySize: 256,
+      timeout: Duration.seconds(10),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "PostConfirmationLogs", wanthatEnv),
+      // Non-VPC: Cognito-invoked; reaches DynamoDB over public AWS endpoints (ADR-0004 NAT-free).
+      environment: {
+        NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
+        GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
+        APP_URL: appUrl(wanthatEnv),
+      },
+      bundling: { minify: true, sourceMap: true },
+    });
+    this.postConfirmationFn = postConfirmationFn;
+    props.notificationOutboxTable.grantWriteData(postConfirmationFn);
+    props.guestAttributionTable.grantWriteData(postConfirmationFn);
+    this.userPool.addTrigger(cognito.UserPoolOperation.POST_CONFIRMATION, postConfirmationFn);
 
     // Browser origins allowed to complete the hosted-UI OAuth redirect — the same list the app/admin
     // HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).

@@ -263,6 +263,9 @@ importers:
       '@wanthat/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@wanthat/dynamo':
+        specifier: workspace:*
+        version: link:../../packages/dynamo
       hono:
         specifier: ^4.6.0
         version: 4.12.27
@@ -302,21 +305,12 @@ importers:
 
   services/app-core:
     dependencies:
-      '@aws-lambda-powertools/logger':
-        specifier: ^2.8.0
-        version: 2.33.1
-      '@wanthat/auth':
-        specifier: workspace:*
-        version: link:../../packages/auth
       '@wanthat/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
       '@wanthat/db':
         specifier: workspace:*
         version: link:../../packages/db
-      '@wanthat/dynamo':
-        specifier: workspace:*
-        version: link:../../packages/dynamo
       hono:
         specifier: ^4.6.0
         version: 4.12.27
@@ -398,6 +392,15 @@ importers:
       '@wanthat/whatsapp':
         specifier: workspace:*
         version: link:../../packages/whatsapp
+
+  services/post-confirmation:
+    dependencies:
+      '@aws-lambda-powertools/logger':
+        specifier: ^2.8.0
+        version: 2.33.1
+      '@wanthat/dynamo':
+        specifier: workspace:*
+        version: link:../../packages/dynamo
 
   services/retailer-proxy:
     dependencies:

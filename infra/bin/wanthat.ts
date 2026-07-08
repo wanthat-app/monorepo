@@ -59,6 +59,9 @@ const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), {
   crossRegionReferences: true,
   runtimeConfigTable: data.runtimeConfigTable,
   devOtpSinkTable: data.devOtpSinkTable,
+  // Post-Confirmation trigger targets (ADR-0006 decision 7): welcome outbox + guest attribution.
+  notificationOutboxTable: data.notificationOutboxTable,
+  guestAttributionTable: data.guestAttributionTable,
 });
 const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   ...common,
@@ -157,6 +160,7 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
     { label: "conversion-poller", fn: edgeServices.conversionPollerFn },
     { label: "fx-rates", fn: edgeServices.fxRatesFn },
     { label: "message-sender", fn: identity.messageSenderFn },
+    { label: "post-confirmation", fn: identity.postConfirmationFn },
     { label: "whatsapp-dispatcher", fn: whatsapp.dispatcherFn },
   ],
   cluster: data.cluster,
