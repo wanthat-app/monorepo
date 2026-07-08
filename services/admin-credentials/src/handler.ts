@@ -51,8 +51,9 @@ function actorFrom(c: Context<{ Bindings: Bindings }>): string {
  * Moderation audit line. Aurora's hash-chained audit log is unreachable from this non-VPC
  * function (the database is in-VPC and the VPC is endpoint-free, ADR-0004), so moderation
  * actions are audited as structured CloudWatch log lines carrying the same fields the audit_log
- * payloads use (type/phone/actor). Folding these into the /admin/activity feed is a T7
- * follow-up alongside the customer-table drop.
+ * payloads use (type/phone/actor). Folding these into the /admin/activity feed remains an OPEN
+ * follow-up — T7 recorded it on the feed route (admin-api) without implementing it (a CloudWatch
+ * Logs read or an off-band ingest into audit_log).
  */
 function audit(type: string, phone: string, actor: string): void {
   console.log(JSON.stringify({ audit: type, phone, actor, at: new Date().toISOString() }));

@@ -28,8 +28,9 @@ export interface AdminContext {
 let cached: AdminContext | undefined;
 
 /**
- * Per-container deps for admin-api (ADR-0002/0006). Aurora is reached read-only as `app_ro` (the
- * admin role never mutates money/PII); the runtime `config` table is the one thing admin-api writes.
+ * Per-container deps for admin-api (ADR-0002/0006). Aurora (money-only since T7) is reached
+ * read-only as `app_ro` — the admin role never mutates money; the runtime `config` table is the
+ * one thing admin-api writes.
  */
 export function getContext(): AdminContext {
   if (cached) return cached;

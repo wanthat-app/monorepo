@@ -5,8 +5,8 @@ import { IsoDateTime, PhoneE164, Uuid } from "../common";
  * Admin users surface (the operator console's user management). Cognito is the customer store
  * (ADR-0006), so the whole surface — list/search, moderation, account removal — is served by the
  * non-VPC admin-credentials function: the endpoint-free VPC cannot reach cognito-idp (ADR-0004).
- * The Aurora-side DELETE /admin/users/:id survives on admin-api only until T7 drops the
- * `customer` table.
+ * The Aurora-side DELETE /admin/users/:id died with the `customer` table (T7, ADR-0006 decision
+ * 4) — admin-api answers it 410 Gone until the SPA calls cognito-delete alone.
  */
 
 /**
@@ -63,9 +63,10 @@ export const ListUsersResponse = z.object({
 export type ListUsersResponse = z.infer<typeof ListUsersResponse>;
 
 /**
- * DELETE /admin/users/:id — the Aurora-side hard delete (refused 409 `has_wallet_history` while
- * any wallet_entry references the customer). Removed in T7 with the `customer` table; until then
- * the SPA still runs it before the Cognito cleanup.
+ * DELETE /admin/users/:id — the former Aurora-side hard delete. Removed in T7 with the
+ * `customer` table: the route now answers 410 Gone and this shape has no producer. Kept only
+ * because the SPA delete flow still compiles against it; delete the schema (and the route) when
+ * the SPA switches to cognito-delete alone.
  */
 export const DeleteUserResponse = z.object({
   deleted: z.literal(true),

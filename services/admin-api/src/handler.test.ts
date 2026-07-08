@@ -18,7 +18,6 @@ vi.mock("./context", () => ({ getContext: () => ctx }));
 
 const { dbFns } = vi.hoisted(() => ({
   dbFns: {
-    adminDeleteCustomer: vi.fn(),
     listAuditLog: vi.fn(),
   },
 }));
@@ -117,40 +116,40 @@ const USER = {
   updatedAt: "2026-07-01T00:00:00.000Z",
 };
 
-describe("admin users (Aurora-side delete only - listing/ban tooling live on admin-credentials)", () => {
+describe("admin users (whole surface lives on admin-credentials since T7)", () => {
   it("501s the list route here - GET /admin/users is served by admin-credentials (ADR-0006)", async () => {
     const res = await app.request("/admin/users", {}, adminEnv);
     expect(res.status).toBe(501);
   });
 
-  it("refuses to delete a user with wallet history", async () => {
-    dbFns.adminDeleteCustomer.mockResolvedValue({ outcome: "has_wallet_history" });
+  it("410s the removed Aurora-side delete (T7: no customer table; cognito-delete stands alone)", async () => {
     const res = await app.request(`/admin/users/${USER.id}`, { method: "DELETE" }, adminEnv);
-    expect(res.status).toBe(409);
-    expect(((await res.json()) as { error: string }).error).toBe("has_wallet_history");
+    expect(res.status).toBe(410);
+    expect(((await res.json()) as { error: string }).error).toBe("gone");
   });
 
-  it("deletes a clean user and returns the phone for Cognito cleanup", async () => {
-    dbFns.adminDeleteCustomer.mockResolvedValue({ outcome: "deleted", phone: USER.phone });
-    const res = await app.request(`/admin/users/${USER.id}`, { method: "DELETE" }, adminEnv);
+  it("403s the delete route for a non-admin (the guard still runs before the 410)", async () => {
+    const res = await app.request(`/admin/users/${USER.id}`, { method: "DELETE" }, memberEnv);
+    expect(res.status).toBe(403);
+  });
+});
+
+describe("admin stats (user-population stats are gone since T7 - Aurora is money-only)", () => {
+  it("returns an empty UsersStats object (every field optional, no in-VPC source)", async () => {
+    const res = await app.request("/admin/stats/users", {}, adminEnv);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ deleted: true, id: USER.id, phone: USER.phone });
-    expect(dbFns.adminDeleteCustomer).toHaveBeenCalledWith(
-      expect.anything(),
-      USER.id,
-      "dennis@wanthat.co.il",
-    );
+    expect(await res.json()).toEqual({});
   });
 
-  it("404s a delete for an unknown id", async () => {
-    dbFns.adminDeleteCustomer.mockResolvedValue({ outcome: "not_found" });
-    const res = await app.request(`/admin/users/${USER.id}`, { method: "DELETE" }, adminEnv);
-    expect(res.status).toBe(404);
-  });
-
-  it("400s a non-uuid id", async () => {
-    const res = await app.request("/admin/users/not-a-uuid", { method: "DELETE" }, adminEnv);
-    expect(res.status).toBe(400);
+  it("overview reports usersCount null alongside the other placeholders", async () => {
+    const res = await app.request("/admin/stats/overview", {}, adminEnv);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      usersCount: null,
+      pendingApprovals: null,
+      totalCashbackMinor: null,
+      conversions30d: null,
+    });
   });
 });
 
