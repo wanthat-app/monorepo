@@ -28,6 +28,16 @@ export type CreateRecommendationBody = z.infer<typeof CreateRecommendationBody>;
 export const CreateRecommendationResponse = z.object({ recommendation: Recommendation });
 export type CreateRecommendationResponse = z.infer<typeof CreateRecommendationResponse>;
 
+// PATCH /recommendations/{recommendationId} — set or clear the caller's review on an existing
+// recommendation. The link is created (and shareable) the moment the summary screen opens; the
+// review is edited in place afterwards (design: Wallet flow, summary screen), so it needs its
+// own write. Only the review is mutable — the cashback snapshot and product are locked (ADR-0008).
+export const UpdateRecommendationBody = z.object({ review: Review.nullable() });
+export type UpdateRecommendationBody = z.infer<typeof UpdateRecommendationBody>;
+
+export const UpdateRecommendationResponse = z.object({ recommendation: Recommendation });
+export type UpdateRecommendationResponse = z.infer<typeof UpdateRecommendationResponse>;
+
 // GET /recommendations — list mine (cursor-paginated).
 export const ListRecommendationsQuery = PageQuery;
 export type ListRecommendationsQuery = z.infer<typeof ListRecommendationsQuery>;

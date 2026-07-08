@@ -20,6 +20,7 @@ import {
 
 export interface EdgeServicesStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
+  readonly productTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
   readonly guestAttributionTable: dynamodb.ITable;
   readonly runtimeConfigTable: dynamodb.ITable;
@@ -95,9 +96,16 @@ export class EdgeServicesStack extends Stack {
     // --- retailer proxy (sole egress; holds the credential) ---
     const retailerProxy = makeFn("RetailerProxy", "retailer-proxy");
     this.retailerProxyFn = retailerProxy;
+    // generateLink upserts the shared Product (ADR-0004: the proxy owns the Product write; the
+    // in-VPC caller writes the Recommendation).
+    props.productTable.grantReadWriteData(retailerProxy);
     props.recommendationTable.grantReadWriteData(retailerProxy);
     props.retailerSecret.grantRead(retailerProxy);
     retailerProxy.addEnvironment("RETAILER_SECRET_ARN", props.retailerSecret.secretArn);
+    retailerProxy.addEnvironment("PRODUCT_TABLE", props.productTable.tableName);
+    // The single Wanthat tracking id registered with AliExpress (SDD 8.1 - one per network,
+    // never per-user). Update here when the portal-side tracking id changes.
+    retailerProxy.addEnvironment("ALIEXPRESS_TRACKING_ID", "wanthat");
 
     // --- scheduled writers ---
     const poller = makeFn("ConversionPoller", "conversion-poller");

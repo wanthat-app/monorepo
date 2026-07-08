@@ -7,6 +7,7 @@ import { AdminCallbackPage } from "./features/admin/AdminCallbackPage";
 import { AdminPage } from "./features/admin/AdminPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { CallbackPage } from "./features/auth/CallbackPage";
+import { CreateLinkPage } from "./features/create/CreateLinkPage";
 import { HomePage } from "./features/home/HomePage";
 import { SharedProductPage } from "./features/landing/SharedProductPage";
 import { NotFoundPage } from "./features/not-found/NotFoundPage";
@@ -21,6 +22,7 @@ const router = createBrowserRouter([
   { path: "/auth", element: <AuthPage /> },
   { path: "/auth/callback", element: <CallbackPage /> },
   { path: "/home", element: <HomePage /> },
+  { path: "/create", element: <CreateLinkPage /> },
   // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).
   { path: "/p/:id", element: <SharedProductPage /> },
   // Each admin view has its own URL so deep links, reloads and browser history work.

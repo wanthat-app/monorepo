@@ -3,24 +3,9 @@ import {
   ListWalletEntriesQuery,
   ListWalletEntriesResponse,
 } from "@wanthat/contracts";
-import type { Context } from "hono";
 import { Hono } from "hono";
 import { type Bindings, subFromClaims } from "../claims";
-
-/**
- * Serialise a contract-parsed value with Money's wire rule (bigint minor units → decimal
- * string). `c.json` would throw on bigint — JSON has no bigint (see contracts/common/money.ts).
- * Every response that carries a `Money` (directly or nested, e.g. `WalletEntry.amount` in the
- * entries list) must go through this, not `c.json` — even when the stub data is empty, the Zod
- * defaults/shape can still surface a bigint field.
- */
-function moneyJson(c: Context<{ Bindings: Bindings }>, value: unknown): Response {
-  return c.body(
-    JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v)),
-    200,
-    { "content-type": "application/json" },
-  );
-}
+import { moneyJson } from "../http";
 
 /**
  * Wallet reads for the member home (spec 2026-07-07-member-home). STUB: the contract, routes and

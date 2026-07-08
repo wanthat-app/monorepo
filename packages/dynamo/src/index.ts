@@ -23,4 +23,10 @@ export {
 } from "./notification-outbox";
 export { type PasskeyCredentialItem, PasskeyCredentialRepo } from "./passkey-credential";
 export { PhoneVelocityRepo } from "./phone-velocity";
+export { ProductItem, ProductRepo, type ProductUpsert } from "./product";
+export {
+  RecommendationItem,
+  type RecommendationPage,
+  RecommendationRepo,
+} from "./recommendation";
 export { type RuntimeConfigReader, RuntimeConfigRepo } from "./runtime-config";

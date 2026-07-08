@@ -32,11 +32,12 @@ const FACE_ICON = (
 
 /**
  * Member home — the wallet dashboard (design handoff: Wallet flow, Home). Balance + activity come
- * from the wallet endpoints (stubbed empty until the poller slice writes the ledger). Create link,
- * Activity, Profile, See all and Withdraw are visible per the design but inert this slice; the
- * Face ID prompt card is live — shown only to members with no enrolled passkey (server truth via
- * GET /auth/passkey/list; hidden while unknown so the enrolled majority never sees a flash).
- * Sign-out stays reachable via the avatar menu meanwhile.
+ * from the wallet endpoints (stubbed empty until the poller slice writes the ledger). Create link
+ * is LIVE (nav button, mobile FAB and the promo card all open /create); Activity, Profile, See all
+ * and Withdraw are visible per the design but inert this slice; the Face ID prompt card is live —
+ * shown only to members with no enrolled passkey (server truth via GET /auth/passkey/list; hidden
+ * while unknown so the enrolled majority never sees a flash). Sign-out stays reachable via the
+ * avatar menu meanwhile.
  */
 export function HomePage() {
   const { t, i18n } = useTranslation();
@@ -111,7 +112,7 @@ export function HomePage() {
 
   return (
     <div className="relative flex min-h-screen flex-col bg-page">
-      {/* Desktop chrome: top nav. Activity / Create link / avatar-menu-open are the slice's inert edges. */}
+      {/* Desktop chrome: top nav. Activity / avatar-menu-open are the slice's inert edges. */}
       <div className="hidden md:block">
         <TopNav
           links={[
@@ -119,6 +120,7 @@ export function HomePage() {
             { key: "activity", label: t("home.navActivity") },
           ]}
           createLabel={t("home.createLink")}
+          onCreate={() => navigate("/create")}
           profileInitial={customer.firstName.charAt(0).toUpperCase()}
           onProfile={() => setMenuOpen((v) => !v)}
         />
@@ -163,6 +165,24 @@ export function HomePage() {
           />
         )}
 
+        {/* "Turn a link into cashback" promo (design: Home) — the whole card opens the create flow. */}
+        <button
+          type="button"
+          onClick={() => navigate("/create")}
+          className="rounded-card border border-line bg-surface p-5 text-start transition hover:border-accent-border"
+        >
+          <h2 className="text-[15px] font-bold text-ink">{t("home.turnLinkTitle")}</h2>
+          <p className="mt-0.5 text-[13px] text-muted">{t("home.turnLinkSub")}</p>
+          <span className="mt-3 flex items-center gap-2.5 rounded-field border border-edge bg-page px-4 py-2.5">
+            <span className="min-w-0 flex-1 truncate text-start text-sm text-placeholder">
+              {t("home.pastePlaceholder")}
+            </span>
+            <span className="shrink-0 rounded-full bg-accent px-3.5 py-1.5 text-xs font-bold text-white">
+              + {t("home.createLink")}
+            </span>
+          </span>
+        </button>
+
         {/* Only members who have NOT enrolled a passkey yet see the prompt. `length === 0` is the
             deliberate gate: while the list is loading (or failed) it is undefined, so enrolled
             members never see the card flash and an outage stays quiet rather than nagging. */}
@@ -205,13 +225,14 @@ export function HomePage() {
         </section>
       </main>
 
-      {/* Mobile chrome: bottom tabs + create FAB (inert this slice). */}
+      {/* Mobile chrome: bottom tabs + create FAB. */}
       <nav className="fixed inset-x-0 bottom-0 md:hidden">
         <TabBar
           homeLabel={t("home.navHome")}
           activityLabel={t("home.navActivity")}
           active="home"
           createLabel={t("home.createLink")}
+          onCreate={() => navigate("/create")}
         />
       </nav>
     </div>
