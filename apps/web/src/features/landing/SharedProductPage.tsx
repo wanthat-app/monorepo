@@ -4,7 +4,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import {
   deviceHasPasskey,
   loginWithPasskeyTokens,
-  markPasskeyDevice,
+  passkeyImmediateSupported,
   passkeysSupported,
 } from "../../lib/passkey";
 import { hasStoredSession, persistRefreshToken, useSession } from "../../lib/session";
@@ -65,9 +65,10 @@ export function SharedProductPage() {
     if (signedIn) toStore();
   }, [signedIn]);
 
-  // Arm the auto passkey prompt for a returning device with no session. It fires when the document
-  // gains focus (not on a timer — see waitForDocumentFocus); rendering is never blocked on it.
-  // The whole path is Aurora-free: DynamoDB challenge + credential, Cognito token mint, done.
+  // Arm the automatic passkey prompt when there is no session: immediate mode where supported
+  // (zero-storage, fires on first interaction iff a passkey exists), else the per-device-flag modal
+  // prompt that fires on document focus. Rendering is never blocked on it. The whole path is
+  // Aurora-free: DynamoDB challenge + credential, Cognito token mint, done.
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
@@ -75,23 +76,34 @@ export function SharedProductPage() {
       note("gate: stored session → rehydrating, no prompt");
       return; // the session effect above redirects once the refresh lands
     }
-    if (!passkeysSupported() || !deviceHasPasskey()) {
-      note(
-        `gate: webauthn=${passkeysSupported()} returningDevice=${deviceHasPasskey()} → no prompt`,
-      );
+    if (!passkeysSupported()) {
+      note("gate: webauthn unsupported → no prompt");
       return;
     }
-    note("auto-prompt: armed — fires on document focus");
     void (async () => {
+      // Immediate mode (Chrome 149+) is the zero-storage automatic path: fires on the first
+      // interaction iff a locally-available passkey exists (even one synced from another device),
+      // rejects silently otherwise. Elsewhere (Safari/Firefox) the per-device flag gates the
+      // focus-armed modal prompt, so a brand-new visitor is never shown an unsatisfiable sheet.
+      const immediate = await passkeyImmediateSupported();
+      if (!immediate && !deviceHasPasskey()) {
+        note("gate: immediateGet unsupported + not a returning device → no prompt");
+        return;
+      }
+      note(
+        immediate
+          ? "auto-prompt: immediate mode — fires on first interaction if a passkey exists"
+          : "auto-prompt: armed — fires on document focus",
+      );
       try {
         const freshTokens = await loginWithPasskeyTokens({
+          mode: immediate ? "immediate" : "modal",
           onCredential: () => {
             note("biometric ok → verifying");
             setVerifying(true);
           },
         });
         persistRefreshToken(freshTokens.refreshToken);
-        markPasskeyDevice();
         setAuthed(true); // → signedIn → the redirect effect above
       } catch (err) {
         note(

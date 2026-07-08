@@ -2,6 +2,7 @@ import {
   browserSupportsWebAuthnAutofill,
   startAuthentication,
   startRegistration,
+  WebAuthnAbortService,
 } from "@simplewebauthn/browser";
 import type { AuthSession, AuthTokens } from "@wanthat/contracts";
 import { authApi } from "./api";
@@ -14,12 +15,15 @@ export function passkeysSupported(): boolean {
 const PASSKEY_DEVICE_KEY = "wanthat.passkeyDevice";
 
 /**
- * Mark that this device has successfully used a passkey here (login or enrolment). On the next visit
- * the auth screen fires an AUTOMATIC modal passkey prompt on load (Face ID pops with no tap). We gate
- * the auto-prompt on this flag so a brand-new visitor / signup is NOT hit with a Face ID sheet they
- * can't satisfy — they get the gentle autofill offer first, which sets this flag once they use it.
+ * Mark that this device has successfully used a passkey here (login or enrolment). FALLBACK hint for
+ * browsers without immediate-mode get() (see {@link passkeyImmediateSupported} — Safari, Firefox):
+ * there the next visit fires an AUTOMATIC modal passkey prompt on load, gated on this flag so a
+ * brand-new visitor / signup is NOT hit with a Face ID sheet they can't satisfy. Where immediate
+ * mode exists the browser itself knows whether a local passkey exists, and this flag is not read.
+ * Called by this module on EVERY successful ceremony (any login flavour + enrolment) — however it
+ * was triggered, including the manual button — so callers never need to remember it.
  */
-export function markPasskeyDevice(): void {
+function markPasskeyDevice(): void {
   try {
     localStorage.setItem(PASSKEY_DEVICE_KEY, "1");
   } catch {
@@ -38,13 +42,31 @@ export function deviceHasPasskey(): boolean {
 
 /**
  * Whether this browser supports WebAuthn *conditional UI* (autofill) — the passkey offering itself in
- * a field's autofill (ADR-0022 Slice 2). When true we arm {@link loginWithPasskeyAutofill} instead of
- * showing an explicit button; when false the explicit modal button ({@link loginWithPasskey}) is the
- * path. Never throws.
+ * a field's autofill (ADR-0022 Slice 2). When true we arm {@link loginWithPasskeyAutofill} alongside
+ * the always-visible modal button ({@link loginWithPasskey}). Never throws.
  */
 export async function passkeyAutofillSupported(): Promise<boolean> {
   try {
     return await browserSupportsWebAuthnAutofill();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Whether this browser supports *immediate-mode* get() (`uiMode: "immediate"`, Chrome 149+): the
+ * sheet fires ONLY when a locally-available passkey exists (including iCloud-synced ones) and
+ * rejects silently otherwise — the zero-storage replacement for the {@link deviceHasPasskey} flag.
+ * Detection MUST come first: unknown dictionary members are ignored by WebIDL, so a blind
+ * `uiMode` call on a non-supporting browser degrades to a full modal picker at every new visitor.
+ */
+export async function passkeyImmediateSupported(): Promise<boolean> {
+  try {
+    const pkc = globalThis.PublicKeyCredential as
+      | { getClientCapabilities?: () => Promise<Record<string, boolean | undefined>> }
+      | undefined;
+    const caps = await pkc?.getClientCapabilities?.();
+    return caps?.immediateGet === true;
   } catch {
     return false;
   }
@@ -62,6 +84,7 @@ export async function enrollPasskey(accessToken: string): Promise<string> {
     optionsJSON: options as any,
   });
   const { passkey } = await authApi.passkeyRegisterVerify(challengeId, credential, accessToken);
+  markPasskeyDevice();
   return passkey.credentialId;
 }
 
@@ -89,6 +112,70 @@ async function waitForDocumentFocus(): Promise<void> {
 }
 
 /**
+ * Immediate-mode get() needs *transient user activation* — browsers reject a gesture-free call so a
+ * page can't silently probe on load whether a passkey exists (a tracking vector). So the ceremony
+ * arms on the member's FIRST interaction of any kind (tap/click/key) and resolves at once when
+ * activation is already live. Same contract as {@link waitForDocumentFocus}: callers must not block
+ * rendering on this promise.
+ */
+async function waitForUserActivation(): Promise<void> {
+  const ua = (navigator as { userActivation?: { isActive: boolean } }).userActivation;
+  if (ua?.isActive) return;
+  await new Promise<void>((resolve) => {
+    const done = () => {
+      window.removeEventListener("pointerdown", done);
+      window.removeEventListener("keydown", done);
+      resolve();
+    };
+    window.addEventListener("pointerdown", done, { once: true });
+    window.addEventListener("keydown", done, { once: true });
+  });
+}
+
+/** Login ceremony flavours: the classic modal picker, or immediate mode (see
+ * {@link passkeyImmediateSupported}) which pops biometrics iff a local passkey exists. */
+type LoginMode = "modal" | "immediate";
+
+/**
+ * Run the assertion ceremony natively with `uiMode: "immediate"` — @simplewebauthn/browser (13.x)
+ * has no uiMode passthrough. Only reached behind {@link passkeyImmediateSupported}, where
+ * `parseRequestOptionsFromJSON` and `toJSON` are guaranteed to exist.
+ */
+async function getImmediateAssertion(
+  optionsJSON: unknown,
+): Promise<Awaited<ReturnType<typeof startAuthentication>>> {
+  const pkc = globalThis.PublicKeyCredential as unknown as {
+    parseRequestOptionsFromJSON(json: unknown): PublicKeyCredentialRequestOptions;
+  };
+  const cred = (await navigator.credentials.get({
+    publicKey: pkc.parseRequestOptionsFromJSON(optionsJSON),
+    uiMode: "immediate",
+    // Broker through the shared abort service: this both cancels a pending conditional-UI get()
+    // (which would block this request) and lets any LATER simplewebauthn ceremony (the manual
+    // button's modal get(), enrolment's create()) cancel this one instead of colliding with it.
+    signal: WebAuthnAbortService.createNewAbortSignal(),
+  } as CredentialRequestOptions)) as unknown as {
+    toJSON(): Awaited<ReturnType<typeof startAuthentication>>;
+  };
+  return cred.toJSON();
+}
+
+/** Shared front half of both login flows: gate the ceremony (activation for immediate mode, focus
+ * otherwise), fetch a fresh challenge only once armed, and run the matching assertion ceremony. */
+async function runLoginCeremony(mode: LoginMode) {
+  await (mode === "immediate" ? waitForUserActivation() : waitForDocumentFocus());
+  const { challengeId, options } = await authApi.passkeyLoginChallenge();
+  const credential =
+    mode === "immediate"
+      ? await getImmediateAssertion(options)
+      : // Modal discoverable get(): the server sent an empty allowCredentials, so the OS shows the
+        // member's passkeys for this origin.
+        // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
+        await startAuthentication({ optionsJSON: options as any });
+  return { challengeId, credential };
+}
+
+/**
  * Userless discoverable passkey login (ADR-0022): no phone/username anywhere. The server's login
  * challenge carries an empty allowCredentials, so the OS shows a modal picker with the member's
  * passkeys registered for this origin; the member taps one and authenticates biometrically. Same
@@ -99,13 +186,11 @@ export async function loginWithPasskey(opts?: {
   /** Fires right after the biometric succeeds, BEFORE the server round-trips (verify + session
    * resolve — which can ride a cold-Aurora resume). Lets the caller show "signing you in…". */
   onCredential?: () => void;
+  /** "immediate" (behind {@link passkeyImmediateSupported}) waits for the first user interaction,
+   * then pops the sheet only when a local passkey exists — silent rejection otherwise. */
+  mode?: LoginMode;
 }): Promise<AuthSession> {
-  await waitForDocumentFocus();
-  const { challengeId, options } = await authApi.passkeyLoginChallenge();
-  // Modal discoverable get(): the server sent an empty allowCredentials, so the OS shows the
-  // member's passkeys for this origin. Used only where conditional UI is unsupported.
-  // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
-  const credential = await startAuthentication({ optionsJSON: options as any });
+  const { challengeId, credential } = await runLoginCeremony(opts?.mode ?? "modal");
   opts?.onCredential?.();
   return finishPasskeyLogin(challengeId, credential);
 }
@@ -119,13 +204,13 @@ export async function loginWithPasskey(opts?: {
 export async function loginWithPasskeyTokens(opts?: {
   /** See {@link loginWithPasskey}. */
   onCredential?: () => void;
+  /** See {@link loginWithPasskey}. */
+  mode?: LoginMode;
 }): Promise<AuthTokens> {
-  await waitForDocumentFocus();
-  const { challengeId, options } = await authApi.passkeyLoginChallenge();
-  // biome-ignore lint/suspicious/noExplicitAny: server-generated WebAuthn document
-  const credential = await startAuthentication({ optionsJSON: options as any });
+  const { challengeId, credential } = await runLoginCeremony(opts?.mode ?? "modal");
   opts?.onCredential?.();
   const { tokens } = await authApi.passkeyLoginVerify(challengeId, credential);
+  markPasskeyDevice();
   return tokens;
 }
 
@@ -155,6 +240,9 @@ async function finishPasskeyLogin(
   credential: Awaited<ReturnType<typeof startAuthentication>>,
 ): Promise<AuthSession> {
   const { registrationTicket } = await authApi.passkeyLoginVerify(challengeId, credential);
+  // The assertion verified — this device provably holds a working passkey; remember that for the
+  // Safari/Firefox auto-prompt even if the session resolve below hiccups.
+  markPasskeyDevice();
   const res = await authApi.session(registrationTicket);
   if (res.status !== "authenticated") throw new Error("passkey login did not resolve a session");
   return { tokens: res.tokens, customer: res.customer };
