@@ -114,6 +114,34 @@ describe("getProductDetail", () => {
     });
     await expect(empty.getProductDetail("1")).rejects.toThrowError(AliExpressApiError);
   });
+
+  it("ships to IL (region-scoped items answer empty without a country)", async () => {
+    const capture: { params?: URLSearchParams } = {};
+    await client(
+      {
+        aliexpress_affiliate_productdetail_get_response: {
+          resp_result: { result: { products: { product: [{ product_title: "x" }] } } },
+        },
+      },
+      capture,
+    ).getProductDetail("1005006123456789");
+    expect(capture.params?.get("country")).toBe("IL");
+  });
+
+  it("surfaces resp_code/resp_msg/record count in the empty-result error", async () => {
+    const empty = client({
+      aliexpress_affiliate_productdetail_get_response: {
+        resp_result: {
+          resp_code: 405,
+          resp_msg: "product not found",
+          result: { current_record_count: 0 },
+        },
+      },
+    });
+    await expect(empty.getProductDetail("1")).rejects.toThrowError(
+      /resp_code=405.*resp_msg="product not found".*records=0/,
+    );
+  });
 });
 
 describe("commissionRateToBps", () => {

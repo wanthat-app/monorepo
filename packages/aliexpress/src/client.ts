@@ -71,8 +71,11 @@ const LinkGenerateResponse = z.object({
 const ProductDetailResponse = z.object({
   aliexpress_affiliate_productdetail_get_response: z.object({
     resp_result: z.object({
+      resp_code: z.union([z.string(), z.number()]).optional(),
+      resp_msg: z.string().optional(),
       result: z
         .object({
+          current_record_count: z.number().optional(),
           products: z
             .object({
               product: z.array(
@@ -160,8 +163,8 @@ export class AliExpressClient {
 
   /**
    * aliexpress.affiliate.productdetail.get — title/image/price/commission for a product id,
-   * in the settlement currency (USD). Best-effort at the call site: the caller caps the timeout
-   * and treats a throw as "no metadata".
+   * in the settlement currency (USD), ship-to IL (Wanthat's market — region-scoped items are
+   * invisible without it). Throws a typed empty_result carrying the gateway's resp_code/resp_msg.
    */
   async getProductDetail(productId: string, timeoutMs = 2500): Promise<AliExpressProductDetail> {
     const data = await this.call(
@@ -170,18 +173,29 @@ export class AliExpressClient {
         product_ids: productId,
         target_currency: "USD",
         target_language: "EN",
+        // Region-scoped items (e.g. Israel-market listings) answer EMPTY without a ship-to.
+        country: "IL",
         tracking_id: this.options.trackingId,
       },
       timeoutMs,
     );
     const parsed = ProductDetailResponse.safeParse(data);
-    const products =
-      parsed.success &&
-      parsed.data.aliexpress_affiliate_productdetail_get_response.resp_result.result?.products
-        ?.product;
-    const product = products ? products[0] : undefined;
-    if (!product)
-      throw new AliExpressApiError("empty_result", "productdetail.get returned no product");
+    const respResult = parsed.success
+      ? parsed.data.aliexpress_affiliate_productdetail_get_response.resp_result
+      : undefined;
+    const product = respResult?.result?.products?.product[0];
+    if (!product) {
+      const diagnostics = [
+        respResult?.resp_code !== undefined && `resp_code=${respResult.resp_code}`,
+        respResult?.resp_msg !== undefined && `resp_msg="${respResult.resp_msg}"`,
+        respResult?.result?.current_record_count !== undefined &&
+          `records=${respResult.result.current_record_count}`,
+      ].filter(Boolean);
+      throw new AliExpressApiError(
+        "empty_result",
+        `productdetail.get returned no product${diagnostics.length ? ` (${diagnostics.join(", ")})` : ""}`,
+      );
+    }
     return {
       title: product.product_title ?? null,
       imageUrl: product.product_main_image_url ?? null,
