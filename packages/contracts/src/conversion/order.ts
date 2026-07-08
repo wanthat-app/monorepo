@@ -6,9 +6,11 @@ import { WalletEntryStatus } from "../wallet";
  * One credited party on a conversion (ADR-0008/0009): the resolved member and the reward owed.
  * The referrer is always resolvable (`ref` → recommendation → owner); a consumer party exists
  * only when the buyer is an attributable member (guest-no-reward and untracked yield none).
+ * Members carry the canonical id — the Cognito `sub` (ADR-0025); the in-VPC writer resolves
+ * sub → `customer` row (via its unique `cognito_sub`) when appending the wallet entries.
  */
 export const ConversionParty = z.object({
-  customerId: Uuid,
+  sub: Uuid,
   reward: Money,
 });
 export type ConversionParty = z.infer<typeof ConversionParty>;

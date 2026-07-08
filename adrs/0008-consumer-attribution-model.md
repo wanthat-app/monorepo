@@ -29,10 +29,12 @@ Resolve attribution entirely from values injected into `custom_parameters` — *
   locked and later policy changes affect only new links.
 - **At click/redirect (client-driven resolve, ADR-0007):** append the whole `custom_parameters` —
   `ref` (the `recommendation_id`, always) **plus** the consumer key: member → the client sends its
-  Bearer token and the resolve endpoint injects `customer_id` (`{ ref, c: customer_id }`); guest →
-  the client sends an opaque, random **`guestId`** from **localStorage** and the endpoint injects it
-  (`{ ref, g: guestId }`). Opaque ids only — nothing internal leaks to the retailer.
-- **At registration:** map `guestId → customer_id` in a small **DynamoDB** `guest_attribution`
+  Bearer token and the resolve endpoint injects the member's canonical id — the Cognito `sub`
+  (ADR-0025) — as `{ ref, c: sub }`; guest → the client sends an opaque, random **`guestId`** from
+  **localStorage** and the endpoint injects it (`{ ref, g: guestId }`). Opaque ids only — nothing
+  internal leaks to the retailer.
+- **At registration:** map `guestId → sub` (the canonical id, ADR-0025) in a small **DynamoDB**
+  `guest_attribution`
   item — many-to-one (a person may accrue several `guestId`s across devices). It is
   **opaque→opaque (non-PII)** and **best-effort**, so it lives in DynamoDB, *outside* the atomic
   Aurora registration transaction. The redirect path neither reads nor writes it — the client
