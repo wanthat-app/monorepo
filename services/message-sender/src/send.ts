@@ -1,5 +1,6 @@
 import { MessageLanguage, OtpChannel } from "@wanthat/contracts";
 import type { RuntimeConfigReader } from "@wanthat/dynamo";
+import { otpChannelAvailability } from "./killswitch";
 
 /** The slice of Cognito's custom-SMS-sender event we consume. */
 export interface CustomSmsSenderEvent {
@@ -27,8 +28,8 @@ export interface SendDeps {
   sms: { publish(toE164: string, message: string): Promise<void> };
   /**
    * Dev-only sink: when `allowed` (deploy-time: WANTHAT_ENV !== "prod") AND `auth.otpSink` is
-   * "devSink", the code is parked for CLI pickup instead of delivered. `allowed` gates the config
-   * read itself, so prod and the sms fast path make zero extra reads.
+   * "devSink", the code is parked for CLI pickup instead of delivered. `allowed` gates the
+   * otpSink config read itself, so prod makes zero sink-related reads.
    */
   devSink: {
     allowed: boolean;
@@ -39,46 +40,63 @@ export interface SendDeps {
       triggerSource: string;
     }): Promise<void>;
   };
-  /** Structured log sink. The success line carries `sub` — the field app-auth's otp_start log shares, so one Logs Insights query follows the chain. */
+  /** Structured log sink. The success line carries `sub` — the correlation field for Logs Insights chains. */
   log: (msg: string, ctx?: Record<string, unknown>) => void;
 }
 
 /**
- * Pure executor (ADR-0019, spec rev 2): deliver the OTP via EXACTLY the requested channel or
- * throw. No channel defaults, no kill-switch reads, no WhatsApp->SMS fallback — a throw fails the
- * initiating AdminInitiateAuth (UnexpectedLambdaException), app-auth maps it to `send_failed`,
- * and falling back is the UI's decision, not this function's.
+ * Channel decision point (ADR-0006 decision 5): Cognito forwards no ClientMetadata to
+ * custom-sender triggers, so the sender itself enforces the kill switches and the user's sticky
+ * `custom:otpChannel` preference. Resolution: the preference wins when that channel is currently
+ * enabled; otherwise fall back to an enabled channel (preferring `auth.defaultOtpChannel`); if
+ * nothing is enabled, throw — the initiating Cognito call (SignUp / InitiateAuth) fails loudly.
+ *
+ * A missing or invalid `custom:otpChannel` is NOT an error — users self-registering via the
+ * public SignUp may race the attribute write — it simply means "no preference", i.e. the default.
+ *
+ * All four trigger sources (CustomSMSSender_SignUp / _Authentication / _ResendCode /
+ * _VerifyUserAttribute) share this path: the message content is trigger-independent today
+ * (WhatsApp `otp_code` template in the profile language, fixed SNS wording).
  */
 export async function deliverOtp(deps: SendDeps, event: CustomSmsSenderEvent): Promise<void> {
   const attrs = event.request.userAttributes;
 
-  // app-auth writes custom:otpChannel on EVERY start/resend; absence is an invariant violation.
-  const channel = OtpChannel.safeParse(attrs["custom:otpChannel"]);
-  if (!channel.success)
-    throw new Error("message-sender: missing or invalid custom:otpChannel user attribute");
-
   const to = attrs.phone_number;
   if (!to) throw new Error("message-sender: event carries no phone_number");
+
+  const avail = await otpChannelAvailability(deps.config);
+  const preference = OtpChannel.safeParse(attrs["custom:otpChannel"]);
+  const channel =
+    preference.success && avail.channels.includes(preference.data)
+      ? preference.data
+      : avail.defaultChannel;
+  if (channel === null)
+    throw new Error(
+      "message-sender: no OTP channel is enabled (auth.smsEnabled off; auth.whatsappEnabled off or whatsapp.phoneNumberId unset)",
+    );
 
   const code = await deps.decryptCode(event.request.code);
 
   // Dev-only sink (docs/dev-otp-sink.md): park the code instead of delivering. Checked before the
-  // channel dispatch so BOTH channels sink; the code itself is never logged.
+  // channel dispatch so BOTH channels sink; the code itself is never logged. The parked `channel`
+  // is the RESOLVED one — what would have delivered — so at least one channel must be enabled
+  // even in sink mode (the resolution throw above applies uniformly).
   if (deps.devSink.allowed && (await deps.config.get("auth.otpSink")) === "devSink") {
     await deps.devSink.put({
       phone: to,
       code,
-      channel: channel.data,
+      channel,
       triggerSource: event.triggerSource,
     });
-    deps.log("otp_sunk_dev", { channel: channel.data, sub: attrs.sub });
+    deps.log("otp_sunk_dev", { channel, sub: attrs.sub });
     return;
   }
 
-  if (channel.data === "whatsapp") {
-    // The origination identity is a send parameter (it cannot ride the Cognito event), not flow logic.
-    const phoneNumberId = await deps.config.get("whatsapp.phoneNumberId");
-    if (typeof phoneNumberId !== "string" || phoneNumberId === "")
+  if (channel === "whatsapp") {
+    // Availability guarantees a non-empty phoneNumberId whenever whatsapp is enabled; this guard
+    // is a belt against a future refactor breaking that invariant — never expected to fire.
+    const phoneNumberId = avail.whatsappPhoneNumberId;
+    if (!phoneNumberId)
       throw new Error("message-sender: whatsapp.phoneNumberId is unset (onboarding incomplete)");
     const locale = MessageLanguage.safeParse(attrs.locale);
     await deps.whatsapp.sendTemplate({
