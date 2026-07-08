@@ -21,9 +21,9 @@ function fakeProducts(existing?: ProductItem) {
   const upserts: ProductUpsert[] = [];
   const products = {
     get: async (): Promise<ProductItem | undefined> => existing,
-    upsert: async (product: ProductUpsert, now: string): Promise<ProductItem> => {
+    create: async (product: ProductUpsert, now: string) => {
       upserts.push(product);
-      return { ...product, createdAt: now, updatedAt: now };
+      return { item: { ...product, createdAt: now, updatedAt: now }, created: true };
     },
   } as unknown as ProductRepo;
   return { products, upserts };

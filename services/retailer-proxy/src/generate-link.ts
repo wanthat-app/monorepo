@@ -164,9 +164,10 @@ export async function generateLink(url: string, deps: GenerateLinkDeps): Promise
     return { status: "error", code: "upstream_error", message: String(err) };
   }
 
-  // 3) ONE write, with everything in hand.
+  // 3) ONE write, with everything in hand — create-once + counter, atomic. A concurrent resolve
+  // losing the race gets the winner's stored row back (created: false), never an overwrite.
   const nowIso = (deps.now?.() ?? new Date()).toISOString();
-  const product = await deps.products.upsert(
+  const { item: product } = await deps.products.create(
     {
       storeId: parsed.storeId,
       storeProductId: parsed.storeProductId,
