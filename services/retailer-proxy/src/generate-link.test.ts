@@ -172,24 +172,7 @@ describe("generateLink", () => {
     if (res.status === "error") expect(res.code).toBe("upstream_error");
   });
 
-  it("answers upstream_error when the link mint fails", async () => {
-    const { products, upserts } = fakeProducts();
-    const res = await generateLink(URL, {
-      products,
-      client: async () =>
-        fakeClient({
-          generate: async () => {
-            throw new Error("gateway down");
-          },
-        }),
-      logger,
-    });
-    expect(res.status).toBe("error");
-    if (res.status === "error") expect(res.code).toBe("upstream_error");
-    expect(upserts).toHaveLength(0);
-  });
-
-  it("persists placeholder metadata FLAGGED pending when productdetail fails (best-effort)", async () => {
+  it("fails the ENTIRE flow (nothing stored) when productdetail fails — all-or-nothing", async () => {
     const { products, upserts } = fakeProducts();
     const res = await generateLink(URL, {
       products,
@@ -202,17 +185,48 @@ describe("generateLink", () => {
       logger,
       now: () => NOW,
     });
-    if (res.status !== "ok") throw new Error("expected ok");
-    expect(res.product.title).toBe("AliExpress item 1005006123456789");
-    expect(res.product.imageUrl).toBeNull();
-    expect(res.product.price).toBeNull();
-    expect(res.product.commissionBps).toBe(0);
-    // Flagged so the NEXT resolve retries enrichment instead of serving the junk forever.
-    expect(upserts[0]?.metadataPending).toBe(true);
+    expect(res.status).toBe("error");
+    if (res.status === "error") expect(res.code).toBe("upstream_error");
+    expect(upserts).toHaveLength(0);
   });
 
-  it("retries productdetail ONCE after the throttle window on ApiCallLimit", async () => {
+  it("fails the flow when metadata comes back without title or commission", async () => {
     const { products, upserts } = fakeProducts();
+    const res = await generateLink(URL, {
+      products,
+      client: async () => fakeClient({ detail: async () => ({ ...DETAIL, commissionBps: null }) }),
+      logger,
+    });
+    expect(res.status).toBe("error");
+    expect(upserts).toHaveLength(0);
+  });
+
+  it("pulls metadata FIRST and mints the link at the END (sequential, ordered)", async () => {
+    const order: string[] = [];
+    const { products, upserts } = fakeProducts();
+    const res = await generateLink(URL, {
+      products,
+      client: async () =>
+        fakeClient({
+          detail: async () => {
+            order.push("detail");
+            return DETAIL;
+          },
+          generate: async () => {
+            order.push("generate");
+            return "https://s.click.aliexpress.com/e/_abc";
+          },
+        }),
+      logger,
+      now: () => NOW,
+    });
+    if (res.status !== "ok") throw new Error("expected ok");
+    expect(order).toEqual(["detail", "generate"]);
+    expect(upserts).toHaveLength(1);
+  });
+
+  it("retries a call ONCE after the throttle window on ApiCallLimit", async () => {
+    const { products } = fakeProducts();
     const waits: number[] = [];
     let calls = 0;
     const res = await generateLink(URL, {
@@ -236,57 +250,22 @@ describe("generateLink", () => {
     expect(calls).toBe(2);
     expect(waits).toEqual([1200]);
     expect(res.product.title).toBe(DETAIL.title);
-    expect(upserts[0]?.metadataPending).toBe(false);
   });
 
-  it("enriches a pending row without re-minting (keeps the stored affiliate link)", async () => {
-    const pending: ProductItem = {
-      storeId: "aliexpress",
-      storeProductId: "1005006123456789",
-      title: "AliExpress item 1005006123456789",
-      imageUrl: null,
-      price: null,
-      commissionBps: 0,
-      affiliateUrl: "https://s.click.aliexpress.com/e/_original",
-      metadataPending: true,
-      createdAt: NOW.toISOString(),
-      updatedAt: NOW.toISOString(),
-    };
-    const { products, upserts } = fakeProducts(pending);
+  it("fails the flow (nothing stored) when link.generate fails after good metadata", async () => {
+    const { products, upserts } = fakeProducts();
     const res = await generateLink(URL, {
       products,
       client: async () =>
         fakeClient({
           generate: async () => {
-            throw new Error("must not re-mint");
+            throw new Error("gateway down");
           },
         }),
       logger,
-      now: () => NOW,
     });
-    if (res.status !== "ok") throw new Error("expected ok");
-    expect(res.affiliateUrl).toBe("https://s.click.aliexpress.com/e/_original");
-    expect(res.product.title).toBe(DETAIL.title);
-    expect(upserts[0]?.metadataPending).toBe(false);
-  });
-
-  it("serves a pending row as-is while the credential is unpopulated (link still works)", async () => {
-    const pending: ProductItem = {
-      storeId: "aliexpress",
-      storeProductId: "1005006123456789",
-      title: "AliExpress item 1005006123456789",
-      imageUrl: null,
-      price: null,
-      commissionBps: 0,
-      affiliateUrl: "https://s.click.aliexpress.com/e/_original",
-      metadataPending: true,
-      createdAt: NOW.toISOString(),
-      updatedAt: NOW.toISOString(),
-    };
-    const { products, upserts } = fakeProducts(pending);
-    const res = await generateLink(URL, { products, client: async () => null, logger });
-    if (res.status !== "ok") throw new Error("expected ok");
-    expect(res.affiliateUrl).toBe("https://s.click.aliexpress.com/e/_original");
+    expect(res.status).toBe("error");
+    if (res.status === "error") expect(res.code).toBe("upstream_error");
     expect(upserts).toHaveLength(0);
   });
 });
