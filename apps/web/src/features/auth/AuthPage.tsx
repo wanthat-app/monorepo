@@ -9,7 +9,6 @@ import {
   enrollPasskey,
   loginWithPasskey,
   loginWithPasskeyAutofill,
-  markPasskeyDevice,
   passkeyAutofillSupported,
   passkeyImmediateSupported,
   passkeysSupported,
@@ -120,7 +119,6 @@ export function AuthPage() {
     if (!passkeysSupported()) return;
     const loginVia = async (fn: () => Promise<AuthSession>) => {
       const session = await fn();
-      markPasskeyDevice();
       signIn(session);
       complete();
     };
@@ -193,7 +191,6 @@ export function AuthPage() {
   const onPasskeyLogin = () =>
     run(async () => {
       const session = await loginWithPasskey();
-      markPasskeyDevice();
       signIn(session);
       complete();
     });
@@ -231,8 +228,8 @@ export function AuthPage() {
   const onEnableFace = () =>
     run(async () => {
       const token = accessToken();
+      // A successful enrolment marks the device inside the lib, so the next visit auto-prompts.
       if (token) await enrollPasskey(token);
-      markPasskeyDevice(); // next visit on this device auto-prompts Face ID on load
       goHome();
     });
 

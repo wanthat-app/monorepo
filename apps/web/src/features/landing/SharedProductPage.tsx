@@ -4,7 +4,6 @@ import { useParams, useSearchParams } from "react-router-dom";
 import {
   deviceHasPasskey,
   loginWithPasskeyTokens,
-  markPasskeyDevice,
   passkeyImmediateSupported,
   passkeysSupported,
 } from "../../lib/passkey";
@@ -105,7 +104,6 @@ export function SharedProductPage() {
           },
         });
         persistRefreshToken(freshTokens.refreshToken);
-        markPasskeyDevice();
         setAuthed(true); // → signedIn → the redirect effect above
       } catch (err) {
         note(

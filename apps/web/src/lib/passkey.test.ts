@@ -1,9 +1,31 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loginWithPasskey, loginWithPasskeyTokens, passkeyImmediateSupported } from "./passkey";
+import {
+  enrollPasskey,
+  loginWithPasskey,
+  loginWithPasskeyTokens,
+  passkeyImmediateSupported,
+} from "./passkey";
+
+// startRegistration needs a real browser; everything else in the module under test stays real.
+vi.mock("@simplewebauthn/browser", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@simplewebauthn/browser")>()),
+  startRegistration: vi.fn(async () => ({ id: "new-cred", type: "public-key" })),
+}));
 
 afterEach(() => vi.unstubAllGlobals());
 
 const json = (body: unknown) => ({ ok: true, json: async () => body });
+
+/** In-memory localStorage stub; returns the backing map for assertions. */
+function stubStorage() {
+  const store = new Map<string, string>();
+  vi.stubGlobal("localStorage", {
+    getItem: (k: string) => store.get(k) ?? null,
+    setItem: (k: string, v: string) => void store.set(k, v),
+    removeItem: (k: string) => void store.delete(k),
+  });
+  return store;
+}
 
 describe("passkeyImmediateSupported", () => {
   it("is true when the client reports the immediateGet capability", async () => {
@@ -95,6 +117,77 @@ describe("immediate-mode passkey login", () => {
     );
 
     await expect(loginWithPasskey({ mode: "immediate" })).rejects.toThrow("no local credential");
+  });
+
+  it("marks the device flag on a successful login, however the ceremony was triggered", async () => {
+    const store = stubStorage();
+    stubWebAuthn(vi.fn(async () => ({ toJSON: () => ({ id: "cred-1" }) })));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(json({ challengeId: "ch-1", options: { challenge: "abc" } }))
+        .mockResolvedValueOnce(json({ registrationTicket: "tick-1" }))
+        .mockResolvedValueOnce(
+          json({
+            status: "authenticated",
+            tokens: { accessToken: "at", idToken: "it", refreshToken: "rt" },
+            customer: { id: "cust-1" },
+          }),
+        ),
+    );
+
+    await loginWithPasskey({ mode: "immediate" });
+    expect(store.get("wanthat.passkeyDevice")).toBe("1");
+  });
+
+  it("does NOT mark the device flag when the ceremony fails", async () => {
+    const store = stubStorage();
+    stubWebAuthn(
+      vi.fn(async () => {
+        throw Object.assign(new Error("cancelled"), { name: "NotAllowedError" });
+      }),
+    );
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(json({ challengeId: "ch-1", options: { challenge: "abc" } })),
+    );
+
+    await expect(loginWithPasskey({ mode: "immediate" })).rejects.toThrow();
+    expect(store.has("wanthat.passkeyDevice")).toBe(false);
+  });
+
+  it("marks the device flag on the tokens-only landing login too", async () => {
+    const store = stubStorage();
+    stubWebAuthn(vi.fn(async () => ({ toJSON: () => ({ id: "cred-1" }) })));
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(json({ challengeId: "ch-1", options: { challenge: "abc" } }))
+        .mockResolvedValueOnce(
+          json({ tokens: { accessToken: "a", idToken: "i", refreshToken: "r" } }),
+        ),
+    );
+
+    await loginWithPasskeyTokens({ mode: "immediate" });
+    expect(store.get("wanthat.passkeyDevice")).toBe("1");
+  });
+
+  it("marks the device flag on a successful enrolment (e.g. the home Turn On card)", async () => {
+    const store = stubStorage();
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockResolvedValueOnce(json({ challengeId: "ch-1", options: { challenge: "abc" } }))
+        .mockResolvedValueOnce(
+          json({ passkey: { credentialId: "new-cred", createdAt: "2026-07-08T00:00:00Z" } }),
+        ),
+    );
+
+    await expect(enrollPasskey("tok-1")).resolves.toBe("new-cred");
+    expect(store.get("wanthat.passkeyDevice")).toBe("1");
   });
 
   it("waits for a user interaction when no activation is live yet", async () => {

@@ -20,8 +20,10 @@ const PASSKEY_DEVICE_KEY = "wanthat.passkeyDevice";
  * there the next visit fires an AUTOMATIC modal passkey prompt on load, gated on this flag so a
  * brand-new visitor / signup is NOT hit with a Face ID sheet they can't satisfy. Where immediate
  * mode exists the browser itself knows whether a local passkey exists, and this flag is not read.
+ * Called by this module on EVERY successful ceremony (any login flavour + enrolment) — however it
+ * was triggered, including the manual button — so callers never need to remember it.
  */
-export function markPasskeyDevice(): void {
+function markPasskeyDevice(): void {
   try {
     localStorage.setItem(PASSKEY_DEVICE_KEY, "1");
   } catch {
@@ -82,6 +84,7 @@ export async function enrollPasskey(accessToken: string): Promise<string> {
     optionsJSON: options as any,
   });
   const { passkey } = await authApi.passkeyRegisterVerify(challengeId, credential, accessToken);
+  markPasskeyDevice();
   return passkey.credentialId;
 }
 
@@ -207,6 +210,7 @@ export async function loginWithPasskeyTokens(opts?: {
   const { challengeId, credential } = await runLoginCeremony(opts?.mode ?? "modal");
   opts?.onCredential?.();
   const { tokens } = await authApi.passkeyLoginVerify(challengeId, credential);
+  markPasskeyDevice();
   return tokens;
 }
 
@@ -236,6 +240,9 @@ async function finishPasskeyLogin(
   credential: Awaited<ReturnType<typeof startAuthentication>>,
 ): Promise<AuthSession> {
   const { registrationTicket } = await authApi.passkeyLoginVerify(challengeId, credential);
+  // The assertion verified — this device provably holds a working passkey; remember that for the
+  // Safari/Firefox auto-prompt even if the session resolve below hiccups.
+  markPasskeyDevice();
   const res = await authApi.session(registrationTicket);
   if (res.status !== "authenticated") throw new Error("passkey login did not resolve a session");
   return { tokens: res.tokens, customer: res.customer };
