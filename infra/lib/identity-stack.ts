@@ -38,12 +38,14 @@ export const SMS_MONTHLY_SPEND_LIMIT_USD: Record<WanthatEnv["name"], number> = {
  *
  * A passwordless user pool: phone-first sign-in with native SMS OTP **and** passkeys as first-auth
  * factors (the choice-based `USER_AUTH` flow), Essentials feature plan. The public SPA app client
- * carries the JWT as a Bearer header (no secret, ADR-0007). Managed Login (hosted UI) is provisioned
- * for the userless/discoverable passkey path (PR4 reconciles it with the API-driven contract).
+ * carries the JWT as a Bearer header (no secret, ADR-0007). Self-signup is ON: the browser calls
+ * the public `SignUp` API directly and registration IS SignUp (ADR-0006 decision 1) - the console
+ * "anyone can sign up" warning is the product, not a misconfiguration.
  *
- * No Post-Confirmation trigger (ADR-0006): the `customer` row is provisioned by `/auth/register`,
- * since `first_name`/`last_name` are only known then. The SMS kill switch is the DynamoDB
- * `auth.smsEnabled` config key (read by app-api), backstopped here by the SNS monthly spend cap.
+ * All customer PII lives in Cognito user attributes (ADR-0006 decision 3): `phone_number`,
+ * `given_name`, `family_name`, `email`, `locale`, plus `custom:otpChannel`. The kill switches
+ * (`auth.smsEnabled`, `auth.whatsappEnabled`, ...) are DynamoDB runtime-config keys enforced by
+ * the message-sender trigger, backstopped here by the SNS monthly spend cap.
  *
  * **Two pools, by population (ADR-0006 §two-pool).** Customers and employees are different
  * populations with different trust levels and lifecycles, so they get separate user pools rather than
@@ -79,13 +81,24 @@ export class IdentityStack extends Stack {
     this.userPool = new cognito.UserPool(this, "UserPool", {
       userPoolName: `wanthat-${wanthatEnv.name}`,
       featurePlan: cognito.FeaturePlan.ESSENTIALS,
+      // ADR-0006 decision 1: registration is the public SignUp call from the SPA - no admin-created
+      // customers, no backend registration endpoint. Abuse control sits at the pool boundary (WAF
+      // rate rules + Cognito quotas + the SMS spend cap below), not behind a signup gate.
+      selfSignUpEnabled: true,
       signInAliases: { phone: true, email: true },
+      // Profile attributes ride SignUp.UserAttributes and are edited via UpdateUserAttributes
+      // (ADR-0006 decision 3). All optional (NOT required): flipping an attribute to required
+      // REPLACES the pool - never do that here.
       standardAttributes: {
         phoneNumber: { required: true, mutable: true },
         email: { required: false, mutable: true },
+        givenName: { required: false, mutable: true },
+        familyName: { required: false, mutable: true },
+        locale: { required: false, mutable: true },
       },
-      // ADR-0019: the OTP delivery channel for the message-sender trigger. Written by app-auth on
-      // every /auth/start + /auth/resend; the sender FAILS if it is missing (never defaults).
+      // ADR-0006 decision 5: the OTP delivery channel preference. Set at SignUp (rides
+      // UserAttributes), edited post-auth from the profile; the message-sender trigger is the
+      // enforcement point (honours it when that channel is enabled, else falls back).
       customAttributes: {
         otpChannel: new cognito.StringAttribute({ mutable: true, minLen: 3, maxLen: 8 }),
       },
@@ -121,11 +134,11 @@ export class IdentityStack extends Stack {
       precedence: 10,
     });
 
-    // ADR-0019: pure OTP executor. IMPORTANT: once this trigger is attached, Cognito sends NO SMS
-    // natively - this function owns ALL OTP delivery (WhatsApp via End User Messaging Social, SMS
-    // via SNS Publish), routed ONLY by the custom:otpChannel attribute. It reads no kill switches
-    // and never falls back across channels; a throw fails the callers AdminInitiateAuth, which
-    // app-auth maps to send_failed (spec rev 2).
+    // ADR-0006 decision 5 (+ ADR-0019 pipeline): the OTP channel decision point. IMPORTANT: once
+    // this trigger is attached, Cognito sends NO SMS natively - this function owns ALL OTP delivery
+    // (WhatsApp via End User Messaging Social, SMS via SNS Publish). It reads the runtime-config
+    // kill switches (auth.whatsappEnabled, auth.smsEnabled, ...), honours custom:otpChannel when
+    // that channel is enabled, and falls back to the other enabled channel otherwise.
     const messageSenderFn = new NodejsFunction(this, "MessageSender", {
       functionName: `wanthat-${wanthatEnv.name}-message-sender`,
       entry: serviceEntry("message-sender"),
@@ -176,6 +189,25 @@ export class IdentityStack extends Stack {
     // HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).
     const origins = webOrigins(wanthatEnv);
 
+    // Attribute permissions for the SPA client (ADR-0006 decision 3): the profile the SPA shows is
+    // the ID-token claims, and edits go through UpdateUserAttributes with the user's access token -
+    // so the client needs explicit read AND write on the profile attributes + custom:otpChannel.
+    // phone_number is in the WRITE set too (not only read) because it is a required attribute that
+    // rides SignUp.UserAttributes (username = phone): an explicit write list that omits it would
+    // reject the SignUp call itself. Post-signup phone changes still verify via VerifyUserAttribute.
+    const spaProfileAttributes = { givenName: true, familyName: true, email: true, locale: true };
+    const spaReadAttributes = new cognito.ClientAttributes()
+      .withStandardAttributes({
+        ...spaProfileAttributes,
+        phoneNumber: true,
+        phoneNumberVerified: true,
+        emailVerified: true,
+      })
+      .withCustomAttributes("otpChannel");
+    const spaWriteAttributes = new cognito.ClientAttributes()
+      .withStandardAttributes({ ...spaProfileAttributes, phoneNumber: true })
+      .withCustomAttributes("otpChannel");
+
     // Public SPA client: no secret; only the choice-based USER_AUTH flow (ADR-0006) — never
     // userSrp/userPassword/custom. Token revocation on so /auth/signout can revoke refresh tokens.
     const callbackUrls = origins.map((o) => `${o}/auth/callback`);
@@ -188,6 +220,13 @@ export class IdentityStack extends Stack {
       // reachable from the browser (the SPA never sees a password) — the admin token exchange (ADR-0006
       // decision 3), our ESSENTIALS pool doesn't support the custom-challenge trigger bridge it replaced.
       authFlows: { user: true, adminUserPassword: true },
+      // "Prevent user existence errors" deliberately OFF (LEGACY): the SPA branches sign-in vs
+      // sign-up on Cognito's real user-not-found signal (ADR-0006 - unified "enter phone" flow via
+      // InitiateAuth, fall back to SignUp on unknown phone). Phone enumeration is accepted for MVP;
+      // WAF rate rules on the pool + Cognito quotas + the SMS spend cap mitigate abuse.
+      preventUserExistenceErrors: false,
+      readAttributes: spaReadAttributes,
+      writeAttributes: spaWriteAttributes,
       enableTokenRevocation: true,
       accessTokenValidity: Duration.hours(1),
       idTokenValidity: Duration.hours(1),
