@@ -8,12 +8,15 @@ import { isAdminToken } from "./jwt";
  * at a different pool/client, so an admin session is structurally separate from a customer session —
  * the admin-api authorizer only trusts the employee pool.
  *
- * The resulting tokens are kept in sessionStorage (cleared on tab close); the access token is sent as
- * a Bearer to admin-api, the id token's `cognito:groups` gates the console UI (server re-enforces it).
+ * The resulting tokens are kept in sessionStorage (cleared on tab close); the **id token** is sent as
+ * the Bearer to admin-api — the JWT authorizer verifies it like the access token (aud = client id),
+ * and its email claim lets audited actions record a readable actor. Its `cognito:groups` also gates
+ * the console UI (server re-enforces it).
  */
 const VERIFIER_KEY = "wanthat.admin.pkceVerifier";
 const STATE_KEY = "wanthat.admin.oauthState";
 const TOKENS_KEY = "wanthat.admin.tokens";
+const RETURN_TO_KEY = "wanthat.admin.returnTo";
 
 export interface AdminTokens {
   accessToken: string;
@@ -46,6 +49,8 @@ export async function beginAdminLogin(): Promise<void> {
   const state = base64url(crypto.getRandomValues(new Uint8Array(32)).buffer);
   sessionStorage.setItem(VERIFIER_KEY, verifier);
   sessionStorage.setItem(STATE_KEY, state);
+  // Remember which admin view started the login, so the callback can land back on the deep link.
+  sessionStorage.setItem(RETURN_TO_KEY, window.location.pathname);
   const challenge = base64url(await sha256(verifier));
   const { adminManagedLoginUrl, adminPoolClientId } = getConfig();
   const url = new URL(`${adminManagedLoginUrl}/oauth2/authorize`);
@@ -70,6 +75,16 @@ export function verifyAdminOauthState(received: string | null): boolean {
   const expected = sessionStorage.getItem(STATE_KEY);
   sessionStorage.removeItem(STATE_KEY);
   return !!expected && !!received && received === expected;
+}
+
+/**
+ * The admin path stashed by `beginAdminLogin`, single-use, restricted to admin views — anything
+ * else (nothing stored, the callback itself, a non-admin path) falls back to the dashboard.
+ */
+export function consumeAdminReturnPath(): string {
+  const stored = sessionStorage.getItem(RETURN_TO_KEY);
+  sessionStorage.removeItem(RETURN_TO_KEY);
+  return stored?.startsWith("/admin") && stored !== "/admin/callback" ? stored : "/admin";
 }
 
 /**

@@ -46,7 +46,7 @@ async function adminRequest<T>(
   // generic load error on every panel.
   if (res.status === 401) {
     const fresh = await refreshAdminTokens();
-    if (fresh) res = await doFetch(fresh.accessToken);
+    if (fresh) res = await doFetch(fresh.idToken);
     if (res.status === 401) {
       clearAdminTokens();
       void beginAdminLogin();

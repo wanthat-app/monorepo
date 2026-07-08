@@ -9,6 +9,7 @@ import { AuthPage } from "./features/auth/AuthPage";
 import { CallbackPage } from "./features/auth/CallbackPage";
 import { HomePage } from "./features/home/HomePage";
 import { SharedProductPage } from "./features/landing/SharedProductPage";
+import { NotFoundPage } from "./features/not-found/NotFoundPage";
 import "./i18n";
 import "./index.css";
 import { initConfig } from "./lib/config";
@@ -22,8 +23,14 @@ const router = createBrowserRouter([
   { path: "/home", element: <HomePage /> },
   // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).
   { path: "/p/:id", element: <SharedProductPage /> },
+  // Each admin view has its own URL so deep links, reloads and browser history work.
   { path: "/admin", element: <AdminPage /> },
+  { path: "/admin/users", element: <AdminPage /> },
+  { path: "/admin/activity", element: <AdminPage /> },
+  { path: "/admin/settings", element: <AdminPage /> },
   { path: "/admin/callback", element: <AdminCallbackPage /> },
+  // Catch-all 404 for any unknown URL (otherwise react-router shows its developer error page).
+  { path: "*", element: <NotFoundPage /> },
 ]);
 
 const root = document.getElementById("root");

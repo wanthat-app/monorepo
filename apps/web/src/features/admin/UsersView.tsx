@@ -178,10 +178,18 @@ export function UsersView({ token }: { token: string | null }) {
                     {user.firstName} {user.lastName}
                   </span>
                 </span>
-                <span className="tabular w-[150px] pe-3 text-[13px] text-ink" dir="ltr">
+                {/* dir="ltr" keeps phone/email/date glyph order; rtl:text-right re-aligns the cell
+                    with its column header when the page direction is RTL. */}
+                <span
+                  className="tabular w-[150px] pe-3 text-[13px] text-ink rtl:text-right"
+                  dir="ltr"
+                >
                   {user.phone}
                 </span>
-                <span className="flex-1 truncate pe-3 text-[13px] text-muted" dir="ltr">
+                <span
+                  className="flex-1 truncate pe-3 text-[13px] text-muted rtl:text-right"
+                  dir="ltr"
+                >
                   {user.email ?? "—"}
                 </span>
                 <span className="w-[100px] pe-3">
@@ -191,7 +199,10 @@ export function UsersView({ token }: { token: string | null }) {
                       : t("admin.usersPage.suspended")}
                   </StatusBadge>
                 </span>
-                <span className="tabular w-[100px] pe-3 text-[13px] text-muted" dir="ltr">
+                <span
+                  className="tabular w-[100px] pe-3 text-[13px] text-muted rtl:text-right"
+                  dir="ltr"
+                >
                   {user.createdAt.slice(0, 10)}
                 </span>
                 <span className="flex w-[110px] items-center justify-end gap-1.5">

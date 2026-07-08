@@ -396,7 +396,7 @@ export function AuthPage() {
                 value={lang}
                 onChange={(value) => void i18n.changeLanguage(value)}
                 options={[
-                  { value: "en", label: "EN" },
+                  { value: "en", label: "English" },
                   { value: "he", label: "עברית" },
                 ]}
               />

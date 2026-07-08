@@ -157,7 +157,9 @@ function ActivityRow({ item }: { item: ActivityItem }) {
 
   return (
     <div className="flex items-center border-t border-hairrow px-4 py-3">
-      <span className="tabular w-[110px] pe-3 text-[13px]" dir="ltr">
+      {/* dir="ltr" keeps time/phone glyph order; rtl:text-right re-aligns the cell with its
+          column header when the page direction is RTL. */}
+      <span className="tabular w-[110px] pe-3 text-[13px] rtl:text-right" dir="ltr">
         <span className="block font-semibold text-ink">{time}</span>
         <span className="text-muted">{date}</span>
       </span>
@@ -169,7 +171,7 @@ function ActivityRow({ item }: { item: ActivityItem }) {
           <span className="block truncate text-[13.5px] font-semibold text-ink">{item.name}</span>
         ) : null}
         {item.phone ? (
-          <span className="tabular block text-[12.5px] text-muted" dir="ltr">
+          <span className="tabular block text-[12.5px] text-muted rtl:text-right" dir="ltr">
             {item.phone}
           </span>
         ) : null}
