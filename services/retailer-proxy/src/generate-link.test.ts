@@ -190,6 +190,27 @@ describe("generateLink", () => {
     expect(upserts).toHaveLength(0);
   });
 
+  it("logs the store product id when productdetail fails (diagnosable failures)", async () => {
+    const spyLogger = new Logger({ serviceName: "test", logLevel: "SILENT" });
+    const errors: Array<[string, Record<string, unknown> | undefined]> = [];
+    spyLogger.error = ((msg: string, extra?: Record<string, unknown>) => {
+      errors.push([msg, extra]);
+    }) as typeof spyLogger.error;
+    const { products } = fakeProducts();
+    await generateLink(URL, {
+      products,
+      client: async () =>
+        fakeClient({
+          detail: async () => {
+            throw new Error("timeout");
+          },
+        }),
+      logger: spyLogger,
+    });
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.[1]).toMatchObject({ storeProductId: "1005006123456789" });
+  });
+
   it("fails the flow when metadata comes back without title or commission", async () => {
     const { products, upserts } = fakeProducts();
     const res = await generateLink(URL, {

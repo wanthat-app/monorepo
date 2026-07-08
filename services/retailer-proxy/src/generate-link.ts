@@ -143,12 +143,14 @@ export async function generateLink(url: string, deps: GenerateLinkDeps): Promise
     );
   } catch (err) {
     deps.logger.error("productdetail.get failed; failing the flow (all-or-nothing)", {
+      storeProductId: parsed.storeProductId,
       error: String(err),
     });
     return { status: "error", code: "upstream_error", message: "product metadata unavailable" };
   }
   if (!meta.title || meta.commissionBps === null) {
     deps.logger.error("productdetail.get answered without title/commission; failing the flow", {
+      storeProductId: parsed.storeProductId,
       hasTitle: meta.title !== null,
       hasCommission: meta.commissionBps !== null,
     });
@@ -160,7 +162,10 @@ export async function generateLink(url: string, deps: GenerateLinkDeps): Promise
   try {
     affiliateUrl = await withThrottleRetry(() => client.generatePromotionLink(sourceUrl));
   } catch (err) {
-    deps.logger.error("link.generate failed", { error: String(err) });
+    deps.logger.error("link.generate failed", {
+      storeProductId: parsed.storeProductId,
+      error: String(err),
+    });
     return { status: "error", code: "upstream_error", message: String(err) };
   }
 
