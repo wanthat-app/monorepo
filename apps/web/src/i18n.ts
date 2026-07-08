@@ -250,6 +250,11 @@ const en = {
       },
     },
   },
+  notFound: {
+    title: "Page not found",
+    message: "The page you're looking for doesn't exist or has moved.",
+    home: "Back to home",
+  },
   shared: {
     onMerchant: "on {{merchant}}",
     earnLabel: "You earn back",
@@ -509,6 +514,11 @@ const he: typeof en = {
         desc: "כמה זמן מוחזק מונה השליחות לכל טלפון.",
       },
     },
+  },
+  notFound: {
+    title: "הדף לא נמצא",
+    message: "הדף שחיפשתם אינו קיים או שהועבר.",
+    home: "חזרה לדף הבית",
   },
   shared: {
     onMerchant: "ב-{{merchant}}",

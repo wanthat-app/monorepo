@@ -67,7 +67,7 @@ export const ProfileSettings: Story = {
             value="en"
             onChange={() => {}}
             options={[
-              { value: "en", label: "EN" },
+              { value: "en", label: "English" },
               { value: "he", label: "עברית" },
             ]}
           />
