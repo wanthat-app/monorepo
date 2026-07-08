@@ -126,6 +126,10 @@ function DashboardView({ token }: { token: string | null }) {
   const [failed, setFailed] = useState(false);
   // undefined = loading, null = fetch failed.
   const [catalog, setCatalog] = useState<CatalogStats | null | undefined>(undefined);
+  // The user-count KPI (T7): Aurora is money-only, so the count comes from the Cognito-backed
+  // users list — `ListUsersResponse.total` is `DescribeUserPool.EstimatedNumberOfUsers`, the
+  // approximate whole pool, shown as "~N". pageSize 1 keeps the page payload minimal.
+  const [approxUsers, setApproxUsers] = useState<number | null | undefined>(undefined);
   useEffect(() => {
     if (!token) return;
     adminApi
@@ -139,6 +143,10 @@ function DashboardView({ token }: { token: string | null }) {
       .catalogStats(token)
       .then(setCatalog)
       .catch(() => setCatalog(null));
+    adminApi
+      .listUsers(token, { pageSize: 1 })
+      .then((res) => setApproxUsers(res.total))
+      .catch(() => setApproxUsers(null));
   }, [token]);
 
   // Skeleton placeholder while the stats request is in flight, so the module doesn't flash "…".
@@ -166,7 +174,15 @@ function DashboardView({ token }: { token: string | null }) {
         />
         <KpiCard
           label={t("admin.stats.users")}
-          value={failed ? "—" : num(users?.total)}
+          value={
+            approxUsers === null ? (
+              "—"
+            ) : approxUsers === undefined ? (
+              <Skeleton className="h-[30px] w-16" />
+            ) : (
+              t("admin.stats.approx", { n: approxUsers.toLocaleString("en-US") })
+            )
+          }
           live
           icon={
             <>
@@ -219,11 +235,17 @@ function UsersPanel({ users, failed }: { users: UsersStats | null; failed: boole
   const { t } = useTranslation();
   const num = (v: number | undefined) =>
     v === undefined ? <Skeleton className="h-[22px] w-12" /> : v.toLocaleString("en-US");
+  // Since T7 the endpoint answers with an empty object (no in-VPC customer store to aggregate) —
+  // a loaded-but-fieldless response means "metrics unavailable", not "still loading".
+  const unavailable =
+    users !== null && users.newToday === undefined && users.dailySignups === undefined;
   return (
     <div className="rounded-card border border-line bg-surface p-5">
       <h2 className="mb-4 font-display text-lg font-semibold text-ink">{t("admin.users.title")}</h2>
       {failed ? (
         <div className="py-10 text-center text-sm text-muted">{t("admin.users.error")}</div>
+      ) : unavailable ? (
+        <div className="py-10 text-center text-sm text-muted">{t("admin.users.unavailable")}</div>
       ) : (
         <>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">

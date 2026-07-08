@@ -3,8 +3,10 @@ import type {
   CognitoDeleteUserResponse,
   ConfigKey,
   ConfigValue,
-  DeleteUserResponse,
+  DisableUserResponse,
+  EnableUserResponse,
   GetConfigResponse,
+  GlobalSignOutUserResponse,
   ListActivityResponse,
   ListConfigResponse,
   ListUsersResponse,
@@ -23,7 +25,9 @@ import { getConfig } from "./config";
  */
 
 export interface StatsOverview {
-  usersCount: number;
+  /** null since T7: Aurora is money-only, so admin-api has no customer count to serve — the
+   * approximate pool size lives on `ListUsersResponse.total` (users surface) instead. */
+  usersCount: number | null;
   pendingApprovals: number | null;
   totalCashbackMinor: number | null;
   conversions30d: number | null;
@@ -78,20 +82,42 @@ export const adminApi = {
     const qs = params.toString();
     return adminRequest<ListActivityResponse>(`/admin/activity${qs ? `?${qs}` : ""}`, token);
   },
-  // Users page: paged list/search (admin-api), guarded hard delete (admin-api), then the Cognito
-  // account cleanup (admin-credentials, non-VPC) - the SPA orchestrates the two delete steps.
-  listUsers: (token: string, opts: { search?: string; page?: number; pageSize?: number } = {}) => {
+  // Users page (Cognito-backed, ADR-0006): forward-only token pagination (no random-access page),
+  // `search` is an E.164 phone PREFIX (Cognito `phone_number ^=`), pageSize is capped at Cognito's
+  // Limit max of 60.
+  listUsers: (
+    token: string,
+    opts: { search?: string; pageSize?: number; nextToken?: string } = {},
+  ) => {
     const params = new URLSearchParams();
     if (opts.search) params.set("search", opts.search);
-    if (opts.page) params.set("page", String(opts.page));
     if (opts.pageSize) params.set("pageSize", String(opts.pageSize));
+    if (opts.nextToken) params.set("nextToken", opts.nextToken);
     const qs = params.toString();
     return adminRequest<ListUsersResponse>(`/admin/users${qs ? `?${qs}` : ""}`, token);
   },
-  deleteUser: (token: string, id: string) =>
-    adminRequest<DeleteUserResponse>(`/admin/users/${id}`, token, { method: "DELETE" }),
+  // Account erasure, single step since T7 (the Aurora DELETE /admin/users/:id is 410 Gone):
+  // removes the Cognito account and the member's recommendations; idempotent on a gone account.
   cognitoDeleteUser: (token: string, phone: string) =>
     adminRequest<CognitoDeleteUserResponse>("/admin/users/cognito-delete", token, {
+      method: "POST",
+      body: { phone },
+    }),
+  // Moderation (ADR-0006 decision 8), phone-keyed — phone is the pool username. Suspend = disable
+  // (reversible), lift = enable, kick = global sign-out. Caveat surfaced in the SPA confirm copy:
+  // the JWT authorizer is stateless, so already-issued access tokens survive up to 1 h.
+  disableUser: (token: string, phone: string) =>
+    adminRequest<DisableUserResponse>("/admin/users/disable", token, {
+      method: "POST",
+      body: { phone },
+    }),
+  enableUser: (token: string, phone: string) =>
+    adminRequest<EnableUserResponse>("/admin/users/enable", token, {
+      method: "POST",
+      body: { phone },
+    }),
+  globalSignOutUser: (token: string, phone: string) =>
+    adminRequest<GlobalSignOutUserResponse>("/admin/users/global-signout", token, {
       method: "POST",
       body: { phone },
     }),
@@ -105,5 +131,23 @@ export const adminApi = {
       body,
     }),
 };
+
+/**
+ * Normalize an operator-typed phone-prefix search to the E.164 prefix Cognito filters on
+ * (`phone_number ^= "..."`). Unlike `normalizePhone` (contracts), the input is a PREFIX, not a
+ * complete number, so libphonenumber validation would reject it — this is plain string surgery:
+ * separators are stripped, Israel's trunk `0` (e.g. `05x…`) becomes `+9725x…`, `00`/bare-`972`
+ * international forms gain the `+`, and any other bare digits are assumed local-IL (launch is
+ * Israel-only). Empty input stays empty (no filter).
+ */
+export function normalizePhonePrefix(input: string): string {
+  const raw = input.replace(/[\s\-().]/g, "");
+  if (!raw) return "";
+  if (raw.startsWith("+")) return raw;
+  if (raw.startsWith("00")) return `+${raw.slice(2)}`;
+  if (raw.startsWith("972")) return `+${raw}`;
+  if (raw.startsWith("0")) return `+972${raw.slice(1)}`;
+  return `+972${raw}`;
+}
 
 export type { CatalogStats, UsersStats };

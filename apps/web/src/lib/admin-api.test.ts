@@ -8,7 +8,7 @@ const login = vi.hoisted(() => ({
 }));
 vi.mock("./admin-login", () => login);
 
-import { adminApi } from "./admin-api";
+import { adminApi, normalizePhonePrefix } from "./admin-api";
 
 afterEach(() => vi.unstubAllGlobals());
 beforeEach(() => {
@@ -68,5 +68,53 @@ describe("adminRequest 401 handling", () => {
     expect(login.refreshAdminTokens).not.toHaveBeenCalled();
     expect(login.clearAdminTokens).not.toHaveBeenCalled();
     expect(login.beginAdminLogin).not.toHaveBeenCalled();
+  });
+});
+
+describe("users surface (Cognito-backed, ADR-0006)", () => {
+  const ok = (body: unknown = {}) => ({ ok: true, status: 200, json: async () => body });
+
+  it("listUsers sends token pagination (search/pageSize/nextToken), never a page number", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok({ users: [], total: 0, approximate: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await adminApi.listUsers("tok", { search: "+9725", pageSize: 20, nextToken: "opaque==" });
+    const [calledUrl] = fetchMock.mock.calls[0] as [string];
+    const url = new URL(calledUrl, "https://x.invalid");
+    expect(url.searchParams.get("search")).toBe("+9725");
+    expect(url.searchParams.get("pageSize")).toBe("20");
+    expect(url.searchParams.get("nextToken")).toBe("opaque==");
+    expect(url.searchParams.has("page")).toBe(false);
+  });
+
+  it.each([
+    ["disableUser", "/admin/users/disable"],
+    ["enableUser", "/admin/users/enable"],
+    ["globalSignOutUser", "/admin/users/global-signout"],
+  ] as const)("%s POSTs the phone to %s", async (fn, path) => {
+    const fetchMock = vi.fn().mockResolvedValue(ok({ ok: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await adminApi[fn]("tok", "+972501234567");
+    const [url, init] = fetchMock.mock.calls[0] as [string, { method: string; body: string }];
+    expect(url.endsWith(path)).toBe(true);
+    expect(init.method).toBe("POST");
+    expect(JSON.parse(init.body)).toEqual({ phone: "+972501234567" });
+  });
+});
+
+describe("normalizePhonePrefix", () => {
+  it.each([
+    ["05", "+9725"],
+    ["050-123", "+97250123"],
+    ["0501234567", "+972501234567"],
+    ["+97250", "+97250"],
+    ["97250", "+97250"],
+    ["0097250", "+97250"],
+    ["50", "+97250"],
+    ["  05 0-12(3) ", "+97250123"],
+    ["", ""],
+  ])("%s -> %s", (input, expected) => {
+    expect(normalizePhonePrefix(input)).toBe(expected);
   });
 });
