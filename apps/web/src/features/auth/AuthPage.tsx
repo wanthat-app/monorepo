@@ -1,4 +1,4 @@
-import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
+import { type AuthSession, normalizePhone, type OtpChannel } from "@wanthat/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
@@ -11,6 +11,7 @@ import {
   loginWithPasskeyAutofill,
   markPasskeyDevice,
   passkeyAutofillSupported,
+  passkeyImmediateSupported,
   passkeysSupported,
 } from "../../lib/passkey";
 import { hasStoredSession, useSession } from "../../lib/session";
@@ -82,11 +83,6 @@ export function AuthPage() {
 
   const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
 
-  // Passkey login affordance (ADR-0022). `autofillSupported` is null while we probe conditional-UI
-  // support (used only for first-time devices). `autoTried` flips true after an auto-modal prompt was
-  // fired and did NOT sign the member in (cancelled / no passkey) — then we surface the manual button.
-  const [autofillSupported, setAutofillSupported] = useState<boolean | null>(null);
-  const [autoTried, setAutoTried] = useState(false);
   const armed = useRef(false);
 
   useEffect(() => {
@@ -102,12 +98,17 @@ export function AuthPage() {
       .catch(() => {}); // advisory only — the server re-checks on /auth/start
   }, []);
 
-  // Passkey login on load (ADR-0022). Two regimes, chosen once per mount:
-  //  - Returning passkey device → fire an AUTOMATIC modal prompt: the Face ID sheet pops with no tap
-  //    (iOS 16 spends its one gesture-free get() here; iOS 17.4+ has no gesture limit). This is the
-  //    fully-automatic path. On cancel/no-passkey we fall back to the manual button.
-  //  - First-time device → the gentle conditional-UI autofill (the passkey offers itself in the field);
-  //    using it marks the device so the NEXT visit gets the automatic prompt.
+  // Automatic passkey login on load (ADR-0022). Two regimes, chosen once per mount:
+  //  - Immediate mode supported (Chrome 149+) → the ZERO-STORAGE path: on the member's first
+  //    interaction fire a `uiMode:"immediate"` get() — the sheet pops iff a locally-available
+  //    passkey exists (including ones synced from another device) and rejects silently otherwise,
+  //    so a brand-new visitor sees nothing. On rejection we fall back to the autofill offer.
+  //  - Otherwise (Safari, Firefox) → the per-device localStorage flag decides: a returning passkey
+  //    device gets an AUTOMATIC modal prompt on load (iOS 16 spends its one gesture-free get()
+  //    here; iOS 17.4+ has no gesture limit); a first-time device gets the gentle conditional-UI
+  //    autofill, which sets the flag once used.
+  // The manual button below is ALWAYS rendered where passkeys are supported — it is the affordance
+  // for synced-but-never-used-here passkeys that no automatic regime can discover.
   // The passkey ceremony must be the first async op on load (Safari allows only one), so nothing is
   // awaited before it. Guarded so it runs exactly once.
   useEffect(() => {
@@ -116,34 +117,41 @@ export function AuthPage() {
     // A returning member with a stored session is being rehydrated — the effect above will forward
     // them; don't pop a passkey prompt at someone who's already logged in.
     if (hasStoredSession()) return;
-    if (!passkeysSupported()) {
-      setAutofillSupported(false);
-      return;
-    }
-    void (async () => {
-      if (deviceHasPasskey()) {
-        try {
-          const session = await loginWithPasskey(); // modal; auto-prompts on load
-          markPasskeyDevice();
-          signIn(session);
-          complete();
-          return;
-        } catch {
-          setAutoTried(true); // cancelled / no passkey → show the manual button (freebie is spent)
-          return;
-        }
-      }
-      const supported = await passkeyAutofillSupported();
-      setAutofillSupported(supported);
-      if (!supported) return;
+    if (!passkeysSupported()) return;
+    const loginVia = async (fn: () => Promise<AuthSession>) => {
+      const session = await fn();
+      markPasskeyDevice();
+      signIn(session);
+      complete();
+    };
+    const armAutofill = async () => {
+      if (!(await passkeyAutofillSupported())) return;
       try {
-        const session = await loginWithPasskeyAutofill();
-        markPasskeyDevice();
-        signIn(session);
-        complete();
+        await loginVia(loginWithPasskeyAutofill);
       } catch {
         // aborted / not used — stay on the form; OTP or the manual button continues.
       }
+    };
+    void (async () => {
+      if (await passkeyImmediateSupported()) {
+        try {
+          await loginVia(() => loginWithPasskey({ mode: "immediate" }));
+        } catch (err) {
+          // AbortError = another ceremony (manual button, enrolment) took over — get out of its
+          // way. Anything else = no local passkey / dismissed → re-offer via autofill.
+          if ((err as Error | null)?.name !== "AbortError") void armAutofill();
+        }
+        return;
+      }
+      if (deviceHasPasskey()) {
+        try {
+          await loginVia(() => loginWithPasskey()); // modal; auto-prompts on load
+        } catch {
+          // cancelled / no passkey — OTP and the manual button remain.
+        }
+        return;
+      }
+      void armAutofill();
     })();
   }, [complete, signIn]);
 
@@ -252,11 +260,12 @@ export function AuthPage() {
               <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
               <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
             </div>
-            {/* Manual passkey button — the gesture fallback. Shown after an auto-prompt was cancelled
-                (`autoTried`, the iOS-16 freebie is spent so only a tap works now) or where conditional
-                UI isn't available. On a returning device the auto-prompt already fired on load; on a
-                first-time device the passkey offers itself in the field's autofill instead. */}
-            {passkeysSupported() && (autoTried || autofillSupported === false) && (
+            {/* Manual passkey button — ALWAYS visible where passkeys are supported. The automatic
+                regimes can't discover a passkey that was enrolled on another device (e.g. iPhone →
+                iCloud → this Mac) on browsers without immediate mode, and a cancelled auto-prompt
+                also lands here; one tap opens the OS picker, which handles the no-passkey case
+                (cross-device QR) gracefully. */}
+            {passkeysSupported() && (
               <Button onClick={onPasskeyLogin} loading={busy}>
                 {t("auth.passkeyCta", { label: bioLabel })}
               </Button>
