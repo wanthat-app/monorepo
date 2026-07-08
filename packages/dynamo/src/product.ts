@@ -46,8 +46,15 @@ export class ProductRepo {
   ) {}
 
   async get(storeId: StoreId, storeProductId: string): Promise<ProductItem | undefined> {
+    // Strongly consistent: resolve rereads the row the retailer-proxy upserted MILLISECONDS
+    // earlier (and create reads it right after resolve) — an eventually-consistent get could
+    // miss the fresh mint and surface a spurious failure. Volume is tiny; the 2x RCU is noise.
     const res = await this.doc.send(
-      new GetCommand({ TableName: this.tableName, Key: { storeId, storeProductId } }),
+      new GetCommand({
+        TableName: this.tableName,
+        Key: { storeId, storeProductId },
+        ConsistentRead: true,
+      }),
     );
     return res.Item ? ProductItem.parse(res.Item) : undefined;
   }

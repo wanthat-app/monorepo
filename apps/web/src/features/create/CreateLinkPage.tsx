@@ -98,7 +98,7 @@ const displayLink = (shareUrl: string) => shareUrl.replace(/^https?:\/\//, "");
 export function CreateLinkPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { customer, accessToken } = useSession();
+  const { customer, loading: sessionLoading, accessToken } = useSession();
   const token = accessToken();
 
   const [url, setUrl] = useState("");
@@ -147,6 +147,9 @@ export function CreateLinkPage() {
     },
   });
 
+  // Wait out the session rehydrate before deciding: a hard reload of /create must not bounce a
+  // signed-in member to /auth (and lose this page) while the refresh-token exchange is in flight.
+  if (sessionLoading) return null;
   if (!customer) {
     navigate("/auth", { replace: true });
     return null;
