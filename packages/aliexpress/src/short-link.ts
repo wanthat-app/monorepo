@@ -43,11 +43,20 @@ function productFrom(url: URL): ParsedProductUrl | null {
  * Follow the short link's redirect chain until a hop reveals the product id. Null when the
  * chain dead-ends (no redirect, hop cap, off-allow-list target, no id found) — the caller
  * answers `unsupported_url`. Network errors propagate for the caller to map to a typed error.
+ *
+ * Timeouts: `timeoutMs` bounds one hop, `overallTimeoutMs` the whole chain (each hop gets the
+ * smaller of the two). The first hop carries cold DNS + TLS to AliExpress from il-central-1 and
+ * was measured blowing a 3s cap in validation — hence the generous per-hop default; the chain
+ * is normally a single hop.
  */
 export async function expandAliExpressShortLink(
   shortUrl: string,
   fetchFn: typeof fetch = fetch,
-  { maxHops = 4, timeoutMs = 3000 }: { maxHops?: number; timeoutMs?: number } = {},
+  {
+    maxHops = 4,
+    timeoutMs = 6000,
+    overallTimeoutMs = 10_000,
+  }: { maxHops?: number; timeoutMs?: number; overallTimeoutMs?: number } = {},
 ): Promise<ExpandedShortLink | null> {
   let current: URL;
   try {
@@ -56,12 +65,15 @@ export async function expandAliExpressShortLink(
     return null;
   }
 
+  const deadline = Date.now() + overallTimeoutMs;
   for (let hop = 0; hop < maxHops; hop++) {
     if (!hopAllowed(current)) return null;
+    const remainingMs = deadline - Date.now();
+    if (remainingMs <= 0) return null;
     const res = await fetchFn(current.href, {
       method: "GET",
       redirect: "manual",
-      signal: AbortSignal.timeout(timeoutMs),
+      signal: AbortSignal.timeout(Math.min(timeoutMs, remainingMs)),
     });
     void res.body?.cancel().catch(() => {}); // headers only — the body is never read
     const location = res.headers.get("location");

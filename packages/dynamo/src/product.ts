@@ -26,6 +26,12 @@ export const ProductItem = z.object({
   price: MoneyItem.nullable(),
   commissionBps: z.number().int(),
   affiliateUrl: z.string(),
+  /**
+   * True when the metadata fetch failed at mint and the row carries PLACEHOLDERS (fallback
+   * title, no image/price, commissionBps 0) — the next resolve retries enrichment instead of
+   * serving the junk forever. Absent on pre-flag rows (see {@link needsEnrichment}).
+   */
+  metadataPending: z.boolean().optional(),
   createdAt: z.string(),
   updatedAt: z.string(),
 });
@@ -33,6 +39,15 @@ export type ProductItem = z.infer<typeof ProductItem>;
 
 /** What a mint/re-mint writes; timestamps are managed by the repo. */
 export type ProductUpsert = Omit<ProductItem, "createdAt" | "updatedAt">;
+
+/**
+ * Whether a stored product still needs a metadata (enrichment) retry. The explicit flag wins;
+ * rows written before the flag existed are inferred: no image AND no price ≈ the placeholder
+ * shape (a legit imageless+priceless product re-fetches once, then gets the flag and settles).
+ */
+export function needsEnrichment(item: ProductItem): boolean {
+  return item.metadataPending ?? (item.imageUrl === null && item.price === null);
+}
 
 /**
  * Repository over the `product` table (ADR-0003) — the shared catalog item, fetched once and
@@ -67,13 +82,15 @@ export class ProductRepo {
         Key: { storeId: validated.storeId, storeProductId: validated.storeProductId },
         UpdateExpression:
           "SET title = :title, imageUrl = :imageUrl, price = :price, commissionBps = :commissionBps, " +
-          "affiliateUrl = :affiliateUrl, updatedAt = :now, createdAt = if_not_exists(createdAt, :now)",
+          "affiliateUrl = :affiliateUrl, metadataPending = :metadataPending, updatedAt = :now, " +
+          "createdAt = if_not_exists(createdAt, :now)",
         ExpressionAttributeValues: {
           ":title": validated.title,
           ":imageUrl": validated.imageUrl,
           ":price": validated.price,
           ":commissionBps": validated.commissionBps,
           ":affiliateUrl": validated.affiliateUrl,
+          ":metadataPending": validated.metadataPending ?? false,
           ":now": now,
         },
         ReturnValues: "ALL_NEW",
