@@ -163,6 +163,9 @@ importers:
       '@wanthat/config':
         specifier: workspace:*
         version: link:../config
+      '@wanthat/domain':
+        specifier: workspace:*
+        version: link:../domain
       kysely:
         specifier: ^0.28.17
         version: 0.28.17

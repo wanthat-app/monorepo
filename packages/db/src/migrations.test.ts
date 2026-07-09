@@ -1,11 +1,8 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { Kysely, PostgresDialect, sql } from "kysely";
-import pg from "pg";
+import { type Kysely, sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createMigrator } from "./migrator";
 import type { Database } from "./schema";
+import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
 
 /**
  * Migration integration tests (ADR-0013: Testcontainers for packages/db) — apply every plain-SQL
@@ -14,27 +11,21 @@ import type { Database } from "./schema";
  * intact, and the audit chain appendable by the poller role.
  *
  * Requires Docker (ADR-0013 accepts this: integration tests run on a Docker-enabled runner).
- * The container lacks RDS's built-in `rds_iam` role, so the harness creates a NOLOGIN stand-in
- * before migrating — the one RDS-ism in the SQL.
+ * Container startup lives in the shared harness (test-harness.ts).
  */
 
-const MIGRATIONS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "migrations");
 const MIGRATION_COUNT = 6;
 
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Kysely<Database>;
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer("postgres:16-alpine").start();
-  const pool = new pg.Pool({ connectionString: container.getConnectionUri() });
-  // RDS provides rds_iam; plain Postgres does not. The migrations only GRANT it, so NOLOGIN works.
-  await pool.query("CREATE ROLE rds_iam NOLOGIN");
-  db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
+  testDb = await startTestDb();
+  db = testDb.db;
 }, 180_000);
 
 afterAll(async () => {
-  await db?.destroy();
-  await container?.stop();
+  await testDb?.stop();
 });
 
 /** Run `fn` on one connection with the given role — grants apply, superuser powers do not. */
