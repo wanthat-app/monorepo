@@ -164,8 +164,8 @@ importers:
         specifier: workspace:*
         version: link:../config
       kysely:
-        specifier: ^0.27.4
-        version: 0.27.6
+        specifier: ^0.28.17
+        version: 0.28.17
       pg:
         specifier: ^8.12.0
         version: 8.22.0
@@ -231,8 +231,8 @@ importers:
         specifier: ^4.6.0
         version: 4.12.27
       kysely:
-        specifier: ^0.27.4
-        version: 0.27.6
+        specifier: ^0.28.17
+        version: 0.28.17
 
   services/admin-credentials:
     dependencies:
@@ -2519,9 +2519,9 @@ packages:
     engines: {node: '>=6'}
     hasBin: true
 
-  kysely@0.27.6:
-    resolution: {integrity: sha512-FIyV/64EkKhJmjgC0g2hygpBv5RNWVPyNCqSAD7eTCv6eFWNIi4PN1UvdSJGicN/o35bnevgis4Y0UDC0qi8jQ==}
-    engines: {node: '>=14.0.0'}
+  kysely@0.28.17:
+    resolution: {integrity: sha512-nbD8lB9EB3wNdMhOCdx5Li8DxnLbvKByylRLcJ1h+4SkrowVeECAyZlyiKMThF7xFdRz0jSQ2MoJr+wXux2y0Q==}
+    engines: {node: '>=20.0.0'}
 
   lazystream@1.0.1:
     resolution: {integrity: sha512-b94GiNHQNy6JNTrt5w6zNyffMrNkXZb3KTkCZJb2V1xaEGCk093vkZ2jk3tpaeP33/OiXC+WvK9AxUebnf5nbw==}
@@ -5834,7 +5834,7 @@ snapshots:
 
   json5@2.2.3: {}
 
-  kysely@0.27.6: {}
+  kysely@0.28.17: {}
 
   lazystream@1.0.1:
     dependencies:
