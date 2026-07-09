@@ -17,6 +17,8 @@ export interface ConfirmDeps {
     /** Map `guestId → sub` if unclaimed (first-claim-wins). Returns true if this call created it. */
     claim(guestId: string, sub: string, claimedAt: string): Promise<boolean>;
   };
+  /** The exact customer counter (`#customerCounter` in the runtime config table). */
+  counter: { incrementTotal(): Promise<void> };
   /** Canonical SPA origin for links in outbound messages (env APP_URL). */
   appUrl: string;
   /** Structured log sink; `outboxId` correlates with the whatsapp-dispatcher's notification_* lines. */
@@ -42,10 +44,13 @@ function messageLanguage(locale: string | undefined): "he" | "en" {
  *    exactly as `/auth/register` did before registration became the public `SignUp` call.
  * 2. Claim the `guest_attribution` mapping (`guestId → sub`, ADR-0008/0020) when the confirming
  *    call carried a `guestId` in ClientMetadata.
+ * 3. Increment the exact customer counter (`#customerCounter` total) — the dashboard's users KPI.
+ *    Because ONLY this trigger increments, the counter counts CONFIRMED customers; the users
+ *    page's approximate whole-pool total (incl. UNCONFIRMED) deliberately keeps a wider scope.
  *
- * Both steps are independently best-effort: each failure is logged and swallowed, and an outbox
- * failure still attempts the attribution claim. Nothing here may throw — a thrown error would fail
- * the user's ConfirmSignUp call, and neither write is worth blocking a confirmation over.
+ * All steps are independently best-effort: each failure is logged and swallowed, and an earlier
+ * failure still attempts the later steps. Nothing here may throw — a thrown error would fail
+ * the user's ConfirmSignUp call, and none of these writes is worth blocking a confirmation over.
  *
  * Only `PostConfirmation_ConfirmSignUp` does work; other trigger sources (e.g.
  * `PostConfirmation_ConfirmForgotPassword`) are a no-op — the user already got their welcome.
@@ -98,5 +103,20 @@ export async function handleConfirmation(
         error: err instanceof Error ? err.message : String(err),
       });
     }
+  }
+
+  // Exact customer counter: one confirmed signup = total + 1 (atomic ADD on the sentinel item).
+  // Same best-effort contract as the steps above — a miss is logged LOUDLY as
+  // customer_counter_drift (reconcile hint: recount confirmed users via paginated ListUsers)
+  // but never blocks the confirmation.
+  try {
+    await deps.counter.incrementTotal();
+    deps.log.info("customer_counter_incremented", { sub });
+  } catch (err) {
+    deps.log.error("customer_counter_drift", {
+      op: "incrementTotal",
+      sub,
+      error: err instanceof Error ? err.message : String(err),
+    });
   }
 }

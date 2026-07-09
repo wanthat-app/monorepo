@@ -28,8 +28,15 @@ describe("UsersStats contract", () => {
     expect(UsersStats.safeParse({ dailySignups: dense.slice(0, 29) }).success).toBe(false);
   });
 
+  it("accepts the exact-counter fields (additive since the customer counter)", () => {
+    const ok = UsersStats.safeParse({ usersCount: 41, suspendedUsersCount: 3 });
+    expect(ok.success).toBe(true);
+  });
+
   it("rejects negative counts and malformed dates when fields are present", () => {
     expect(UsersStats.safeParse({ total: -1 }).success).toBe(false);
+    expect(UsersStats.safeParse({ usersCount: -1 }).success).toBe(false);
+    expect(UsersStats.safeParse({ suspendedUsersCount: -1 }).success).toBe(false);
     expect(
       UsersStats.shape.dailySignups.unwrap().element.safeParse({ date: "2026/06/01", count: 1 })
         .success,

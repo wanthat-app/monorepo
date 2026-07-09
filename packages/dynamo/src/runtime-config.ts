@@ -67,9 +67,12 @@ export class RuntimeConfigRepo {
 }
 
 /**
- * Read-only view of the runtime config. The table is single-writer (admin-api holds the sole IAM
- * write grant); every other service depends on this type, so a stray `put` from a non-admin
- * service does not even compile. IAM is the enforcement; this is documentation that cannot drift.
+ * Read-only view of the runtime config. admin-api holds the sole write grant for CONFIG entries;
+ * every other config consumer depends on this type, so a stray `put` from a non-admin service
+ * does not even compile. IAM is the enforcement; this is documentation that cannot drift.
+ * (The `#customerCounter` sentinel item shares the table but is NOT config: its writers go
+ * through `CustomerCounterRepo`, and `#`-prefixed keys are disjoint from the dotted config keys —
+ * `getAll` skips them as unknown.)
  */
 export type RuntimeConfigReader = Pick<RuntimeConfigRepo, "get">;
 

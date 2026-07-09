@@ -5,11 +5,13 @@ const { ctx } = vi.hoisted(() => ({
     config: { getAll: vi.fn().mockResolvedValue([]), put: vi.fn() },
     products: { count: vi.fn().mockResolvedValue(0) },
     recommendations: { count: vi.fn().mockResolvedValue(0) },
+    customerCounter: { get: vi.fn().mockResolvedValue({ total: 0, disabled: 0 }) },
     db: {},
   } as {
     config: { getAll: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
     products: { count: ReturnType<typeof vi.fn> };
     recommendations: { count: ReturnType<typeof vi.fn> };
+    customerCounter: { get: ReturnType<typeof vi.fn> };
     db: object;
     devOtpSink?: { scanAll: ReturnType<typeof vi.fn> };
   },
@@ -134,22 +136,31 @@ describe("admin users (whole surface lives on admin-credentials since T7)", () =
   });
 });
 
-describe("admin stats (user-population stats are gone since T7 - Aurora is money-only)", () => {
-  it("returns an empty UsersStats object (every field optional, no in-VPC source)", async () => {
+describe("admin user stats (exact customer counter - the #customerCounter sentinel item)", () => {
+  it("serves the exact counter figures on /admin/stats/users", async () => {
+    ctx.customerCounter.get.mockResolvedValue({ total: 41, disabled: 3 });
     const res = await app.request("/admin/stats/users", {}, adminEnv);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({});
+    expect(await res.json()).toEqual({ usersCount: 41, suspendedUsersCount: 3 });
   });
 
-  it("overview reports usersCount null alongside the other placeholders", async () => {
+  it("overview reports the EXACT usersCount alongside the other placeholders", async () => {
+    ctx.customerCounter.get.mockResolvedValue({ total: 41, disabled: 3 });
     const res = await app.request("/admin/stats/overview", {}, adminEnv);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      usersCount: null,
+      usersCount: 41,
       pendingApprovals: null,
       totalCashbackMinor: null,
       conversions30d: null,
     });
+  });
+
+  it("an empty pool (missing counter item) reads as zero, not an error", async () => {
+    ctx.customerCounter.get.mockResolvedValue({ total: 0, disabled: 0 });
+    const res = await app.request("/admin/stats/users", {}, adminEnv);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ usersCount: 0, suspendedUsersCount: 0 });
   });
 });
 

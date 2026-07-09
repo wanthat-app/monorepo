@@ -59,6 +59,33 @@ function audit(type: string, phone: string, actor: string): void {
   console.log(JSON.stringify({ audit: type, phone, actor, at: new Date().toISOString() }));
 }
 
+/**
+ * Customer-counter write riding a moderation route. It runs AFTER the Cognito call succeeded and
+ * is best-effort: the moderation action already happened, so a counter failure must not fail the
+ * route (and a retry would then double-count) - it is logged LOUDLY as customer_counter_drift
+ * instead. Reconcile hint: recount confirmed users via paginated ListUsers. The repo's own floor
+ * guards handle the never-go-negative side (log-and-skip, no throw).
+ */
+async function counterWrite(
+  op: string,
+  phone: string,
+  write: () => Promise<unknown>,
+): Promise<void> {
+  try {
+    await write();
+  } catch (err) {
+    console.error(
+      JSON.stringify({
+        error: "customer_counter_drift",
+        op,
+        phone,
+        message: err instanceof Error ? err.message : String(err),
+        at: new Date().toISOString(),
+      }),
+    );
+  }
+}
+
 // GET /admin/retailer/aliexpress/credentials — write-only credential status: whether the secret
 // has been written and when. Never returns (or can return) the credential values themselves.
 app.get("/admin/retailer/aliexpress/credentials", async (c) =>
@@ -102,18 +129,35 @@ app.get("/admin/users", async (c) => {
 // suspend = AdminDisableUser (reversible), lift = AdminEnableUser, kick = AdminUserGlobalSignOut.
 // Phone-keyed (the pool username); unknown phone = 404 not_found; repeating an action is
 // idempotent success per the contract. Each action is audited with the ID-token actor.
+// Suspend / lift also move the customer counter's `disabled` count — but ONLY when the Cognito
+// state actually changed (AdminGetUser inside disable/enable reports the prior state), so the
+// idempotent repeat of an action never double-counts.
 const moderation = [
   {
     path: "/admin/users/disable",
     body: DisableUserBody,
     auditType: "user_disabled",
-    run: (phone: string) => getContext().cognitoUsers.disable(phone),
+    run: async (phone: string) => {
+      const { found, wasEnabled } = await getContext().cognitoUsers.disable(phone);
+      if (found && wasEnabled) {
+        await counterWrite("markDisabled", phone, () =>
+          getContext().customerCounter.markDisabled(),
+        );
+      }
+      return found;
+    },
   },
   {
     path: "/admin/users/enable",
     body: EnableUserBody,
     auditType: "user_enabled",
-    run: (phone: string) => getContext().cognitoUsers.enable(phone),
+    run: async (phone: string) => {
+      const { found, wasDisabled } = await getContext().cognitoUsers.enable(phone);
+      if (found && wasDisabled) {
+        await counterWrite("markEnabled", phone, () => getContext().customerCounter.markEnabled());
+      }
+      return found;
+    },
   },
   {
     path: "/admin/users/global-signout",
@@ -141,11 +185,20 @@ for (const route of moderation) {
 app.post("/admin/users/cognito-delete", async (c) => {
   const body = CognitoDeleteUserBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: "invalid_request" }, 400);
-  const { existed, sub } = await getContext().cognitoUsers.remove(body.data.phone);
+  const { existed, sub, wasDisabled } = await getContext().cognitoUsers.remove(body.data.phone);
   const recommendationsDeleted = sub
     ? await getContext().recommendations.deleteByOwner(sub)
     : undefined;
-  if (existed) audit("user_deleted", body.data.phone, actorFrom(c));
+  // Exact customer counter: one erased account = total - 1 (and disabled - 1 when it was
+  // suspended). Only when the account existed — the idempotent retry must not double-decrement.
+  // NOTE: SELF-service account deletion (Cognito DeleteUser) does not exist in the SPA yet
+  // (verified 2026-07-09 — no caller anywhere); when that flow arrives it MUST decrement too.
+  if (existed) {
+    await counterWrite("decrementTotal", body.data.phone, () =>
+      getContext().customerCounter.decrementTotal(wasDisabled),
+    );
+    audit("user_deleted", body.data.phone, actorFrom(c));
+  }
   return c.json(
     CognitoDeleteUserResponse.parse({
       ok: true,

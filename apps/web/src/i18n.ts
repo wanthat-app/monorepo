@@ -227,7 +227,6 @@ const en = {
       conversions: "Link conversion",
       links: "Links created",
       products: "Products",
-      approx: "~{{n}}",
     },
     users: {
       title: "Users",
@@ -560,7 +559,6 @@ const he: typeof en = {
       conversions: "המרת קישורים",
       links: "קישורים שנוצרו",
       products: "מוצרים",
-      approx: "כ־{{n}}",
     },
     users: {
       title: "משתמשים",

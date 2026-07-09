@@ -1,6 +1,7 @@
 import {
   AdminDeleteUserCommand,
   AdminDisableUserCommand,
+  AdminEnableUserCommand,
   AdminGetUserCommand,
   type CognitoIdentityProviderClient,
   DescribeUserPoolCommand,
@@ -103,21 +104,54 @@ describe("CognitoUserAdmin", () => {
     });
   });
 
-  it("lifecycle actions resolve false for an unknown phone (contract: 404)", async () => {
+  it("lifecycle actions resolve not-found for an unknown phone (contract: 404)", async () => {
     const send = vi.fn().mockRejectedValue(notFound());
     const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
-    expect(await admin.disable("+972501234567")).toBe(false);
-    expect(await admin.enable("+972501234567")).toBe(false);
+    expect(await admin.disable("+972501234567")).toEqual({ found: false, wasEnabled: false });
+    expect(await admin.enable("+972501234567")).toEqual({ found: false, wasDisabled: false });
     expect(await admin.globalSignOut("+972501234567")).toBe(false);
   });
 
-  it("disable sends AdminDisableUser keyed by phone and resolves true", async () => {
-    const send = vi.fn().mockResolvedValue({});
+  it("disable reads the prior state via AdminGetUser, THEN sends AdminDisableUser", async () => {
+    const order: string[] = [];
+    const send = vi.fn(async (cmd: object) => {
+      if (cmd instanceof AdminGetUserCommand) {
+        order.push("get");
+        return { Username: "+972501234567", Enabled: true };
+      }
+      if (cmd instanceof AdminDisableUserCommand) {
+        order.push("disable");
+        return {};
+      }
+      throw new Error("unexpected command");
+    });
     const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
-    expect(await admin.disable("+972501234567")).toBe(true);
-    const cmd = send.mock.calls[0]?.[0] as AdminDisableUserCommand;
-    expect(cmd).toBeInstanceOf(AdminDisableUserCommand);
+    expect(await admin.disable("+972501234567")).toEqual({ found: true, wasEnabled: true });
+    expect(order).toEqual(["get", "disable"]);
+    const cmd = send.mock.calls[1]?.[0] as AdminDisableUserCommand;
     expect(cmd.input).toEqual({ UserPoolId: "pool-1", Username: "+972501234567" });
+  });
+
+  it("disable reports wasEnabled:false for an already-disabled user (idempotent, no re-count)", async () => {
+    const send = vi.fn(async (cmd: object) =>
+      cmd instanceof AdminGetUserCommand ? { Username: "+972501234567", Enabled: false } : {},
+    );
+    const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
+    expect(await admin.disable("+972501234567")).toEqual({ found: true, wasEnabled: false });
+  });
+
+  it("enable reports wasDisabled symmetrically (true lifts a suspension, false is a repeat)", async () => {
+    const state = { enabled: false };
+    const send = vi.fn(async (cmd: object) => {
+      if (cmd instanceof AdminGetUserCommand)
+        return { Username: "+972501234567", Enabled: state.enabled };
+      if (cmd instanceof AdminEnableUserCommand) return {};
+      throw new Error("unexpected command");
+    });
+    const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
+    expect(await admin.enable("+972501234567")).toEqual({ found: true, wasDisabled: true });
+    state.enabled = true; // repeat on an already-enabled user
+    expect(await admin.enable("+972501234567")).toEqual({ found: true, wasDisabled: false });
   });
 
   it("remove resolves the sub via AdminGetUser BEFORE deleting", async () => {
@@ -125,7 +159,11 @@ describe("CognitoUserAdmin", () => {
     const send = vi.fn(async (cmd: object) => {
       if (cmd instanceof AdminGetUserCommand) {
         order.push("get");
-        return { Username: "+972501234567", UserAttributes: [{ Name: "sub", Value: SUB }] };
+        return {
+          Username: "+972501234567",
+          Enabled: true,
+          UserAttributes: [{ Name: "sub", Value: SUB }],
+        };
       }
       if (cmd instanceof AdminDeleteUserCommand) {
         order.push("delete");
@@ -134,13 +172,35 @@ describe("CognitoUserAdmin", () => {
       throw new Error("unexpected command");
     });
     const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
-    expect(await admin.remove("+972501234567")).toEqual({ existed: true, sub: SUB });
+    expect(await admin.remove("+972501234567")).toEqual({
+      existed: true,
+      sub: SUB,
+      wasDisabled: false,
+    });
     expect(order).toEqual(["get", "delete"]);
+  });
+
+  it("remove reports wasDisabled:true when erasing a suspended account", async () => {
+    const send = vi.fn(async (cmd: object) =>
+      cmd instanceof AdminGetUserCommand
+        ? {
+            Username: "+972501234567",
+            Enabled: false,
+            UserAttributes: [{ Name: "sub", Value: SUB }],
+          }
+        : {},
+    );
+    const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
+    expect(await admin.remove("+972501234567")).toEqual({
+      existed: true,
+      sub: SUB,
+      wasDisabled: true,
+    });
   });
 
   it("remove treats an already-gone account as existed:false with no sub", async () => {
     const send = vi.fn().mockRejectedValue(notFound());
     const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
-    expect(await admin.remove("+972501234567")).toEqual({ existed: false });
+    expect(await admin.remove("+972501234567")).toEqual({ existed: false, wasDisabled: false });
   });
 });
