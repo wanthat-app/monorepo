@@ -1,6 +1,8 @@
+import { convertMinor } from "@wanthat/domain";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
+import { formatMoneyMinor } from "../../lib/money";
 import { Button, Screen, Spinner } from "../../ui/components";
 import {
   canLoginWithPasskey,
@@ -9,6 +11,7 @@ import {
   passkeysSupported,
   useSession,
 } from "../../user";
+import { readLandingSnapshot } from "./snapshot";
 
 /**
  * Referral landing (ADR-0007/0006) — the dynamic, SPA-rendered `/p/{id}` page. The landing SERVICE
@@ -23,17 +26,14 @@ import {
  *  - logged out / unknown device → Sign up / Log in (→ /auth?ref, which redirects to the store after
  *    auth) + a direct guest link.
  * The whole path is backend-free (ADR-0006): Cognito challenge + token mint, done — no Aurora, no
- * app API. MOCK: hardcoded product + a placeholder store URL (the real resolve + attributed
- * redirect land with the full-landing slice). The auth is real.
+ * app API. The product is REAL: hydrated from the server-injected `window.__WANTHAT_LANDING__`
+ * snapshot (`LandingSnapshot`; the landing Lambda resolved the projection and server-rendered
+ * the same card, so the React mount is visually seamless). MOCK: the store URL is still a
+ * placeholder — the attributed resolve redirect lands with the next slice.
  */
-const PRODUCT = {
-  title: "Jebao Smart Aquarium Fish Feeder",
-  priceIls: "₪95.21",
-  cashbackIls: "₪12.40",
-  merchant: "AliExpress",
-  image: "/product-feeder.jpg",
-};
 const MOCK_STORE_URL = "https://www.aliexpress.com/";
+
+const MERCHANT_NAMES: Record<string, string> = { aliexpress: "AliExpress" };
 
 export function SharedProductPage() {
   const { t } = useTranslation();
@@ -59,12 +59,24 @@ export function SharedProductPage() {
 
   const toStore = () => window.location.assign(MOCK_STORE_URL);
 
+  // The server-injected landing payload. Absent (client-side navigation / stale shell) → one
+  // hard reload of /p/{id}: the landing Lambda ALWAYS injects a snapshot, so this cannot loop.
+  const snapshot = readLandingSnapshot(id);
+  const ok = snapshot?.status === "ok";
+  const reloaded = useRef(false);
+  useEffect(() => {
+    if (!snapshot && !reloaded.current) {
+      reloaded.current = true;
+      window.location.reload();
+    }
+  }, [snapshot]);
+
   // A recognised (valid refresh) or just-authenticated member goes straight to the store — the
-  // acquisition destination. No button, no interstitial, no backend.
+  // acquisition destination. No button, no interstitial, no backend. Never from a dead link.
   const signedIn = status === "signedIn" || authed;
   useEffect(() => {
-    if (signedIn) toStore();
-  }, [signedIn]);
+    if (signedIn && ok) toStore();
+  }, [signedIn, ok]);
 
   // Arm the automatic passkey prompt when there is no session: only on a returning device — a
   // remembered phone exists (Cognito's WEB_AUTHN challenge is username-gated; userless login is
@@ -130,6 +142,48 @@ export function SharedProductPage() {
       </>
     );
 
+  // Snapshot missing → the reload effect above is firing; render nothing for the split second.
+  if (!snapshot) return null;
+
+  if (snapshot.status === "notFound") {
+    return (
+      <Screen>
+        <div className="mx-auto flex w-full max-w-[440px] flex-col gap-4 text-center">
+          <div className="font-display text-[22px] font-bold tracking-[-0.03em]">wanthat</div>
+          <h1 className="font-display text-[19px] font-semibold tracking-[-0.02em]">
+            {t("shared.notFoundTitle")}
+          </h1>
+          <p className="text-[13.5px] text-muted">{t("shared.notFoundBody")}</p>
+        </div>
+      </Screen>
+    );
+  }
+
+  const { landing, displayFx } = snapshot;
+  // Display conversion — same convention as CreateLinkPage: the price converts at the pure rate
+  // (information), cashback carries the FX margin (what a withdrawal would actually yield).
+  const display = (
+    money: { amountMinor: bigint; currency: string } | null,
+    cashback: boolean,
+  ): string | null => {
+    if (!money) return null;
+    if (displayFx && money.currency === displayFx.rate.base) {
+      const minor = convertMinor(
+        money.amountMinor,
+        displayFx.rate.rate,
+        cashback ? displayFx.commissionBps : 0,
+      );
+      return formatMoneyMinor(minor.toString(), displayFx.rate.quote);
+    }
+    return formatMoneyMinor(money.amountMinor.toString(), money.currency);
+  };
+  const priceDisplay = display(landing.product.price, false);
+  const cashbackDisplay = display(landing.estimate.consumer.estimated, true);
+  const merchant = MERCHANT_NAMES[landing.product.storeId] ?? landing.product.storeId;
+  const attribution = landing.referrerFirstName
+    ? t("shared.recommendsThis", { name: landing.referrerFirstName })
+    : t("shared.sentYouLink");
+
   return (
     <Screen>
       <div className="mx-auto flex w-full max-w-[440px] flex-col gap-4">
@@ -137,31 +191,39 @@ export function SharedProductPage() {
           wanthat
         </div>
         <div className="overflow-hidden rounded-[20px] border border-line bg-surface">
-          <img
-            src={PRODUCT.image}
-            alt={PRODUCT.title}
-            className="aspect-[16/10] w-full bg-accent-soft object-cover"
-          />
+          {landing.product.imageUrl && (
+            <img
+              src={landing.product.imageUrl}
+              alt={landing.product.title}
+              className="aspect-[16/10] w-full bg-accent-soft object-cover"
+            />
+          )}
           <div className="flex flex-col gap-3 p-[18px]">
+            <p className="text-[13px] text-muted">{attribution}</p>
             <h1 className="font-display text-[19px] font-semibold tracking-[-0.02em]">
-              {PRODUCT.title}
+              {landing.product.title}
             </h1>
-            <div className="flex items-baseline gap-2">
-              <b className="text-[20px] tabular-nums" dir="ltr">
-                {PRODUCT.priceIls}
-              </b>
-              <span className="text-[13px] text-muted">
-                {t("shared.onMerchant", { merchant: PRODUCT.merchant })}
-              </span>
-            </div>
-            <div className="flex items-center justify-between rounded-[14px] border border-[#d2e3d9] bg-accent-soft px-3.5 py-3">
-              <span className="text-[12.5px] font-semibold text-accent">
-                {t("shared.earnLabel")}
-              </span>
-              <span className="text-[22px] font-bold tabular-nums text-accent" dir="ltr">
-                {PRODUCT.cashbackIls}
-              </span>
-            </div>
+            {priceDisplay && (
+              <div className="flex items-baseline gap-2">
+                <b className="text-[20px] tabular-nums" dir="ltr">
+                  {priceDisplay}
+                </b>
+                <span className="text-[13px] text-muted">
+                  {t("shared.onMerchant", { merchant })}
+                </span>
+              </div>
+            )}
+            {cashbackDisplay && (
+              <div className="flex items-center justify-between rounded-[14px] border border-[#d2e3d9] bg-accent-soft px-3.5 py-3">
+                <span className="text-[12.5px] font-semibold text-accent">
+                  {t("shared.earnLabel")}
+                </span>
+                <span className="text-[22px] font-bold tabular-nums text-accent" dir="ltr">
+                  {cashbackDisplay}
+                </span>
+              </div>
+            )}
+            {landing.review && <p className="text-[13.5px]">"{landing.review.text}"</p>}
             <p className="text-[13.5px] text-muted">{t("shared.pitch")}</p>
             {authModule}
           </div>

@@ -1,14 +1,19 @@
 /**
- * Landing service (ADR-0001, ADR-0007, ADR-0007/0018). Cookieless; behind CloudFront `/p/*`. The
- * landing is a DYNAMIC SPA page — this service only server-renders the bot-facing bits: it fetches the
- * SPA's `index.html` shell, injects per-product Open Graph tags + a product snapshot, and returns it.
- * Bots get a rich preview; humans get the shell, the SPA boots, and `SharedProductPage` runs the real
- * session + passkey mechanism at `/p/{id}`.
+ * Landing service (ADR-0001, ADR-0007). Cookieless; behind CloudFront `/p/*`. Resolves the
+ * recommendation projection in ONE DynamoDB lookup, then serves the SPA shell with three
+ * injections: real OG/Twitter tags, a server-rendered content-first product card in `#root`,
+ * and the `window.__WANTHAT_LANDING__` snapshot (`LandingSnapshot`) the SPA hydrates from.
+ * Humans see the product before any JS runs; the SPA boots and `SharedProductPage` runs the
+ * session/passkey/guest mechanism client-side (identity never resolves on this server).
  *
- * MOCK phase: the product is hardcoded (design handoff); the DynamoDB resolve + real redirect land with
- * the full-landing slice. The funnel impression is emitted (structured console.log → Firehose).
+ * A snapshot is ALWAYS injected — not-found and read failures serve `{status:"notFound"}` with
+ * a 200 (a real 404 would be swallowed by CloudFront's SPA-routing 404→index.html rewrite, and
+ * the SPA hard-reloads when a snapshot is missing, so an omitted one would loop).
  */
-import { injectLanding, MOCK_PRODUCT, pickLocale } from "./landing-page";
+import { ImpressionEvent, LandingSnapshot } from "@wanthat/contracts";
+import { buildEstimate } from "@wanthat/domain";
+import { getContext } from "./context";
+import { buildRender, injectLanding, type LandingRender, pickLocale } from "./landing-page";
 
 const SERVICE = "landing";
 
@@ -37,6 +42,35 @@ async function fetchShell(origin: string): Promise<string> {
   const html = await res.text();
   shellCache = { html, at: now };
   return html;
+}
+
+/**
+ * Admin-tunable knobs, cached briefly: an admin edit (runtime-config panel) takes effect within
+ * ~30s without redeploy, while the hot path pays the config reads only once per TTL.
+ */
+let cfgCache: { countdownSeconds: number; fxCommissionBps: number; at: number } | undefined;
+const CFG_TTL_MS = 30_000;
+
+async function getCfg(): Promise<{ countdownSeconds: number; fxCommissionBps: number }> {
+  const now = Date.now();
+  if (cfgCache && now - cfgCache.at < CFG_TTL_MS) return cfgCache;
+  const ctx = getContext();
+  const [countdownSeconds, fxCommissionBps] = await Promise.all([
+    ctx.config.get("landing.countdownSeconds"),
+    ctx.config.get("fx.conversionCommissionBps"),
+  ]);
+  cfgCache = {
+    countdownSeconds: Number(countdownSeconds),
+    fxCommissionBps: Number(fxCommissionBps),
+    at: now,
+  };
+  return cfgCache;
+}
+
+/** Test seam: the module-level caches survive across invocations by design. */
+export function resetCachesForTests(): void {
+  shellCache = undefined;
+  cfgCache = undefined;
 }
 
 function recIdFromPath(path: string): string | null {
@@ -73,11 +107,66 @@ export const handler = async (event: LandingEvent): Promise<LandingResult> => {
     headers["accept-language"] ?? headers["Accept-Language"] ?? undefined,
   );
 
-  console.log(JSON.stringify({ event: "landing_impression", recId, locale, service: SERVICE }));
+  // ONE DynamoDB lookup (ADR-0007). Any resolve failure degrades to the notFound snapshot — the
+  // page still serves, the SPA renders its not-found state, and nothing user-facing 5xxes.
+  let render: LandingRender | null = null;
+  let snapshot: unknown = { status: "notFound" };
+  try {
+    const item = await getContext().recommendations.get(recId);
+    if (item) {
+      const cfg = await getCfg();
+      const fxRate =
+        item.price && item.price.currency !== "ILS"
+          ? await getContext().fx.get(item.price.currency, "ILS")
+          : undefined;
+      render = buildRender(item, fxRate?.rate ?? null, cfg.fxCommissionBps);
+      snapshot = {
+        status: "ok",
+        landing: {
+          recommendationId: item.recommendationId,
+          product: {
+            storeId: item.storeId,
+            storeProductId: item.storeProductId,
+            title: item.title,
+            imageUrl: item.imageUrl,
+            price: item.price,
+            commissionBps: item.commissionBps,
+            createdAt: item.createdAt,
+            updatedAt: item.updatedAt,
+          },
+          review: item.review ?? null,
+          estimate: buildEstimate(item.price, item.commissionBps, item.cashback),
+          referrerFirstName: item.referrerFirstName,
+        },
+        countdownSeconds: cfg.countdownSeconds,
+        displayFx: fxRate ? { rate: fxRate, commissionBps: cfg.fxCommissionBps } : null,
+      };
+      // Funnel impression (ADR-0007): a structured line the Logs→Firehose subscription ships.
+      console.log(
+        JSON.stringify(
+          ImpressionEvent.parse({
+            type: "impression",
+            recommendationId: item.recommendationId,
+            at: new Date().toISOString(),
+          }),
+        ),
+      );
+    }
+  } catch (err) {
+    console.error("landing_resolve_error", String(err));
+    render = null;
+    snapshot = { status: "notFound" };
+  }
+
+  // Contract-validate, then wire-serialise (Money bigint → decimal string) and `<`-escape so
+  // stored content can never close the script tag.
+  const snapshotJson = JSON.stringify(LandingSnapshot.parse(snapshot), (_k, v) =>
+    typeof v === "bigint" ? v.toString() : v,
+  ).replace(/</g, "\\u003c");
 
   try {
     const shell = await fetchShell(origin);
-    const html = injectLanding(shell, MOCK_PRODUCT, origin, recId, locale);
+    const html = injectLanding(shell, render, snapshotJson, origin, recId, locale);
     return {
       statusCode: 200,
       headers: {

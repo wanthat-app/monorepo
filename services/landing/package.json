@@ -10,7 +10,9 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@wanthat/config": "workspace:*",
     "@wanthat/contracts": "workspace:*",
-    "@wanthat/config": "workspace:*"
+    "@wanthat/domain": "workspace:*",
+    "@wanthat/dynamo": "workspace:*"
   }
 }
