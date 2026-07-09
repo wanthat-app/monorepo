@@ -14,6 +14,7 @@
     "@wanthat/config": "workspace:*",
     "@wanthat/contracts": "workspace:*",
     "@wanthat/db": "workspace:*",
-    "@wanthat/domain": "workspace:*"
+    "@wanthat/domain": "workspace:*",
+    "@wanthat/dynamo": "workspace:^"
   }
 }

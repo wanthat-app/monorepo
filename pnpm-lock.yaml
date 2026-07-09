@@ -305,6 +305,9 @@ importers:
       '@wanthat/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@wanthat/dynamo':
+        specifier: workspace:^
+        version: link:../../packages/dynamo
 
   services/db-migrator:
     dependencies:
