@@ -192,3 +192,107 @@ describe("decimalToMinor", () => {
     expect(decimalToMinor("-5")).toBeNull();
   });
 });
+
+describe("listOrdersByIndex", () => {
+  const order = (over: Record<string, unknown> = {}) => ({
+    order_id: 8123456789,
+    order_status: "Payment Completed",
+    custom_parameters: '{"ref":"abc123DEF45","c":"11111111-1111-1111-1111-111111111111"}',
+    estimated_paid_commission: "1.24",
+    order_commission_currency: "USD",
+    paid_time: "2026-07-10 12:00:00",
+    unknown_extra_field: true,
+    ...over,
+  });
+  const okBody = (orders: unknown[], nextId?: string) => ({
+    aliexpress_affiliate_order_listbyindex_response: {
+      resp_result: {
+        result: {
+          orders: { order: orders },
+          ...(nextId ? { next_query_index_id: nextId } : {}),
+          current_record_count: orders.length,
+        },
+      },
+    },
+  });
+
+  it("signs the request with the window, status, tracking id and cursor", async () => {
+    const capture: { params?: URLSearchParams } = {};
+    await client(okBody([order()]), capture).listOrdersByIndex({
+      startTime: "2026-07-07 08:00:00",
+      endTime: "2026-07-10 08:00:00",
+      status: "Payment Completed",
+      startQueryIndexId: "cursor-1",
+      pageSize: 50,
+    });
+    const params = capture.params;
+    if (!params) throw new Error("request not captured");
+    expect(params.get("method")).toBe("aliexpress.affiliate.order.listbyindex");
+    expect(params.get("start_time")).toBe("2026-07-07 08:00:00");
+    expect(params.get("end_time")).toBe("2026-07-10 08:00:00");
+    expect(params.get("status")).toBe("Payment Completed");
+    expect(params.get("start_query_index_id")).toBe("cursor-1");
+    expect(params.get("page_size")).toBe("50");
+    expect(params.get("tracking_id")).toBe("wanthat");
+    expect(params.get("sign")).toBeTruthy();
+  });
+
+  it("parses orders tolerantly: commission to minor units, raw custom params, cursor", async () => {
+    const page = await client(okBody([order()], "cursor-2")).listOrdersByIndex({
+      startTime: "a",
+      endTime: "b",
+      status: "Payment Completed",
+    });
+    expect(page.orders).toEqual([
+      {
+        orderId: "8123456789",
+        status: "Payment Completed",
+        customParameters: '{"ref":"abc123DEF45","c":"11111111-1111-1111-1111-111111111111"}',
+        commissionMinor: "124",
+        commissionCurrency: "USD",
+        orderTimeGmt8: "2026-07-10 12:00:00",
+      },
+    ]);
+    expect(page.nextQueryIndexId).toBe("cursor-2");
+  });
+
+  it("tolerates alternate field names and missing custom parameters", async () => {
+    const page = await client(
+      okBody([
+        order({
+          order_id: undefined,
+          order_number: "9000000001",
+          custom_parameters: undefined,
+          estimated_paid_commission: undefined,
+          paid_commission: "0.50",
+          paid_time: undefined,
+        }),
+      ]),
+    ).listOrdersByIndex({ startTime: "a", endTime: "b", status: "x" });
+    expect(page.orders[0]).toMatchObject({
+      orderId: "9000000001",
+      customParameters: null,
+      commissionMinor: "50",
+      orderTimeGmt8: null,
+    });
+  });
+
+  it("returns an empty page (not a throw) for an empty window, and null cursor when done", async () => {
+    const page = await client(okBody([])).listOrdersByIndex({
+      startTime: "a",
+      endTime: "b",
+      status: "x",
+    });
+    expect(page).toEqual({ orders: [], nextQueryIndexId: null });
+  });
+
+  it("throws the typed platform error on error_response", async () => {
+    await expect(
+      client({ error_response: { code: "ApiCallLimit", msg: "too fast" } }).listOrdersByIndex({
+        startTime: "a",
+        endTime: "b",
+        status: "x",
+      }),
+    ).rejects.toMatchObject({ code: "ApiCallLimit" });
+  });
+});

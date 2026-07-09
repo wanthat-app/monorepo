@@ -98,6 +98,64 @@ const ProductDetailResponse = z.object({
   }),
 });
 
+/**
+ * One order from order.listbyindex, normalized. Field names on the wire are integration-pending
+ * (ADR-0009): the parser accepts the documented variants and never crashes on extras.
+ */
+export interface AliExpressOrder {
+  orderId: string;
+  /** Raw platform status (e.g. "Payment Completed") — mapping to ledger status is the caller's job. */
+  status: string;
+  /** Raw round-tripped custom_parameters (JSON string or null) — parsing is the caller's job. */
+  customParameters: string | null;
+  /** Estimated commission, integer minor units as a decimal string; null when absent/malformed. */
+  commissionMinor: string | null;
+  commissionCurrency: string | null;
+  /** Raw platform timestamp (GMT+8), informational. */
+  orderTimeGmt8: string | null;
+}
+
+export interface OrderListPage {
+  orders: AliExpressOrder[];
+  /** Cursor for the next page; null = no more pages. */
+  nextQueryIndexId: string | null;
+}
+
+const OrderListResponse = z.object({
+  aliexpress_affiliate_order_listbyindex_response: z.object({
+    resp_result: z.object({
+      resp_code: z.union([z.string(), z.number()]).optional(),
+      resp_msg: z.string().optional(),
+      result: z
+        .object({
+          orders: z
+            .object({
+              order: z.array(
+                z
+                  .object({
+                    order_id: z.union([z.string(), z.number()]).optional(),
+                    order_number: z.union([z.string(), z.number()]).optional(),
+                    order_status: z.string().optional(),
+                    custom_parameters: z.string().optional(),
+                    estimated_paid_commission: z.union([z.string(), z.number()]).optional(),
+                    paid_commission: z.union([z.string(), z.number()]).optional(),
+                    order_commission: z.union([z.string(), z.number()]).optional(),
+                    order_commission_currency: z.string().optional(),
+                    paid_time: z.string().optional(),
+                    order_time: z.string().optional(),
+                  })
+                  .passthrough(),
+              ),
+            })
+            .optional(),
+          next_query_index_id: z.union([z.string(), z.number()]).optional(),
+          current_record_count: z.number().optional(),
+        })
+        .optional(),
+    }),
+  }),
+});
+
 export interface AliExpressProductDetail {
   title: string | null;
   imageUrl: string | null;
@@ -211,6 +269,49 @@ export class AliExpressClient {
         product.commission_rate ?? product.hot_product_commission_rate,
       ),
     };
+  }
+
+  /**
+   * aliexpress.affiliate.order.listbyindex — one page of orders in a GMT+8 time window
+   * (ADR-0009). An empty window is a NORMAL answer (empty page, never a throw — unlike
+   * link.generate); a malformed top-level payload throws typed, like productdetail.
+   */
+  async listOrdersByIndex(params: OrderListByIndexParams, timeoutMs = 8000): Promise<OrderListPage> {
+    const business: Record<string, string> = {
+      start_time: params.startTime,
+      end_time: params.endTime,
+      status: params.status,
+      page_size: String(params.pageSize ?? 50),
+      tracking_id: this.options.trackingId,
+    };
+    if (params.startQueryIndexId) business.start_query_index_id = params.startQueryIndexId;
+    const data = await this.call("aliexpress.affiliate.order.listbyindex", business, timeoutMs);
+    const parsed = OrderListResponse.safeParse(data);
+    if (!parsed.success)
+      throw new AliExpressApiError(
+        "malformed_result",
+        "order.listbyindex answered an unrecognized payload",
+      );
+    const result = parsed.data.aliexpress_affiliate_order_listbyindex_response.resp_result.result;
+    const orders = (result?.orders?.order ?? []).flatMap((o): AliExpressOrder[] => {
+      const id = o.order_id ?? o.order_number;
+      if (id === undefined) return []; // an order we cannot key is unusable — skip, never crash
+      const commission = o.estimated_paid_commission ?? o.paid_commission ?? o.order_commission;
+      return [
+        {
+          orderId: String(id),
+          status: o.order_status ?? "",
+          customParameters: o.custom_parameters ?? null,
+          commissionMinor: decimalToMinor(
+            commission === undefined ? undefined : String(commission),
+          ),
+          commissionCurrency: commission !== undefined ? (o.order_commission_currency ?? "USD") : null,
+          orderTimeGmt8: o.paid_time ?? o.order_time ?? null,
+        },
+      ];
+    });
+    const cursor = result?.next_query_index_id;
+    return { orders, nextQueryIndexId: cursor === undefined ? null : String(cursor) };
   }
 
   /** Sign + POST one gateway method; throws AliExpressApiError on platform errors. */
