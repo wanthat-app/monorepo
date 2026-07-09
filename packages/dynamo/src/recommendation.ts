@@ -170,6 +170,27 @@ export class RecommendationRepo {
     }
   }
 
+  /**
+   * Fire-and-forget stat (ADR-0009: fed by the conversion writer on a first-sight order).
+   * Existence-conditional so a deleted recommendation no-ops instead of resurrecting as a
+   * counter-only ghost row; the miss is swallowed — stats never fail money.
+   */
+  async incrementConversions(recommendationId: string): Promise<void> {
+    try {
+      await this.doc.send(
+        new UpdateCommand({
+          TableName: this.tableName,
+          Key: { recommendationId },
+          UpdateExpression: "ADD conversions :one",
+          ConditionExpression: "attribute_exists(recommendationId)",
+          ExpressionAttributeValues: { ":one": 1 },
+        }),
+      );
+    } catch (err) {
+      if (!(err instanceof ConditionalCheckFailedException)) throw err;
+    }
+  }
+
   /** "List my recommendations" (ADR-0003): the `byOwner` GSI read newest-first. */
   async listByOwner(
     ownerId: string,

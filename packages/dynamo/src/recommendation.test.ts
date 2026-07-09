@@ -238,6 +238,35 @@ describe("RecommendationRepo.deleteByOwner", () => {
   });
 });
 
+describe("RecommendationRepo.incrementConversions", () => {
+  it("ADDs 1 existence-conditionally", async () => {
+    const { doc, calls } = stub(() => ({}));
+    await new RecommendationRepo(doc, "recommendation").incrementConversions(REC.recommendationId);
+    expect(calls[0]?.name).toBe("UpdateCommand");
+    expect(calls[0]?.input).toMatchObject({
+      Key: { recommendationId: REC.recommendationId },
+      UpdateExpression: "ADD conversions :one",
+      ConditionExpression: "attribute_exists(recommendationId)",
+    });
+  });
+
+  it("swallows a missing recommendation, rethrows anything else", async () => {
+    const missing = stub(() => {
+      throw new ConditionalCheckFailedException({ message: "gone", $metadata: {} });
+    });
+    await expect(
+      new RecommendationRepo(missing.doc, "recommendation").incrementConversions("rec-gone"),
+    ).resolves.toBeUndefined();
+
+    const broken = stub(() => {
+      throw new Error("dynamo down");
+    });
+    await expect(
+      new RecommendationRepo(broken.doc, "recommendation").incrementConversions("rec-x"),
+    ).rejects.toThrow("dynamo down");
+  });
+});
+
 describe("RecommendationRepo.listByOwner", () => {
   it("queries the byOwner GSI newest-first and passes the cursor through", async () => {
     const { doc, calls } = stub(() => ({
