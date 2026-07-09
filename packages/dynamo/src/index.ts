@@ -15,6 +15,7 @@ export {
 } from "./customer-counter";
 export { type DevOtpSinkItem, DevOtpSinkRepo } from "./dev-otp-sink";
 export { FxRateRepo, fxPairKey } from "./fx-rate";
+export { type PollerStateItem, PollerStateRepo } from "./poller-state";
 export { type GuestAttribution, GuestAttributionRepo } from "./guest-attribution";
 export {
   type NotificationOutboxItem,
