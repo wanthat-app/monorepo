@@ -83,26 +83,30 @@ app.put("/admin/config/:key", async (c) => {
 // admin-credentials function on this same HTTP API — Secrets Manager is unreachable from the
 // endpoint-free VPC this function runs in (ADR-0004).
 
-// GET /admin/stats/overview — placeholders until their slices land. `usersCount` joined them in
-// T7: the Aurora `customer` table is gone (ADR-0006 decision 4) and this in-VPC function cannot
-// call cognito-idp (ADR-0004), so the approximate user total is served by the users page instead
-// (admin-credentials ListUsers — `total` = DescribeUserPool.EstimatedNumberOfUsers). The wallet
-// figures (totalCashbackMinor, conversions30d) become real Aurora reads with the conversion slice.
-app.get("/admin/stats/overview", (c) =>
-  c.json({
-    usersCount: null,
+// GET /admin/stats/overview — `usersCount` is EXACT again: the `#customerCounter` sentinel item
+// in the runtime config table (a DynamoDB read, so this in-VPC function can serve it without
+// cognito-idp — ADR-0004). The counter counts CONFIRMED customers (only the Post-Confirmation
+// trigger increments); the users page's approximate whole-pool total keeps its wider scope. The
+// wallet figures (totalCashbackMinor, conversions30d) become real Aurora reads with the
+// conversion slice.
+app.get("/admin/stats/overview", async (c) => {
+  const { total } = await getContext().customerCounter.get();
+  return c.json({
+    usersCount: total,
     pendingApprovals: null,
     totalCashbackMinor: null,
     conversions30d: null,
-  }),
-);
+  });
+});
 
-// GET /admin/stats/users — empty since T7: the customer-population metrics lived in the Aurora
-// `customer` table, which is dropped (ADR-0006 decision 4), and no in-VPC replacement exists
-// (cognito-idp is unreachable, ADR-0004). Every UsersStats field is optional now; the dashboard's
-// user KPI moves to the ListUsers approximate total when the SPA rework lands (see the contract's
-// doc for the deliberate deferral of a ListUsers-derived status split / signup trend).
-app.get("/admin/stats/users", (c) => c.json(UsersStats.parse({})));
+// GET /admin/stats/users — the exact counter figures (`usersCount` / `suspendedUsersCount`; the
+// contract documents the confirmed-only semantics). The Aurora-era population metrics (status
+// split, signup trend) stayed unavailable since T7 — a ListUsers-derived aggregation remains
+// deliberately deferred (see the contract's doc).
+app.get("/admin/stats/users", async (c) => {
+  const { total, disabled } = await getContext().customerCounter.get();
+  return c.json(UsersStats.parse({ usersCount: total, suspendedUsersCount: disabled }));
+});
 
 // GET /admin/stats/catalog — exact product + recommendation totals from the transactional
 // counters (incremented atomically with each conditional create; sentinel items in the tables).

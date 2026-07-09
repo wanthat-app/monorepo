@@ -11,6 +11,7 @@ const { ctx } = vi.hoisted(() => ({
       globalSignOut: vi.fn(),
     },
     recommendations: { deleteByOwner: vi.fn() },
+    customerCounter: { decrementTotal: vi.fn(), markDisabled: vi.fn(), markEnabled: vi.fn() },
   },
 }));
 vi.mock("./context", () => ({ getContext: () => ctx }));
@@ -142,6 +143,7 @@ describe("cognito user delete", () => {
   beforeEach(() => {
     ctx.cognitoUsers.remove.mockReset();
     ctx.recommendations.deleteByOwner.mockReset();
+    ctx.customerCounter.decrementTotal.mockReset().mockResolvedValue(true);
   });
 
   it("403s a non-admin", async () => {
@@ -150,7 +152,7 @@ describe("cognito user delete", () => {
   });
 
   it("removes the account and erases its recommendations under the resolved sub", async () => {
-    ctx.cognitoUsers.remove.mockResolvedValue({ existed: true, sub: SUB });
+    ctx.cognitoUsers.remove.mockResolvedValue({ existed: true, sub: SUB, wasDisabled: false });
     ctx.recommendations.deleteByOwner.mockResolvedValue(3);
     const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
     expect(res.status).toBe(200);
@@ -159,12 +161,34 @@ describe("cognito user delete", () => {
     expect(ctx.recommendations.deleteByOwner).toHaveBeenCalledWith(SUB);
   });
 
+  it("decrements the customer counter, passing the account's suspension state through", async () => {
+    ctx.cognitoUsers.remove.mockResolvedValue({ existed: true, sub: SUB, wasDisabled: true });
+    ctx.recommendations.deleteByOwner.mockResolvedValue(0);
+    const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
+    expect(res.status).toBe(200);
+    expect(ctx.customerCounter.decrementTotal).toHaveBeenCalledTimes(1);
+    expect(ctx.customerCounter.decrementTotal).toHaveBeenCalledWith(true);
+  });
+
   it("treats an already-deleted account as success and skips the rec cleanup (no sub)", async () => {
-    ctx.cognitoUsers.remove.mockResolvedValue({ existed: false });
+    ctx.cognitoUsers.remove.mockResolvedValue({ existed: false, wasDisabled: false });
     const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, existed: false });
     expect(ctx.recommendations.deleteByOwner).not.toHaveBeenCalled();
+    // The idempotent retry of a delete must not decrement again.
+    expect(ctx.customerCounter.decrementTotal).not.toHaveBeenCalled();
+  });
+
+  it("still answers ok when the counter write fails (drift logged, route unaffected)", async () => {
+    ctx.cognitoUsers.remove.mockResolvedValue({ existed: true, sub: SUB, wasDisabled: false });
+    ctx.recommendations.deleteByOwner.mockResolvedValue(0);
+    ctx.customerCounter.decrementTotal.mockRejectedValue(new Error("dynamo down"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
+    expect(res.status).toBe(200);
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("customer_counter_drift"));
+    error.mockRestore();
   });
 
   it("400s a malformed phone", async () => {
@@ -227,16 +251,35 @@ describe("users list (Cognito ListUsers)", () => {
 });
 
 describe("ban tooling (disable / enable / global-signout)", () => {
+  // Per-route lifecycle resolutions: disable/enable answer the AdminGetUser-derived prior state
+  // (the counter must count each state CHANGE once); global-signout keeps the plain boolean.
   const routes = [
-    { path: "/admin/users/disable", fn: () => ctx.cognitoUsers.disable },
-    { path: "/admin/users/enable", fn: () => ctx.cognitoUsers.enable },
-    { path: "/admin/users/global-signout", fn: () => ctx.cognitoUsers.globalSignOut },
+    {
+      path: "/admin/users/disable",
+      fn: () => ctx.cognitoUsers.disable,
+      ok: { found: true, wasEnabled: true },
+      notFound: { found: false, wasEnabled: false },
+    },
+    {
+      path: "/admin/users/enable",
+      fn: () => ctx.cognitoUsers.enable,
+      ok: { found: true, wasDisabled: true },
+      notFound: { found: false, wasDisabled: false },
+    },
+    {
+      path: "/admin/users/global-signout",
+      fn: () => ctx.cognitoUsers.globalSignOut,
+      ok: true,
+      notFound: false,
+    },
   ];
 
   beforeEach(() => {
     ctx.cognitoUsers.disable.mockReset();
     ctx.cognitoUsers.enable.mockReset();
     ctx.cognitoUsers.globalSignOut.mockReset();
+    ctx.customerCounter.markDisabled.mockReset().mockResolvedValue(true);
+    ctx.customerCounter.markEnabled.mockReset().mockResolvedValue(true);
   });
 
   it("403s a non-admin on every route", async () => {
@@ -247,7 +290,7 @@ describe("ban tooling (disable / enable / global-signout)", () => {
 
   it("answers a bare ok and calls the matching lifecycle action", async () => {
     for (const r of routes) {
-      r.fn().mockResolvedValue(true);
+      r.fn().mockResolvedValue(r.ok);
       const res = await post(r.path, { phone: "+972501234567" });
       expect(res.status).toBe(200);
       expect(await res.json()).toEqual({ ok: true });
@@ -257,7 +300,7 @@ describe("ban tooling (disable / enable / global-signout)", () => {
 
   it("404s an unknown phone", async () => {
     for (const r of routes) {
-      r.fn().mockResolvedValue(false);
+      r.fn().mockResolvedValue(r.notFound);
       const res = await post(r.path, { phone: "+972501234567" });
       expect(res.status).toBe(404);
       expect(((await res.json()) as { error: string }).error).toBe("not_found");
@@ -270,5 +313,46 @@ describe("ban tooling (disable / enable / global-signout)", () => {
       expect(res.status).toBe(400);
       expect(r.fn()).not.toHaveBeenCalled();
     }
+  });
+
+  it("disable marks the counter ONLY when the user was actually enabled (idempotent repeat)", async () => {
+    ctx.cognitoUsers.disable.mockResolvedValue({ found: true, wasEnabled: true });
+    expect((await post("/admin/users/disable", { phone: "+972501234567" })).status).toBe(200);
+    expect(ctx.customerCounter.markDisabled).toHaveBeenCalledTimes(1);
+
+    // Repeat: Cognito reports the user was already disabled - no second count.
+    ctx.cognitoUsers.disable.mockResolvedValue({ found: true, wasEnabled: false });
+    expect((await post("/admin/users/disable", { phone: "+972501234567" })).status).toBe(200);
+    expect(ctx.customerCounter.markDisabled).toHaveBeenCalledTimes(1);
+  });
+
+  it("enable lifts the counter symmetrically, once per actual state change", async () => {
+    ctx.cognitoUsers.enable.mockResolvedValue({ found: true, wasDisabled: true });
+    expect((await post("/admin/users/enable", { phone: "+972501234567" })).status).toBe(200);
+    expect(ctx.customerCounter.markEnabled).toHaveBeenCalledTimes(1);
+
+    ctx.cognitoUsers.enable.mockResolvedValue({ found: true, wasDisabled: false });
+    expect((await post("/admin/users/enable", { phone: "+972501234567" })).status).toBe(200);
+    expect(ctx.customerCounter.markEnabled).toHaveBeenCalledTimes(1);
+  });
+
+  it("global-signout never touches the counter (no population change)", async () => {
+    ctx.cognitoUsers.globalSignOut.mockResolvedValue(true);
+    expect((await post("/admin/users/global-signout", { phone: "+972501234567" })).status).toBe(
+      200,
+    );
+    expect(ctx.customerCounter.markDisabled).not.toHaveBeenCalled();
+    expect(ctx.customerCounter.markEnabled).not.toHaveBeenCalled();
+  });
+
+  it("still answers ok when the counter write fails (drift logged, action already done)", async () => {
+    ctx.cognitoUsers.disable.mockResolvedValue({ found: true, wasEnabled: true });
+    ctx.customerCounter.markDisabled.mockRejectedValue(new Error("dynamo down"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await post("/admin/users/disable", { phone: "+972501234567" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
+    expect(error).toHaveBeenCalledWith(expect.stringContaining("customer_counter_drift"));
+    error.mockRestore();
   });
 });

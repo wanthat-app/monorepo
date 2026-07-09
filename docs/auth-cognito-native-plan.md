@@ -253,3 +253,18 @@ sections. Mermaid rules: pure ASCII, no semicolons, validate with mermaid.parse.
 - T1 settles "prevent user existence errors" vs the sign-in/sign-up branch UX.
 - T6 verifies `ClientMetadata` reaches Post-Confirmation on-device (documented AWS behaviour,
   but this project verifies Cognito claims empirically - see the replaced passkey record's history in the auth ADR's alternatives).
+
+## Follow-up implemented: exact customer counter (2026-07-09)
+
+The approximate dashboard user KPI (`DescribeUserPool.EstimatedNumberOfUsers`, shown as "~N")
+is replaced by an EXACT confirmed-customer counter: a `#customerCounter` sentinel item in the
+runtime config DynamoDB table (`total` / `disabled`, atomic ADD with conditional floor guards -
+`packages/dynamo/src/customer-counter.ts`). Writers: the Post-Confirmation trigger increments
+`total` per confirmed signup (best-effort, a miss is logged as `customer_counter_drift`);
+admin-credentials decrements on cognito-delete and moves `disabled` on suspend / lift
+(AdminGetUser-first, so the idempotent repeat of an action never double-counts). admin-api serves
+the counts on `/admin/stats/overview` and `/admin/stats/users`; the users PAGE keeps the
+approximate whole-pool total (incl. UNCONFIRMED) - deliberately different semantics. Drift
+caveat: the writers are best-effort by design (never block a confirmation or fail a moderation
+route), so rare failure windows can drift the counter; if drift is ever suspected, recount
+confirmed users via paginated `ListUsers` and overwrite the sentinel item.

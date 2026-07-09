@@ -3,6 +3,7 @@ import {
   AdminDisableUserCommand,
   AdminEnableUserCommand,
   AdminGetUserCommand,
+  type AdminGetUserCommandOutput,
   AdminUserGlobalSignOutCommand,
   type CognitoIdentityProviderClient,
   DescribeUserPoolCommand,
@@ -93,19 +94,28 @@ export class CognitoUserAdmin {
     };
   }
 
-  /** `AdminDisableUser` - reversible suspension. False = unknown phone (contract: plain 404);
-   * re-disabling an already-disabled user is idempotent success in Cognito. */
-  async disable(phone: string): Promise<boolean> {
-    return this.lifecycle(
+  /** `AdminDisableUser` - reversible suspension, with `AdminGetUser` FIRST so the caller learns
+   * whether the user was actually enabled before this call. Re-disabling stays idempotent success
+   * in Cognito, but reports `wasEnabled: false` - the customer counter must count each suspension
+   * ONCE, so a repeat must not mark another user disabled. found=false = unknown phone (404). */
+  async disable(phone: string): Promise<{ found: boolean; wasEnabled: boolean }> {
+    const user = await this.getUser(phone);
+    if (!user) return { found: false, wasEnabled: false };
+    const found = await this.lifecycle(
       new AdminDisableUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
     );
+    return { found, wasEnabled: found && user.Enabled !== false };
   }
 
-  /** `AdminEnableUser` - lift a suspension. Same idempotent semantics as disable. */
-  async enable(phone: string): Promise<boolean> {
-    return this.lifecycle(
+  /** `AdminEnableUser` - lift a suspension. Symmetric to `disable`: `wasDisabled` reports whether
+   * the lift actually changed state, so a repeated lift never double-counts on the counter. */
+  async enable(phone: string): Promise<{ found: boolean; wasDisabled: boolean }> {
+    const user = await this.getUser(phone);
+    if (!user) return { found: false, wasDisabled: false };
+    const found = await this.lifecycle(
       new AdminEnableUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
     );
+    return { found, wasDisabled: found && user.Enabled === false };
   }
 
   /** `AdminUserGlobalSignOut` - revoke every refresh token (issued access tokens live out
@@ -131,19 +141,15 @@ export class CognitoUserAdmin {
   /**
    * Remove the account, resolving the sub FIRST (via `AdminGetUser`) so the caller can erase the
    * member's DynamoDB recommendations under it (ADR-0006 decision 8). An already-deleted account
-   * resolves as `existed: false` so the SPA's retry is idempotent.
+   * resolves as `existed: false` so the SPA's retry is idempotent. `wasDisabled` is the account's
+   * suspension state at deletion time - the customer counter decrements its `disabled` count too
+   * when a suspended account is erased.
    */
-  async remove(phone: string): Promise<{ existed: boolean; sub?: string }> {
-    let sub: string | undefined;
-    try {
-      const user = await this.client.send(
-        new AdminGetUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
-      );
-      sub = user.UserAttributes?.find((a) => a.Name === "sub")?.Value;
-    } catch (err) {
-      if (err instanceof UserNotFoundException) return { existed: false };
-      throw err;
-    }
+  async remove(phone: string): Promise<{ existed: boolean; sub?: string; wasDisabled: boolean }> {
+    const user = await this.getUser(phone);
+    if (!user) return { existed: false, wasDisabled: false };
+    const sub = user.UserAttributes?.find((a) => a.Name === "sub")?.Value;
+    const wasDisabled = user.Enabled === false;
     try {
       await this.client.send(
         new AdminDeleteUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
@@ -153,6 +159,18 @@ export class CognitoUserAdmin {
       // so the recommendation cleanup runs regardless.
       if (!(err instanceof UserNotFoundException)) throw err;
     }
-    return { existed: true, ...(sub ? { sub } : {}) };
+    return { existed: true, wasDisabled, ...(sub ? { sub } : {}) };
+  }
+
+  /** `AdminGetUser`, resolving an unknown phone to undefined instead of throwing. */
+  private async getUser(phone: string): Promise<AdminGetUserCommandOutput | undefined> {
+    try {
+      return await this.client.send(
+        new AdminGetUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
+      );
+    } catch (err) {
+      if (err instanceof UserNotFoundException) return undefined;
+      throw err;
+    }
   }
 }

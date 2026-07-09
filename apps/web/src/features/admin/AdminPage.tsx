@@ -7,7 +7,12 @@ import type {
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { adminApi, type CatalogStats, type UsersStats } from "../../lib/admin-api";
+import {
+  adminApi,
+  type CatalogStats,
+  type StatsOverview,
+  type UsersStats,
+} from "../../lib/admin-api";
 import {
   type AdminTokens,
   beginAdminLogin,
@@ -126,10 +131,11 @@ function DashboardView({ token }: { token: string | null }) {
   const [failed, setFailed] = useState(false);
   // undefined = loading, null = fetch failed.
   const [catalog, setCatalog] = useState<CatalogStats | null | undefined>(undefined);
-  // The user-count KPI (T7): Aurora is money-only, so the count comes from the Cognito-backed
-  // users list — `ListUsersResponse.total` is `DescribeUserPool.EstimatedNumberOfUsers`, the
-  // approximate whole pool, shown as "~N". pageSize 1 keeps the page payload minimal.
-  const [approxUsers, setApproxUsers] = useState<number | null | undefined>(undefined);
+  // The user-count KPI: EXACT — `statsOverview.usersCount` reads the `#customerCounter` sentinel
+  // item (kept by the Post-Confirmation trigger + the moderation routes), so it counts CONFIRMED
+  // customers only. The users PAGE header deliberately keeps the other, approximate semantic:
+  // `ListUsersResponse.total` estimates the WHOLE pool, including UNCONFIRMED signups.
+  const [overview, setOverview] = useState<StatsOverview | null | undefined>(undefined);
   useEffect(() => {
     if (!token) return;
     adminApi
@@ -144,9 +150,9 @@ function DashboardView({ token }: { token: string | null }) {
       .then(setCatalog)
       .catch(() => setCatalog(null));
     adminApi
-      .listUsers(token, { pageSize: 1 })
-      .then((res) => setApproxUsers(res.total))
-      .catch(() => setApproxUsers(null));
+      .statsOverview(token)
+      .then(setOverview)
+      .catch(() => setOverview(null));
   }, [token]);
 
   // Skeleton placeholder while the stats request is in flight, so the module doesn't flash "…".
@@ -175,12 +181,12 @@ function DashboardView({ token }: { token: string | null }) {
         <KpiCard
           label={t("admin.stats.users")}
           value={
-            approxUsers === null ? (
+            overview === null ? (
               "—"
-            ) : approxUsers === undefined ? (
+            ) : overview === undefined ? (
               <Skeleton className="h-[30px] w-16" />
             ) : (
-              t("admin.stats.approx", { n: approxUsers.toLocaleString("en-US") })
+              overview.usersCount.toLocaleString("en-US")
             )
           }
           live

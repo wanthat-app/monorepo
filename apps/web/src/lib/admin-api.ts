@@ -25,9 +25,10 @@ import { getConfig } from "./config";
  */
 
 export interface StatsOverview {
-  /** null since T7: Aurora is money-only, so admin-api has no customer count to serve — the
-   * approximate pool size lives on `ListUsersResponse.total` (users surface) instead. */
-  usersCount: number | null;
+  /** EXACT confirmed-customer count — the `#customerCounter` sentinel item (runtime config
+   * table), kept by the Post-Confirmation trigger + the admin moderation routes. Narrower than
+   * the users page's approximate whole-pool total (which includes UNCONFIRMED) on purpose. */
+  usersCount: number;
   pendingApprovals: number | null;
   totalCashbackMinor: number | null;
   conversions30d: number | null;

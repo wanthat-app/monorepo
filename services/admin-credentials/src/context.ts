@@ -1,6 +1,6 @@
 import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
-import { getDocClient, RecommendationRepo } from "@wanthat/dynamo";
+import { CustomerCounterRepo, getDocClient, RecommendationRepo } from "@wanthat/dynamo";
 import { CognitoUserAdmin } from "./cognito-users";
 import { RetailerSecretWriter } from "./retailer-secret";
 
@@ -15,6 +15,8 @@ export interface AdminCredentialsContext {
   cognitoUsers: CognitoUserAdmin;
   /** User erasure also deletes the member's recommendations (deleteByOwner, ADR-0006 d8). */
   recommendations: RecommendationRepo;
+  /** The exact customer counter: delete decrements, suspend / lift move the disabled count. */
+  customerCounter: CustomerCounterRepo;
 }
 
 let cached: AdminCredentialsContext | undefined;
@@ -36,6 +38,10 @@ export function getContext(): AdminCredentialsContext {
     recommendations: new RecommendationRepo(
       getDocClient(region),
       requireEnv("RECOMMENDATION_TABLE"),
+    ),
+    customerCounter: new CustomerCounterRepo(
+      getDocClient(region),
+      requireEnv("RUNTIME_CONFIG_TABLE"),
     ),
   };
   return cached;

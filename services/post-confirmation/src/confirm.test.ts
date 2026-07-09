@@ -4,6 +4,7 @@ import { type ConfirmDeps, handleConfirmation, type PostConfirmationEvent } from
 const deps = {
   outbox: { put: vi.fn().mockResolvedValue(undefined) },
   guests: { claim: vi.fn().mockResolvedValue(true) },
+  counter: { incrementTotal: vi.fn().mockResolvedValue(undefined) },
   appUrl: "https://dev.wanthat.app",
   log: { info: vi.fn(), error: vi.fn() },
 } satisfies ConfirmDeps;
@@ -36,6 +37,7 @@ beforeEach(() => {
   // clearAllMocks() does not reset implementations; re-pin the happy path (see message-sender).
   deps.outbox.put.mockResolvedValue(undefined);
   deps.guests.claim.mockResolvedValue(true);
+  deps.counter.incrementTotal.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -88,7 +90,7 @@ describe("handleConfirmation — welcome outbox (ADR-0006 decision 7)", () => {
       customerId: "sub-1234",
       error: "dynamo down",
     });
-    expect(deps.log.info).not.toHaveBeenCalled();
+    expect(deps.log.info).not.toHaveBeenCalledWith("optin_welcome_enqueued", expect.anything());
   });
 
   it("logs (not throws) on an event without phone_number", async () => {
@@ -149,6 +151,33 @@ describe("handleConfirmation — guest attribution (ADR-0008)", () => {
   });
 });
 
+describe("handleConfirmation — exact customer counter", () => {
+  it("increments the counter once per confirmed signup", async () => {
+    await handleConfirmation(deps, event(ATTRS));
+    expect(deps.counter.incrementTotal).toHaveBeenCalledTimes(1);
+    expect(deps.log.info).toHaveBeenCalledWith("customer_counter_incremented", {
+      sub: "sub-1234",
+    });
+  });
+
+  it("swallows an increment failure — logs customer_counter_drift LOUDLY, never throws", async () => {
+    deps.counter.incrementTotal.mockRejectedValue(new Error("dynamo down"));
+    await expect(handleConfirmation(deps, event(ATTRS))).resolves.toBeUndefined();
+    expect(deps.log.error).toHaveBeenCalledWith("customer_counter_drift", {
+      op: "incrementTotal",
+      sub: "sub-1234",
+      error: "dynamo down",
+    });
+  });
+
+  it("still increments when the earlier steps failed (steps are independent)", async () => {
+    deps.outbox.put.mockRejectedValue(new Error("dynamo down"));
+    deps.guests.claim.mockRejectedValue(new Error("dynamo down"));
+    await handleConfirmation(deps, event(ATTRS, { guestId: "guest-42" }));
+    expect(deps.counter.incrementTotal).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("handleConfirmation — foreign trigger sources", () => {
   it("no-ops on PostConfirmation_ConfirmForgotPassword", async () => {
     await handleConfirmation(
@@ -157,6 +186,7 @@ describe("handleConfirmation — foreign trigger sources", () => {
     );
     expect(deps.outbox.put).not.toHaveBeenCalled();
     expect(deps.guests.claim).not.toHaveBeenCalled();
+    expect(deps.counter.incrementTotal).not.toHaveBeenCalled();
     expect(deps.log.info).not.toHaveBeenCalled();
     expect(deps.log.error).not.toHaveBeenCalled();
   });

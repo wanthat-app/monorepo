@@ -1,5 +1,6 @@
 import { createDb } from "@wanthat/db";
 import {
+  CustomerCounterRepo,
   DevOtpSinkRepo,
   getDocClient,
   ProductRepo,
@@ -21,6 +22,8 @@ export interface AdminContext {
   /** Read-only (stats): the transactional entity counters live in these tables. */
   products: ProductRepo;
   recommendations: RecommendationRepo;
+  /** Read-only (stats): the exact customer counter (`#customerCounter` in the config table). */
+  customerCounter: CustomerCounterRepo;
   /** Dev only — undefined in prod (no table, no env var; fail-closed). */
   devOtpSink?: DevOtpSinkRepo;
 }
@@ -46,6 +49,10 @@ export function getContext(): AdminContext {
       caCerts: process.env.DB_CA_CERT,
     }),
     config: new RuntimeConfigRepo(getDocClient(region), requireEnv("RUNTIME_CONFIG_TABLE")),
+    customerCounter: new CustomerCounterRepo(
+      getDocClient(region),
+      requireEnv("RUNTIME_CONFIG_TABLE"),
+    ),
     products: new ProductRepo(getDocClient(region), requireEnv("PRODUCT_TABLE")),
     recommendations: new RecommendationRepo(
       getDocClient(region),

@@ -1,5 +1,10 @@
 import { Logger } from "@aws-lambda-powertools/logger";
-import { GuestAttributionRepo, getDocClient, NotificationOutboxRepo } from "@wanthat/dynamo";
+import {
+  CustomerCounterRepo,
+  GuestAttributionRepo,
+  getDocClient,
+  NotificationOutboxRepo,
+} from "@wanthat/dynamo";
 import { type ConfirmDeps, handleConfirmation, type PostConfirmationEvent } from "./confirm";
 
 const logger = new Logger({ serviceName: "post-confirmation" });
@@ -19,6 +24,7 @@ function getDeps(): ConfirmDeps {
   deps = {
     outbox: new NotificationOutboxRepo(doc, requireEnv("NOTIFICATION_OUTBOX_TABLE")),
     guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
+    counter: new CustomerCounterRepo(doc, requireEnv("RUNTIME_CONFIG_TABLE")),
     appUrl: requireEnv("APP_URL"),
     log: {
       info: (msg, ctx) => logger.info(msg, ctx ?? {}),
