@@ -154,4 +154,26 @@ describe("handler", () => {
     );
     expect((await handler({ rawPath: "/p/abc123DEF45" } as never)).statusCode).toBe(502);
   });
+
+  it("routes POST /p/{id}/resolve to the resolve endpoint (guest redirect end-to-end)", async () => {
+    const res = await handler({
+      rawPath: "/p/abc123DEF45/resolve",
+      requestContext: { http: { method: "POST" } },
+      body: JSON.stringify({ guestId: "g-route" }),
+    } as never);
+    expect(res.statusCode).toBe(200);
+    const parsed = JSON.parse(res.body) as { outcome: string; url: string };
+    expect(parsed.outcome).toBe("redirect");
+    const u = new URL(parsed.url);
+    expect(u.searchParams.get("ref")).toBe("abc123DEF45");
+    expect(u.searchParams.get("g")).toBe("g-route");
+  });
+
+  it("405s a GET on the resolve path instead of rendering a page", async () => {
+    const res = await handler({
+      rawPath: "/p/abc123DEF45/resolve",
+      requestContext: { http: { method: "GET" } },
+    } as never);
+    expect(res.statusCode).toBe(405);
+  });
 });

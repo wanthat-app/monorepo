@@ -347,8 +347,13 @@ const en = {
     signupTrust: "Free · takes 30 seconds",
     loginCta: "I already have an account",
     guestCta: "Continue as guest — no cashback",
+    guestConsent: "Continuing as guest stores an anonymous id on this device.",
     signingIn: "Signing you in…",
     goToStore: "Go to store",
+    redirectingStore: "Taking you to {{merchant}} to complete your order…",
+    earnOnThis: "You'll earn {{amount}} cashback on this order.",
+    continueToStore: "Continue to {{merchant}}",
+    retry: "Try again",
   },
 };
 
@@ -692,8 +697,13 @@ const he: typeof en = {
     signupTrust: "חינם לגמרי · הצטרפות ב-30 שניות",
     loginCta: "כבר יש לי חשבון",
     guestCta: "המשך כאורח — בלי קאשבק",
+    guestConsent: "המשך כאורח שומר מזהה אנונימי במכשיר הזה.",
     signingIn: "מחברים אתכם…",
     goToStore: "מעבר לחנות",
+    redirectingStore: "מעבירים אתכם ל-{{merchant}} להשלמת ההזמנה…",
+    earnOnThis: "תקבלו {{amount}} קאשבק על ההזמנה הזאת.",
+    continueToStore: "המשך ל-{{merchant}}",
+    retry: "נסו שוב",
   },
 };
 
