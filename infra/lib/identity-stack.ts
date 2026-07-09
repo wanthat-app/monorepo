@@ -299,7 +299,7 @@ export class IdentityStack extends Stack {
     });
     const poolWebAcl = new wafv2.CfnWebACL(this, "CustomerPoolWebAcl", {
       name: `wanthat-${wanthatEnv.name}-customer-pool`,
-      description: "Rate limits on the customer user pool unauthenticated operations (ADR-0006)",
+      description: "Rate limits on the customer user pool unauthenticated operations, ADR-0006",
       scope: "REGIONAL",
       defaultAction: { allow: {} },
       visibilityConfig: {
