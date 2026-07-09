@@ -59,9 +59,10 @@ describe("buildRender", () => {
     expect(r.reviewText).toBe("Great feeder, my fish love it!");
   });
 
-  it("withholds the fx conversion commission like the wallet does", () => {
-    const r = buildRender(ITEM, "3.5000", 200); // 2% margin
-    expect(r.priceDisplay).toBe("₪85.75"); // 8750 x 98%
+  it("applies the fx margin to cashback only — the price converts at the pure rate", () => {
+    const r = buildRender(ITEM, "3.5000", 200); // 2% conversion margin
+    expect(r.priceDisplay).toBe("₪87.50"); // information, not money we pay out
+    expect(r.cashbackDisplay).toBe("₪1.71"); // 50 x 3.5 = 175, x 98% -> 171 minor
   });
 
   it("falls back to origin currency when no fx rate is cached", () => {
@@ -85,10 +86,19 @@ describe("buildRender", () => {
 
 describe("ogHead", () => {
   it("uses the stored absolute image URL and the review as the description", () => {
-    const head = ogHead(buildRender(ITEM, "3.5000", 0), "https://dev.wanthat.app", ITEM.recommendationId, "en");
-    expect(head).toContain('<meta property="og:image" content="https://ae01.alicdn.com/kf/feeder.jpg" />');
+    const head = ogHead(
+      buildRender(ITEM, "3.5000", 0),
+      "https://dev.wanthat.app",
+      ITEM.recommendationId,
+      "en",
+    );
+    expect(head).toContain(
+      '<meta property="og:image" content="https://ae01.alicdn.com/kf/feeder.jpg" />',
+    );
     expect(head).toContain('content="Great feeder, my fish love it!"');
-    expect(head).toContain('<meta property="og:url" content="https://dev.wanthat.app/p/abc123DEF45" />');
+    expect(head).toContain(
+      '<meta property="og:url" content="https://dev.wanthat.app/p/abc123DEF45" />',
+    );
     expect(head).toContain('<meta name="twitter:card" content="summary_large_image" />');
   });
 
@@ -105,7 +115,12 @@ describe("ogHead", () => {
   });
 
   it("HTML-escapes user-controlled content", () => {
-    const head = ogHead(buildRender(ITEM, null, 0), "https://dev.wanthat.app", ITEM.recommendationId, "en");
+    const head = ogHead(
+      buildRender(ITEM, null, 0),
+      "https://dev.wanthat.app",
+      ITEM.recommendationId,
+      "en",
+    );
     expect(head).not.toContain("<Pro>");
     expect(head).toContain("&lt;Pro&gt;");
   });

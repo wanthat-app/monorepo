@@ -100,7 +100,12 @@ function display(
   return formatMinor(amountMinor, currency);
 }
 
-/** The stored projection → display-ready render model (figures match what the SPA computes). */
+/**
+ * The stored projection → display-ready render model. Same convention as the create flow
+ * (CreateLinkPage): the PRICE converts at the pure rate (information, not money we pay out),
+ * while CASHBACK carries the FX conversion margin so the figure matches what a withdrawal
+ * would actually yield.
+ */
 export function buildRender(
   item: RecommendationItem,
   fxRate: string | null,
@@ -113,7 +118,7 @@ export function buildRender(
     merchant: merchantName(item.storeId),
     imageUrl: item.imageUrl,
     priceDisplay: item.price
-      ? display(BigInt(item.price.amountMinor), item.price.currency, fxRate, fxCommissionBps)
+      ? display(BigInt(item.price.amountMinor), item.price.currency, fxRate, 0)
       : null,
     cashbackDisplay: consumer
       ? display(consumer.amountMinor, consumer.currency, fxRate, fxCommissionBps)
@@ -124,7 +129,12 @@ export function buildRender(
 }
 
 /** The Open Graph / Twitter meta block + a matching <title>. `og:image` is the stored absolute URL. */
-export function ogHead(render: LandingRender, origin: string, recId: string, locale: Locale): string {
+export function ogHead(
+  render: LandingRender,
+  origin: string,
+  recId: string,
+  locale: Locale,
+): string {
   const desc =
     render.reviewText ??
     (render.cashbackDisplay

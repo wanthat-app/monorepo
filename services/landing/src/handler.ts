@@ -59,7 +59,11 @@ async function getCfg(): Promise<{ countdownSeconds: number; fxCommissionBps: nu
     ctx.config.get("landing.countdownSeconds"),
     ctx.config.get("fx.conversionCommissionBps"),
   ]);
-  cfgCache = { countdownSeconds: Number(countdownSeconds), fxCommissionBps: Number(fxCommissionBps), at: now };
+  cfgCache = {
+    countdownSeconds: Number(countdownSeconds),
+    fxCommissionBps: Number(fxCommissionBps),
+    at: now,
+  };
   return cfgCache;
 }
 
@@ -156,9 +160,8 @@ export const handler = async (event: LandingEvent): Promise<LandingResult> => {
 
   // Contract-validate, then wire-serialise (Money bigint → decimal string) and `<`-escape so
   // stored content can never close the script tag.
-  const snapshotJson = JSON.stringify(
-    LandingSnapshot.parse(snapshot),
-    (_k, v) => (typeof v === "bigint" ? v.toString() : v),
+  const snapshotJson = JSON.stringify(LandingSnapshot.parse(snapshot), (_k, v) =>
+    typeof v === "bigint" ? v.toString() : v,
   ).replace(/</g, "\\u003c");
 
   try {

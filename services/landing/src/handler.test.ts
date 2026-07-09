@@ -123,7 +123,7 @@ describe("handler", () => {
   it("escapes </script> in stored content so it cannot break out of the snapshot tag", async () => {
     fake.recommendations.get.mockResolvedValue({
       ...ITEM,
-      review: { text: '</script><script>alert(1)</script>' },
+      review: { text: "</script><script>alert(1)</script>" },
     });
     const res = await handler({ rawPath: "/p/abc123DEF45" } as never);
     expect(res.body).not.toContain("</script><script>alert(1)");

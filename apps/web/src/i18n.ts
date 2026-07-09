@@ -338,6 +338,10 @@ const en = {
   shared: {
     onMerchant: "on {{merchant}}",
     earnLabel: "You earn back",
+    recommendsThis: "{{name}} recommends this",
+    sentYouLink: "Someone sent you a cashback link",
+    notFoundTitle: "Link not found",
+    notFoundBody: "This link may have expired or never existed.",
     pitch: "Buy through wanthat and get real cashback to your wallet once the order confirms.",
     signupCta: "Sign up to earn",
     signupTrust: "Free · takes 30 seconds",
@@ -679,6 +683,10 @@ const he: typeof en = {
   shared: {
     onMerchant: "ב-{{merchant}}",
     earnLabel: "מקבלים בחזרה",
+    recommendsThis: "{{name}} ממליץ/ה על זה",
+    sentYouLink: "מישהו שלח לך קישור קאשבק",
+    notFoundTitle: "הקישור לא נמצא",
+    notFoundBody: "ייתכן שהקישור פג תוקף או שאינו קיים.",
     pitch: "קונים דרך wanthat ומקבלים קאשבק אמיתי לארנק כשהעסקה מאושרת.",
     signupCta: "הרשמה וקבלת קאשבק",
     signupTrust: "חינם לגמרי · הצטרפות ב-30 שניות",
