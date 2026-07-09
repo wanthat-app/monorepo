@@ -1,65 +1,33 @@
 {
   "$schema": "https://turbo.build/schema.json",
-  "globalPassThroughEnv": [
-    "AWS_*",
-    "CDK_DEFAULT_ACCOUNT",
-    "CDK_DEFAULT_REGION"
-  ],
+  "globalPassThroughEnv": ["AWS_*", "CDK_DEFAULT_ACCOUNT", "CDK_DEFAULT_REGION"],
   "tasks": {
     "build": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        "dist/**"
-      ]
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**"]
     },
     "typecheck": {
-      "dependsOn": [
-        "^build"
-      ]
+      "dependsOn": ["^build"]
     },
     "test": {
-      "dependsOn": [
-        "^build"
-      ],
-      "passThroughEnv": [
-        "DOCKER_HOST",
-        "TESTCONTAINERS_*"
-      ]
+      "dependsOn": ["^build"],
+      "passThroughEnv": ["DOCKER_HOST", "TESTCONTAINERS_*"]
     },
     "lint": {},
     "synth": {
-      "dependsOn": [
-        "^build"
-      ],
-      "outputs": [
-        "cdk.out/**"
-      ],
-      "env": [
-        "WANTHAT_ENV",
-        "WANTHAT_VERSION"
-      ]
+      "dependsOn": ["^build"],
+      "outputs": ["cdk.out/**"],
+      "env": ["WANTHAT_ENV", "WANTHAT_VERSION"]
     },
     "diff": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "cache": false,
-      "env": [
-        "WANTHAT_ENV",
-        "WANTHAT_VERSION"
-      ]
+      "env": ["WANTHAT_ENV", "WANTHAT_VERSION"]
     },
     "deploy": {
-      "dependsOn": [
-        "^build"
-      ],
+      "dependsOn": ["^build"],
       "cache": false,
-      "env": [
-        "WANTHAT_ENV",
-        "WANTHAT_VERSION"
-      ]
+      "env": ["WANTHAT_ENV", "WANTHAT_VERSION"]
     }
   }
 }

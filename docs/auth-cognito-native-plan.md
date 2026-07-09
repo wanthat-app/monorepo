@@ -167,35 +167,36 @@ Aurora (ADR-0006 decision 7). **Depends:** T1. **Blocks:** T12.
   is renamed `app-links` (keeps the links routes + retailer-proxy invoke).
 - Delete: ticket-keygen custom resource + secret, `AUTH_TICKET_PUBLIC_KEYS` env,
   `auth_challenge`, `passkey_credential`, `phone_velocity` tables (data-stack).
-- CAUTION - cross-stack export ordering: deleting exported resources fails on
-  `cdk deploy --all` while consumers still import them; deploy consumers first
-  (`--exclusively`), then the producer. Plan the two-step deploy explicitly.
-- **Two-step deploy (T12 must follow this; dev shown, s/dev/prod/ for prod).** Three export
-  removals are in play: (a) api imports the data-stack's `AuthChallenge`/`PhoneVelocity`/
-  `PasskeyCredential` table exports; (b) the us-east-1 edge imports the identity stack's
-  customer `ManagedLoginDomain` baseUrl (cross-region export) via `spaConfig.managedLoginUrl`;
-  (c) observability imports api's OLD `AppAuth` function-ref export - (c) is handled inside
-  api-stack by a TRANSITIONAL retained export (`...ExportsOutputRefAppAuthB8BC94674D7C9325`,
-  stale literal value; drop it in a follow-up PR after every env's observability has
-  redeployed), because observability cannot deploy first - the `AppLinks` export it needs
-  does not exist until api deploys. From the repo root, after `pnpm build` (edge needs
-  `apps/web/dist` at synth) and a reviewed `pnpm diff`:
-
-  ```bash
-  # Step 1 - consumers of the removed exports stop importing them (and the rename lands):
-  #   api: app-auth -> app-links (CFN REPLACEMENT of fn + log group - expected, pre-release),
-  #        drops the three table imports, deletes ticket-keygen + AuthTicketSecret;
-  #   edge: config.json drops managedLoginUrl, gains cognitoRegion (a synth-time literal).
-  cd infra
-  pnpm exec cdk deploy wanthat-dev-api wanthat-dev-edge --exclusively --require-approval never
-
-  # Step 2 - producers drop the now-unreferenced exports + everything else converges:
-  #   data: deletes the AuthChallenge/PhoneVelocity/PasskeyCredential tables + exports;
-  #   identity: deletes the customer ManagedLoginDomain/branding + its cross-region export,
-  #             drops adminUserPassword, attaches the customer-pool WAF web ACL;
-  #   observability: re-points the app-auth alarms/widgets at the AppLinks export.
-  pnpm exec cdk deploy --all --require-approval never --concurrency 4
-  ```
+- CAUTION - cross-stack export ordering: a producer deleting an export that a
+  currently-DEPLOYED consumer still imports fails its deploy ("cannot delete export ... in
+  use" - and an in-use export's VALUE is as frozen as its existence), and `cdk deploy --all`
+  updates producers before their consumers. This branch stays **single-pass deployable**
+  (deploy.yml: dev on merge to `main`, prod on publishing a release - no manual `--exclusively`
+  two-step) by retaining every such export for one deploy:
+  - **data-stack**: the six auth-table exports (name + ARN for `AuthChallenge` /
+    `PasskeyCredential` / `PhoneVelocity`) that the deployed api stacks (dev AND prod) still
+    import - retained in `data-stack.ts` as TRANSITIONAL literals frozen at their exact
+    deployed per-env values (captured from the last dev/prod Deploy run logs). Once api
+    redeploys without the imports, nothing evaluates them.
+  - **api-stack**: the OLD `AppAuth` function-ref export
+    (`...ExportsOutputRefAppAuthB8BC94674D7C9325`) that the deployed observability stacks
+    (dev AND prod) still import, plus the older retained `AppApi` one (now unreferenced in
+    both envs) - both already TRANSITIONAL in `api-stack.ts`. Observability cannot deploy
+    first: the `AppLinks` export it needs does not exist until api deploys.
+  - **identity -> edge (cross-region, customer `ManagedLoginDomain` baseUrl): NO retention
+    needed.** Cross-region refs are not CloudFormation exports but SSM parameters
+    (`/cdk/exports/wanthat-<env>-edge/...` in us-east-1) managed by CDK's export-writer /
+    export-reader custom resources. The writer handler bundled by aws-cdk-lib 2.260.0 - the
+    SAME asset hash already deployed in both envs' identity stacks - deletes a removed
+    parameter unconditionally (no in-use check, unlike same-region exports), and the edge
+    reader's update releases the stale import tolerating the already-deleted parameter
+    (`InvalidResourceId` is swallowed). identity deploys before edge, so the single pass
+    converges. Residual risk accepted (pre-release): if the edge update failed for an
+    UNRELATED reason after identity deleted the parameter, rollback could not re-resolve the
+    old `{{resolve:ssm:...}}` and would need a manual continue-update-rollback.
+  - **Follow-up PR** (after this branch has deployed to dev AND shipped in a prod release):
+    drop all eight retained exports - the six-literal block in `data-stack.ts` and the
+    `AppApi` + `AppAuth` lines in `api-stack.ts`.
 - Attach the WAF web ACL from T0 to the customer pool (or record the fallback).
 - Delete `packages/auth` and `packages/webauthn`; remove them from infra devDependencies
   (filtered turbo Deploy build breaks otherwise - red check-deploy is blocking).
@@ -234,7 +235,10 @@ sections. Mermaid rules: pure ASCII, no semicolons, validate with mermaid.parse.
 **Depends:** none. **Blocks:** T12.
 
 ### T12 - End-to-end verification + deploy
-- Deploy to dev respecting T8's two-step export ordering; `cdk diff` reviewed first.
+- Deploy to dev via the standard pipeline single pass (merge to `main` -> deploy.yml runs
+  `cdk deploy --all --concurrency`); prod ships the same way on publishing a release. T8's
+  transitional retained exports make the export removals single-pass-safe - no manual
+  ordering. Review the `cdk diff` recorded in the run log first.
 - e2e on dev: fresh signup (WhatsApp/dev-otp-sink code), OTP login, passkey enrol + login
   (remembered phone, auto-prompt on focus), profile edit + claim refresh, wallet loads,
   landing `/p/*` member + guest flows, admin users list / disable / enable / delete
