@@ -76,9 +76,7 @@ export const PollOrdersSummary = z.object({
   /** Orders excluded from money: missing/foreign ref, unknown status, no commission. */
   untracked: z.number().int(),
   /** Null in dry mode (no writer configured). */
-  written: z
-    .object({ appended: z.number().int(), failed: z.number().int() })
-    .nullable(),
+  written: z.object({ appended: z.number().int(), failed: z.number().int() }).nullable(),
 });
 export type PollOrdersSummary = z.infer<typeof PollOrdersSummary>;
 

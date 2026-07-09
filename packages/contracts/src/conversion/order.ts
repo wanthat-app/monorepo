@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { IsoDateTime, Money, RecommendationId, Uuid } from "../common";
-import { WalletEntryKind, WalletEntryStatus } from "../wallet";
 import { ConsumerKind } from "../landing";
+import { WalletEntryKind, WalletEntryStatus } from "../wallet";
 
 /**
  * One credited party on a conversion (ADR-0008/0009): the resolved member and the reward owed.

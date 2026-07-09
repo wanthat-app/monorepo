@@ -1,32 +1,42 @@
 /**
  * Retailer Proxy (ADR-0002, ADR-0004) — the single non-VPC egress to retailer APIs.
  * Sole holder of the secret-scoped retailer credential + HMAC client (packages/aliexpress).
- * Invoked by the Lambdalith (`generateLink`, synchronous) and by EventBridge → poll
- * (`listOrders`). Never touches Aurora; in-VPC writers persist the results.
+ * Invoked by the Lambdalith (`generateLink`, synchronous) and by the EventBridge heartbeat
+ * (`listOrders`, the ADR-0009 conversion poll). Never touches Aurora; the in-VPC
+ * conversion-poller-writer persists the money (this proxy invokes it — the endpoint-free VPC
+ * cannot invoke outward, so the chain runs proxy → writer, never the reverse).
  *
- * `generateLink` is live: it mints/reuses the product-level affiliate URL and upserts the
- * Product in DynamoDB (ADR-0004/0008). `listOrders` stays a walking-skeleton stub until the
- * conversion-poller slice. Known ops never throw — they answer a typed error the caller maps.
+ * Known ops never throw — they answer a typed error the caller maps.
  */
 import { Logger } from "@aws-lambda-powertools/logger";
+import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
 import { AliExpressClient } from "@wanthat/aliexpress";
-import { GenerateLinkRequest, RetailerAliexpressTrackingId } from "@wanthat/contracts";
-import { getDocClient, ProductRepo, RuntimeConfigRepo } from "@wanthat/dynamo";
+import {
+  GenerateLinkRequest,
+  type PollOrdersResponse,
+  RetailerAliexpressTrackingId,
+  type WriteConversionsRequest,
+  WriteConversionsResponse,
+} from "@wanthat/contracts";
+import {
+  GuestAttributionRepo,
+  getDocClient,
+  PollerStateRepo,
+  ProductRepo,
+  RecommendationRepo,
+  RuntimeConfigRepo,
+} from "@wanthat/dynamo";
 import { RetailerCredentialsReader } from "./credentials";
 import { type GenerateLinkDeps, type GenerateLinkWire, generateLink } from "./generate-link";
+import { type PollOrdersDeps, pollOrders } from "./poll-orders";
 
 const SERVICE = "retailer-proxy";
 const logger = new Logger({ serviceName: SERVICE });
 
 export type RetailerProxyEvent =
   | { op: "generateLink"; retailer: "aliexpress"; url: string }
-  | {
-      op: "listOrders";
-      retailer: "aliexpress";
-      startTime: string;
-      endTime: string;
-      status: string;
-    };
+  // The poll op computes its own window (CONFIG + watermark) — the heartbeat carries none.
+  | { op: "listOrders"; retailer: "aliexpress" };
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -34,47 +44,89 @@ function requireEnv(name: string): string {
   return value;
 }
 
-let cached: GenerateLinkDeps | undefined;
+let cached: { link: GenerateLinkDeps; poll: PollOrdersDeps } | undefined;
 
 /** Per-container dependency graph; the credential fetch is memoized inside the reader. */
-function getDeps(): GenerateLinkDeps {
+function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps } {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
   const doc = getDocClient(region);
   const credentials = new RetailerCredentialsReader(requireEnv("RETAILER_SECRET_ARN"));
   const config = new RuntimeConfigRepo(doc, requireEnv("RUNTIME_CONFIG_TABLE"));
+  const client = async () => {
+    const creds = await credentials.get();
+    if (!creds) return null;
+    // Admin-tunable (runtime config, next to the credentials): must name a tracking id that
+    // exists in the AliExpress portal. Read per client build — an admin change applies on the
+    // next invoke, no redeploy.
+    const trackingId = RetailerAliexpressTrackingId.parse(
+      await config.get("retailer.aliexpressTrackingId"),
+    );
+    return new AliExpressClient({ ...creds, trackingId });
+  };
+
+  // Dry mode until the writer ships/wires: resolved conversions are logged, never written.
+  const writerFn = process.env.CONVERSION_WRITER_FUNCTION;
+  const lambda = writerFn ? new LambdaClient({}) : undefined;
+  const invokeWriter =
+    writerFn && lambda
+      ? async (req: WriteConversionsRequest): Promise<WriteConversionsResponse> => {
+          const res = await lambda.send(
+            new InvokeCommand({
+              FunctionName: writerFn,
+              Payload: Buffer.from(
+                // Money is bigint in code, decimal-string on the wire.
+                JSON.stringify(req, (_k, v) => (typeof v === "bigint" ? v.toString() : v)),
+              ),
+            }),
+          );
+          if (res.FunctionError || !res.Payload) {
+            throw new Error(`writer invoke failed: ${res.FunctionError ?? "empty payload"}`);
+          }
+          return WriteConversionsResponse.parse(
+            JSON.parse(Buffer.from(res.Payload).toString("utf8")),
+          );
+        }
+      : null;
+
   cached = {
-    products: new ProductRepo(doc, requireEnv("PRODUCT_TABLE")),
-    client: async () => {
-      const creds = await credentials.get();
-      if (!creds) return null;
-      // Admin-tunable (runtime config, next to the credentials): must name a tracking id that
-      // exists in the AliExpress portal. Read per client build — an admin change applies on the
-      // next invoke, no redeploy.
-      const trackingId = RetailerAliexpressTrackingId.parse(
-        await config.get("retailer.aliexpressTrackingId"),
-      );
-      return new AliExpressClient({ ...creds, trackingId });
+    link: {
+      products: new ProductRepo(doc, requireEnv("PRODUCT_TABLE")),
+      client,
+      logger,
     },
-    logger,
+    poll: {
+      client,
+      state: new PollerStateRepo(doc, requireEnv("POLLER_STATE_TABLE")),
+      config,
+      attribution: {
+        recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
+        guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
+        now: () => new Date(),
+      },
+      invokeWriter,
+      now: () => new Date(),
+      logger,
+    },
   };
   return cached;
 }
 
 export const handler = async (
   event: RetailerProxyEvent,
-): Promise<GenerateLinkWire | { status: "not_implemented"; service: string; op: string }> => {
+): Promise<GenerateLinkWire | PollOrdersResponse> => {
   logger.appendKeys({ op: event.op, retailer: event.retailer });
   switch (event.op) {
     case "generateLink": {
       const request = GenerateLinkRequest.safeParse(event);
       if (!request.success) return { status: "error", code: "unsupported_url" };
-      return generateLink(request.data.url, getDeps());
+      return generateLink(request.data.url, getDeps().link);
     }
-    case "listOrders":
-      // TODO: aliexpress.affiliate.order.listbyindex (cursor loop); resolve attribution.
-      logger.info("not_implemented");
-      return { status: "not_implemented", service: SERVICE, op: event.op };
+    case "listOrders": {
+      const summary = await pollOrders(getDeps().poll);
+      logger.info("poll_summary", { summary: JSON.stringify(summary) });
+      return summary;
+    }
     default: {
       const exhaustive: never = event;
       throw new Error(`unknown op: ${JSON.stringify(exhaustive)}`);

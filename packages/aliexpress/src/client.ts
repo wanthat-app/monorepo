@@ -276,7 +276,10 @@ export class AliExpressClient {
    * (ADR-0009). An empty window is a NORMAL answer (empty page, never a throw — unlike
    * link.generate); a malformed top-level payload throws typed, like productdetail.
    */
-  async listOrdersByIndex(params: OrderListByIndexParams, timeoutMs = 8000): Promise<OrderListPage> {
+  async listOrdersByIndex(
+    params: OrderListByIndexParams,
+    timeoutMs = 8000,
+  ): Promise<OrderListPage> {
     const business: Record<string, string> = {
       start_time: params.startTime,
       end_time: params.endTime,
@@ -305,7 +308,8 @@ export class AliExpressClient {
           commissionMinor: decimalToMinor(
             commission === undefined ? undefined : String(commission),
           ),
-          commissionCurrency: commission !== undefined ? (o.order_commission_currency ?? "USD") : null,
+          commissionCurrency:
+            commission !== undefined ? (o.order_commission_currency ?? "USD") : null,
           orderTimeGmt8: o.paid_time ?? o.order_time ?? null,
         },
       ];
