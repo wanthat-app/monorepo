@@ -347,6 +347,9 @@ importers:
       '@wanthat/dynamo':
         specifier: workspace:*
         version: link:../../packages/dynamo
+      aws-jwt-verify:
+        specifier: ^5.2.1
+        version: 5.2.1
 
   services/message-sender:
     dependencies:
@@ -2007,6 +2010,10 @@ packages:
     resolution: {integrity: sha512-y9OHn5/BOcIiq409vPvpypMIr7/8M1ScFe8IkFMSCN1/GI/5c73fQ4pfzNq+VDkj86T5zxs7BQ1qU2lQQytdXA==}
     engines: {node: '>= 18.0.0'}
     hasBin: true
+
+  aws-jwt-verify@5.2.1:
+    resolution: {integrity: sha512-J+buA4M+qvQDk58WXFBLkDodkEX3DDL1ac5XFQPW3opxAsaLXYu5hYnlSHsaBRDBUXBAn695kE/cw/mdyJKwJg==}
+    engines: {node: '>=18.0.0'}
 
   b4a@1.8.1:
     resolution: {integrity: sha512-aiqre1Nr0B/6DgE2N5vwTc+2/oQZ4Wh1t4NznYY4E00y8LCt6NqdRv81so00oo27D8MVKTpUa/MwUUtBLXCoDw==}
@@ -5360,6 +5367,8 @@ snapshots:
       constructs: 10.6.0
 
   aws-cdk@2.1128.1: {}
+
+  aws-jwt-verify@5.2.1: {}
 
   b4a@1.8.1: {}
 

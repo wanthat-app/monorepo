@@ -155,7 +155,8 @@ export class EdgeStack extends Stack {
         "/p/*": {
           origin: landingOrigin,
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD,
+          // POST /p/{id}/resolve rides the same behavior as the GET page (ADR-0007/0008).
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
           // Redirect resolution is per-consumer; don't cache. Strip Host so the API sees its own.
           cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,

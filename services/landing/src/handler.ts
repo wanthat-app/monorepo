@@ -14,6 +14,7 @@ import { ImpressionEvent, LandingSnapshot } from "@wanthat/contracts";
 import { buildEstimate } from "@wanthat/domain";
 import { getContext } from "./context";
 import { buildRender, injectLanding, type LandingRender, pickLocale } from "./landing-page";
+import { resolve, verifyBearer } from "./resolve";
 
 const SERVICE = "landing";
 
@@ -21,7 +22,9 @@ interface LandingEvent {
   rawPath?: string;
   headers?: Record<string, string | undefined>;
   queryStringParameters?: Record<string, string | undefined> | null;
-  requestContext?: { http?: { path?: string } };
+  requestContext?: { http?: { path?: string; method?: string } };
+  body?: string;
+  isBase64Encoded?: boolean;
 }
 
 interface LandingResult {
@@ -80,6 +83,24 @@ function recIdFromPath(path: string): string | null {
 
 export const handler = async (event: LandingEvent): Promise<LandingResult> => {
   const path = event.rawPath ?? event.requestContext?.http?.path ?? "/";
+
+  // POST /p/{id}/resolve — the client-driven attributed redirect (ADR-0007/0008).
+  const resolveMatch = path.match(/^\/p\/([^/?#]+)\/resolve$/);
+  if (resolveMatch?.[1]) {
+    const method = event.requestContext?.http?.method ?? "GET";
+    if (method !== "POST") {
+      return {
+        statusCode: 405,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ error: "method_not_allowed", service: SERVICE }),
+      };
+    }
+    return resolve(event, decodeURIComponent(resolveMatch[1]), {
+      recommendations: getContext().recommendations,
+      verifyBearer,
+    });
+  }
+
   const recId = recIdFromPath(path);
   if (!recId) {
     return {

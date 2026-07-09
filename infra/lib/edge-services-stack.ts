@@ -26,6 +26,9 @@ export interface EdgeServicesStackProps extends StackProps {
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly fxRateTable: dynamodb.ITable;
   readonly retailerSecret: secretsmanager.ISecret;
+  /** Customer pool + SPA client ids: the landing resolve verifies Bearer tokens OFFLINE (JWKS). */
+  readonly userPoolId: string;
+  readonly userPoolClientId: string;
 }
 
 /**
@@ -84,6 +87,8 @@ export class EdgeServicesStack extends Stack {
     landing.addEnvironment("RECOMMENDATION_TABLE", props.recommendationTable.tableName);
     landing.addEnvironment("RUNTIME_CONFIG_TABLE", props.runtimeConfigTable.tableName);
     landing.addEnvironment("FX_RATE_TABLE", props.fxRateTable.tableName);
+    landing.addEnvironment("USER_POOL_ID", props.userPoolId);
+    landing.addEnvironment("USER_POOL_CLIENT_ID", props.userPoolClientId);
     const landingApi = new HttpApi(this, "LandingApi", {
       apiName: `wanthat-${wanthatEnv.name}-landing`,
     });

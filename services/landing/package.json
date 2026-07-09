@@ -13,6 +13,7 @@
     "@wanthat/config": "workspace:*",
     "@wanthat/contracts": "workspace:*",
     "@wanthat/domain": "workspace:*",
-    "@wanthat/dynamo": "workspace:*"
+    "@wanthat/dynamo": "workspace:*",
+    "aws-jwt-verify": "^5.2.1"
   }
 }
