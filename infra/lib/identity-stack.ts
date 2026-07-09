@@ -98,15 +98,15 @@ export class IdentityStack extends Stack {
       // rate rules + Cognito quotas + the SMS spend cap below), not behind a signup gate.
       selfSignUpEnabled: true,
       signInAliases: { phone: true, email: true },
-      // Profile attributes ride SignUp.UserAttributes and are edited via UpdateUserAttributes
-      // (ADR-0006 decision 3). All optional (NOT required): flipping an attribute to required
-      // REPLACES the pool - never do that here.
+      // Profile attributes (given_name, family_name, locale, email) ride SignUp.UserAttributes and
+      // are edited via UpdateUserAttributes (ADR-0006 decision 3). They are DELIBERATELY absent
+      // from the schema: standard OIDC attributes always exist on every pool, and ADDING schema
+      // entries to an EXISTING pool fails the CFN update ("Invalid AttributeDataType input" -
+      // deploy run 29012543948). What gates their use is the app client's read/write attribute
+      // lists below, not the schema. Never mark one required - that REPLACES the pool.
       standardAttributes: {
         phoneNumber: { required: true, mutable: true },
         email: { required: false, mutable: true },
-        givenName: { required: false, mutable: true },
-        familyName: { required: false, mutable: true },
-        locale: { required: false, mutable: true },
       },
       // ADR-0006 decision 5: the OTP delivery channel preference. Set at SignUp (rides
       // UserAttributes), edited post-auth from the profile; the message-sender trigger is the
