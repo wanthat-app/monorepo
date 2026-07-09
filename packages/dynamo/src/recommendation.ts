@@ -51,6 +51,8 @@ export const RecommendationItem = z.object({
     consumerBps: z.number().int(),
   }),
   review: ReviewItem.nullable(),
+  // Landing display (spec 2026-07-09). Default null: rows written before this field must parse.
+  referrerFirstName: z.string().nullable().default(null),
   clicks: z.number().int(),
   conversions: z.number().int(),
   createdAt: z.string(),

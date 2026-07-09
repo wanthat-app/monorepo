@@ -24,6 +24,7 @@ const REC: RecommendationItem = {
   commissionBps: 700,
   cashback: { referrerBps: 5000, consumerBps: 0 },
   review: null,
+  referrerFirstName: null,
   clicks: 0,
   conversions: 0,
   createdAt: NOW,
@@ -40,6 +41,21 @@ function stub(respond: (name: string, input: Record<string, unknown>) => unknown
   } as unknown as DynamoDBDocumentClient;
   return { doc, calls };
 }
+
+describe("RecommendationItem", () => {
+  it("parses a pre-referrerFirstName stored item to null (backward compat)", async () => {
+    const { referrerFirstName: _drop, ...legacy } = REC;
+    const { doc } = stub(() => ({ Item: legacy }));
+    const item = await new RecommendationRepo(doc, "recommendation").get(REC.recommendationId);
+    expect(item?.referrerFirstName).toBeNull();
+  });
+
+  it("round-trips an explicit referrerFirstName", async () => {
+    const { doc } = stub(() => ({ Item: { ...REC, referrerFirstName: "Dana" } }));
+    const item = await new RecommendationRepo(doc, "recommendation").get(REC.recommendationId);
+    expect(item?.referrerFirstName).toBe("Dana");
+  });
+});
 
 describe("RecommendationRepo.create", () => {
   it("creates first-write-wins AND increments the counter in ONE transaction", async () => {
