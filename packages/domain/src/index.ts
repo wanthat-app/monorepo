@@ -14,6 +14,8 @@
  */
 import type { CashbackEstimate, CashbackSplit } from "@wanthat/contracts";
 
+export { deriveBalances, type LedgerRow } from "./wallet";
+
 const BPS_DENOMINATOR = 10_000n;
 
 export interface CommissionSplit {

@@ -149,6 +149,10 @@ export class ApiStack extends Stack {
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_rw",
+        // Wallet ILS estimate (ADR-0017): the cached USD-ILS rate + the conversion-commission
+        // config, read through the VPC's free DynamoDB gateway endpoint (ADR-0004).
+        FX_RATE_TABLE: props.fxRateTable.tableName,
+        RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
         ...RDS_CA_ENV,
       },
       bundling: rdsCaBundling,
@@ -157,6 +161,8 @@ export class ApiStack extends Stack {
 
     // Aurora as app_rw via IAM auth (ADR-0003) - no RDS Proxy, no static credential.
     props.cluster.grantConnect(appCoreFn, "app_rw");
+    props.fxRateTable.grantReadData(appCoreFn);
+    props.runtimeConfigTable.grantReadData(appCoreFn);
 
     // --- One HTTP API fronting both functions ---
     const linksIntegration = new HttpLambdaIntegration("AppLinksIntegration", appLinksFn);

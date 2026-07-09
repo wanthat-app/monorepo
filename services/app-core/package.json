@@ -12,6 +12,8 @@
   "dependencies": {
     "@wanthat/contracts": "workspace:*",
     "@wanthat/db": "workspace:*",
+    "@wanthat/domain": "workspace:*",
+    "@wanthat/dynamo": "workspace:*",
     "hono": "^4.6.0"
   }
 }
