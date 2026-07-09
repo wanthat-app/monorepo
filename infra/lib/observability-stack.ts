@@ -3,11 +3,13 @@ import type { IHttpApi } from "aws-cdk-lib/aws-apigatewayv2";
 import * as cloudwatch from "aws-cdk-lib/aws-cloudwatch";
 import * as cloudwatch_actions from "aws-cdk-lib/aws-cloudwatch-actions";
 import type * as lambda from "aws-cdk-lib/aws-lambda";
+import type * as logs from "aws-cdk-lib/aws-logs";
 import type * as rds from "aws-cdk-lib/aws-rds";
 import * as sns from "aws-cdk-lib/aws-sns";
 import * as sns_subscriptions from "aws-cdk-lib/aws-sns-subscriptions";
 import type { Construct } from "constructs";
 import type { WanthatEnv } from "./config";
+import { FunnelAnalytics } from "./funnel-analytics";
 
 /** A labelled HTTP API to observe (app-api, admin-api, landing). */
 export interface ObservedApi {
@@ -28,6 +30,8 @@ export interface ObservabilityStackProps extends StackProps {
   readonly cluster: rds.IDatabaseCluster;
   /** The account SMS spend cap (USD/month) from IdentityStack — the SMS alarm fires at 80% of it. */
   readonly smsSpendLimitUsd: number;
+  /** Log groups emitting structured funnel events, subscribed into the FunnelAnalytics pipeline. */
+  readonly funnelLogGroups: logs.ILogGroup[];
 }
 
 /**
@@ -40,9 +44,10 @@ export interface ObservabilityStackProps extends StackProps {
  * function's call site via config.serviceLogGroup, not here.
  *
  * The CloudFront/WAF edge dashboard lives on the EdgeStack (us-east-1, same region as those metrics),
- * not here. Still out of scope: business/funnel metrics (needs the deferred Firehose to S3 to Athena
- * pipeline), and a CloudTrail alarm on retailer-secret reads (tracked as its own issue - it needs a
- * single account-level trail, since dev and prod currently share one account).
+ * not here. It also owns the business/funnel analytics pipeline (FunnelAnalytics: CloudWatch Logs
+ * subscriptions -> Firehose -> S3, queried in Athena via a projected Glue table). Still out of scope:
+ * a CloudTrail alarm on retailer-secret reads (tracked as its own issue - it needs a single
+ * account-level trail, since dev and prod currently share one account).
  */
 export class ObservabilityStack extends Stack {
   readonly alarmTopic: sns.Topic;
@@ -52,6 +57,9 @@ export class ObservabilityStack extends Stack {
     const { wanthatEnv, httpApis, functions, cluster, smsSpendLimitUsd } = props;
     const env = wanthatEnv.name;
     const period = Duration.minutes(5);
+
+    // --- Funnel analytics pipeline (CloudWatch Logs -> Firehose -> S3 -> Athena) ---
+    new FunnelAnalytics(this, "Funnel", { wanthatEnv, logGroups: props.funnelLogGroups });
 
     // --- Alarm fan-out topic ---
     this.alarmTopic = new sns.Topic(this, "AlarmTopic", {
