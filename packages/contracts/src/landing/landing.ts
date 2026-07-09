@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { RecommendationId } from "../common";
 import { LandingCountdownSeconds } from "../config";
-import { CashbackEstimate, Product, Review } from "../recommendations";
+import { CashbackEstimate, DisplayFx, Product, Review } from "../recommendations";
 
 /**
  * Public landing view for `GET /p/{recommendationId}` (ADR-0007) — the data the OG-tagged
@@ -32,3 +32,23 @@ export const GetLandingResponse = z.object({
   countdownSeconds: LandingCountdownSeconds,
 });
 export type GetLandingResponse = z.infer<typeof GetLandingResponse>;
+
+/**
+ * The payload the landing service embeds into the HTML shell as `window.__WANTHAT_LANDING__` —
+ * the HTML-embedded form of `GetLandingResponse` (ADR-0007), so the SPA renders the identical
+ * card with zero extra round trips. The server ALWAYS injects one (even on not-found or a read
+ * failure); a missing snapshot therefore means client-side navigation and the SPA must
+ * hard-reload `/p/{id}`. `displayFx` mirrors the create flow's client-side ILS display
+ * conversion. Money travels in wire form (decimal-string minor units) and parses back through
+ * `Money`.
+ */
+export const LandingSnapshot = z.discriminatedUnion("status", [
+  z.object({
+    status: z.literal("ok"),
+    landing: LandingView,
+    countdownSeconds: LandingCountdownSeconds,
+    displayFx: DisplayFx.nullable(),
+  }),
+  z.object({ status: z.literal("notFound") }),
+]);
+export type LandingSnapshot = z.infer<typeof LandingSnapshot>;

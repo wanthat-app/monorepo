@@ -12,6 +12,8 @@
  * The API string `Money` (`@wanthat/contracts`) is converted to/from these minor units at the
  * boundary; the real wiring lands with the conversion poller-writer.
  */
+import type { CashbackEstimate, CashbackSplit } from "@wanthat/contracts";
+
 const BPS_DENOMINATOR = 10_000n;
 
 export interface CommissionSplit {
@@ -50,6 +52,37 @@ export function splitCommission(
   const consumerRewardMinor = (grossMinor * BigInt(consumer)) / BPS_DENOMINATOR;
   const marginMinor = grossMinor - referrerMinor - consumerRewardMinor;
   return { referrerMinor, consumerRewardMinor, marginMinor };
+}
+
+/**
+ * Derived per-side estimate (display only, never stored): price × network commission × split,
+ * exact bigint math in the retailer's settlement currency. Null when the price is unknown.
+ * Shared by the create flow (app-links) and the landing render (ADR-0007) so both show the
+ * same figures for the same snapshot.
+ */
+export function buildEstimate(
+  price: { amountMinor: string; currency: string } | null,
+  commissionBps: number,
+  split: CashbackSplit,
+): CashbackEstimate {
+  if (!price) {
+    return {
+      referrer: { rateBps: split.referrerBps, estimated: null },
+      consumer: { rateBps: split.consumerBps, estimated: null },
+    };
+  }
+  const gross = (BigInt(price.amountMinor) * BigInt(commissionBps)) / 10_000n;
+  const parts = splitCommission(gross, split.referrerBps, split.consumerBps);
+  return {
+    referrer: {
+      rateBps: split.referrerBps,
+      estimated: { amountMinor: parts.referrerMinor, currency: price.currency },
+    },
+    consumer: {
+      rateBps: split.consumerBps,
+      estimated: { amountMinor: parts.consumerRewardMinor, currency: price.currency },
+    },
+  };
 }
 
 /**

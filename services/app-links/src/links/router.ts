@@ -1,6 +1,5 @@
 import { extractAliExpressUrl } from "@wanthat/aliexpress";
 import type {
-  CashbackEstimate,
   CashbackSplit,
   DisplayFx as DisplayFxValue,
   GenerateLinkErrorCode,
@@ -19,7 +18,7 @@ import {
   UpdateRecommendationBody,
   UpdateRecommendationResponse,
 } from "@wanthat/contracts";
-import { splitCommission } from "@wanthat/domain";
+import { buildEstimate } from "@wanthat/domain";
 import type { ProductItem, RecommendationItem } from "@wanthat/dynamo";
 import type { Context } from "hono";
 import { Hono } from "hono";
@@ -75,35 +74,6 @@ async function displayFx(settlementCurrency: string | undefined): Promise<Displa
   ]);
   if (!rate) return null;
   return { rate, commissionBps: Bps.parse(commissionBps) };
-}
-
-/**
- * Derived per-side estimate (display only, never stored): price × network commission × split,
- * exact bigint math in the retailer's settlement currency. Null when the price is unknown.
- */
-function buildEstimate(
-  price: { amountMinor: string; currency: string } | null,
-  commissionBps: number,
-  split: CashbackSplit,
-): CashbackEstimate {
-  if (!price) {
-    return {
-      referrer: { rateBps: split.referrerBps, estimated: null },
-      consumer: { rateBps: split.consumerBps, estimated: null },
-    };
-  }
-  const gross = (BigInt(price.amountMinor) * BigInt(commissionBps)) / 10_000n;
-  const parts = splitCommission(gross, split.referrerBps, split.consumerBps);
-  return {
-    referrer: {
-      rateBps: split.referrerBps,
-      estimated: { amountMinor: parts.referrerMinor, currency: price.currency },
-    },
-    consumer: {
-      rateBps: split.consumerBps,
-      estimated: { amountMinor: parts.consumerRewardMinor, currency: price.currency },
-    },
-  };
 }
 
 /** The stored projection → the API `Recommendation` (the affiliate URL never leaves — ADR-0007). */
