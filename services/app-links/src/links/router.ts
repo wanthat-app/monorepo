@@ -27,6 +27,7 @@ import { type Bindings, subFromClaims } from "../claims";
 import { getContext } from "../context";
 import { moneyJson } from "../http";
 import { recommendationIdFor } from "./rec-id";
+import { referrerFirstName } from "./referrer-name";
 
 /**
  * The links module (ADR-0002): paste URL → shared product with a product-level affiliate URL →
@@ -234,7 +235,9 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
     // The product must have been resolved first (the contract's precondition).
     if (!product) return c.json({ error: "product_not_resolved" }, 404);
 
-    const split = await currentSplit();
+    // The caller's own access token authorizes the best-effort given_name lookup (landing display).
+    const bearer = c.req.header("authorization")?.replace(/^Bearer\s+/i, "");
+    const [split, firstName] = await Promise.all([currentSplit(), referrerFirstName(bearer)]);
     const now = new Date().toISOString();
     const { item, created } = await ctx.recommendations.create({
       recommendationId: recommendationIdFor(sub, body.storeId, body.storeProductId),
@@ -248,6 +251,7 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
       commissionBps: product.commissionBps,
       cashback: split,
       review: body.review ?? null,
+      referrerFirstName: firstName,
       clicks: 0,
       conversions: 0,
       createdAt: now,
