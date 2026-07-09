@@ -44,6 +44,7 @@ export class DataStack extends Stack {
   readonly productTable: dynamodb.Table;
   readonly recommendationTable: dynamodb.Table;
   readonly guestAttributionTable: dynamodb.Table;
+  readonly pollerStateTable: dynamodb.Table;
   readonly runtimeConfigTable: dynamodb.Table;
   /** Operational counters (exact entity totals), disjoint from config - see OpsCounters below. */
   readonly opsCountersTable: dynamodb.Table;
@@ -91,6 +92,12 @@ export class DataStack extends Stack {
     // Maps an anonymous guestId → customer once they register (ADR-0008, consumer attribution).
     this.guestAttributionTable = new dynamodb.Table(this, "GuestAttribution", {
       partitionKey: { name: "guestId", type: dynamodb.AttributeType.STRING },
+      ...common,
+    });
+
+    // Conversion-poll watermark + heartbeat state (ADR-0009), one item per retailer feed.
+    this.pollerStateTable = new dynamodb.Table(this, "PollerState", {
+      partitionKey: { name: "stateKey", type: dynamodb.AttributeType.STRING },
       ...common,
     });
 

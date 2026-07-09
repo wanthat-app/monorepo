@@ -111,6 +111,7 @@ const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-serv
   runtimeConfigTable: data.runtimeConfigTable,
   fxRateTable: data.fxRateTable,
   retailerSecret: data.retailerSecret,
+  pollerStateTable: data.pollerStateTable,
   // Offline JWT verification on the landing resolve path (ADR-0007: JWKS, never a Cognito call).
   userPoolId: identity.userPool.userPoolId,
   userPoolClientId: identity.userPoolClient.userPoolClientId,

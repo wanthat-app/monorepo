@@ -53,3 +53,42 @@ export const GenerateLinkResponse = z.discriminatedUnion("status", [
   }),
 ]);
 export type GenerateLinkResponse = z.infer<typeof GenerateLinkResponse>;
+
+/**
+ * The retailer-proxy `listOrders` (poll) invoke contract (ADR-0009). Fired by the EventBridge
+ * heartbeat; the op computes its own window (runtime config + poller_state watermark) and gates
+ * itself on `poller.intervalMinutes`, so the event carries no window. The summary is
+ * observability, not data — money flows through the writer invoke, never this response.
+ */
+export const PollOrdersRequest = z.object({
+  op: z.literal("listOrders"),
+  retailer: StoreId,
+});
+export type PollOrdersRequest = z.infer<typeof PollOrdersRequest>;
+
+export const PollOrdersSummary = z.object({
+  status: z.literal("ok"),
+  /** False = the heartbeat fired before `poller.intervalMinutes` elapsed — nothing ran. */
+  ran: z.boolean(),
+  window: z.object({ startTime: z.string(), endTime: z.string() }).nullable(),
+  fetched: z.number().int(),
+  resolved: z.number().int(),
+  /** Orders excluded from money: missing/foreign ref, unknown status, no commission. */
+  untracked: z.number().int(),
+  /** Null in dry mode (no writer configured). */
+  written: z.object({ appended: z.number().int(), failed: z.number().int() }).nullable(),
+});
+export type PollOrdersSummary = z.infer<typeof PollOrdersSummary>;
+
+export const PollOrdersError = z.object({
+  status: z.literal("error"),
+  code: z.enum(["retailer_not_configured", "upstream_error"]),
+  message: z.string().optional(),
+});
+export type PollOrdersError = z.infer<typeof PollOrdersError>;
+
+export const PollOrdersResponse = z.discriminatedUnion("status", [
+  PollOrdersSummary,
+  PollOrdersError,
+]);
+export type PollOrdersResponse = z.infer<typeof PollOrdersResponse>;

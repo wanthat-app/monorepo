@@ -26,6 +26,7 @@ export interface EdgeServicesStackProps extends StackProps {
   readonly runtimeConfigTable: dynamodb.ITable;
   readonly fxRateTable: dynamodb.ITable;
   readonly retailerSecret: secretsmanager.ISecret;
+  readonly pollerStateTable: dynamodb.ITable;
   /** Customer pool + SPA client ids: the landing resolve verifies Bearer tokens OFFLINE (JWKS). */
   readonly userPoolId: string;
   readonly userPoolClientId: string;
@@ -57,7 +58,7 @@ export class EdgeServicesStack extends Stack {
     super(scope, id, props);
     const { wanthatEnv } = props;
 
-    const makeFn = (idPart: string, service: string) =>
+    const makeFn = (idPart: string, service: string, opts?: { timeoutSeconds?: number }) =>
       new NodejsFunction(this, idPart, {
         functionName: `wanthat-${wanthatEnv.name}-${service}`,
         entry: serviceEntry(service),
@@ -65,7 +66,7 @@ export class EdgeServicesStack extends Stack {
         runtime: LAMBDA_RUNTIME,
         architecture: LAMBDA_ARCHITECTURE,
         memorySize: 256,
-        timeout: Duration.seconds(15),
+        timeout: Duration.seconds(opts?.timeoutSeconds ?? 15),
         // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
         tracing: lambda.Tracing.ACTIVE,
         logGroup: serviceLogGroup(this, `${idPart}Logs`, wanthatEnv),
@@ -102,19 +103,29 @@ export class EdgeServicesStack extends Stack {
     applyThrottle(landingApi, THROTTLING.landing);
 
     // --- retailer proxy (sole egress; holds the credential) ---
-    const retailerProxy = makeFn("RetailerProxy", "retailer-proxy");
+    // 300s: the scheduled poll pages the retailer sequentially and awaits the in-VPC writer;
+    // the sync generateLink callers stay bounded by their own API Gateway 30s regardless.
+    const retailerProxy = makeFn("RetailerProxy", "retailer-proxy", { timeoutSeconds: 300 });
     this.retailerProxyFn = retailerProxy;
     // generateLink upserts the shared Product (ADR-0004: the proxy owns the Product write; the
     // in-VPC caller writes the Recommendation — the proxy holds NO recommendation grant,
     // least-privilege per ADR-0002; the poll slice adds what listOrders actually needs).
     props.productTable.grantReadWriteData(retailerProxy);
     props.retailerSecret.grantRead(retailerProxy);
+    // The poll op (ADR-0009): resolve attribution from the projection + guest map (reads only)
+    // and own the watermark/heartbeat state (single writer of poller_state).
+    props.recommendationTable.grantReadData(retailerProxy);
+    props.guestAttributionTable.grantReadData(retailerProxy);
+    props.pollerStateTable.grantReadWriteData(retailerProxy);
     // The AliExpress tracking id is runtime config (`retailer.aliexpressTrackingId`, admin-set
     // next to the credentials) - the proxy reads it per invoke, so changing it needs no redeploy.
     props.runtimeConfigTable.grantReadData(retailerProxy);
     retailerProxy.addEnvironment("RETAILER_SECRET_ARN", props.retailerSecret.secretArn);
     retailerProxy.addEnvironment("PRODUCT_TABLE", props.productTable.tableName);
     retailerProxy.addEnvironment("RUNTIME_CONFIG_TABLE", props.runtimeConfigTable.tableName);
+    retailerProxy.addEnvironment("RECOMMENDATION_TABLE", props.recommendationTable.tableName);
+    retailerProxy.addEnvironment("GUEST_ATTRIBUTION_TABLE", props.guestAttributionTable.tableName);
+    retailerProxy.addEnvironment("POLLER_STATE_TABLE", props.pollerStateTable.tableName);
 
     // --- scheduled writers ---
     const poller = makeFn("ConversionPoller", "conversion-poller");

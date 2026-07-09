@@ -165,7 +165,7 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "fx.conversionCommissionBps": 200,
   "fx.updateIntervalMinutes": 720, // twice daily; the conversion commission absorbs intraday drift
   "fx.provider": "ecb", // commercial-safe default until BoI consent is obtained (ADR-0017)
-  "poller.intervalMinutes": 60,
+  "poller.intervalMinutes": 30,
   // Lookback must cover an order's full maturation; 72h is a placeholder — tune at integration
   // to AliExpress's confirm/return latency (see ADR-0009).
   "poller.lookbackHours": 72,

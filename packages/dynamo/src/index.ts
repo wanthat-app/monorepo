@@ -21,6 +21,7 @@ export {
   NotificationOutboxRepo,
   type NotificationStatus,
 } from "./notification-outbox";
+export { type PollerStateItem, PollerStateRepo } from "./poller-state";
 export { PRODUCT_COUNTER_SK, ProductItem, ProductRepo, type ProductUpsert } from "./product";
 export {
   RECOMMENDATION_COUNTER_PK,

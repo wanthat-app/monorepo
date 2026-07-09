@@ -389,6 +389,9 @@ importers:
       '@aws-lambda-powertools/logger':
         specifier: ^2.8.0
         version: 2.33.1
+      '@aws-sdk/client-lambda':
+        specifier: ^3.600.0
+        version: 3.1081.0
       '@aws-sdk/client-secrets-manager':
         specifier: ^3.600.0
         version: 3.1076.0
@@ -401,6 +404,9 @@ importers:
       '@wanthat/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@wanthat/domain':
+        specifier: workspace:^
+        version: link:../../packages/domain
       '@wanthat/dynamo':
         specifier: workspace:*
         version: link:../../packages/dynamo
