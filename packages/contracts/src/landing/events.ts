@@ -28,5 +28,11 @@ export const ClickEvent = z.object({
 });
 export type ClickEvent = z.infer<typeof ClickEvent>;
 
+/**
+ * The landing-path funnel events. The funnel's third stage — the conversion — has its own
+ * contract in `../conversion/event.ts` (ADR-0009; it needs wallet/money types this module must
+ * not import: `conversion` already imports `ConsumerKind` from here, so a re-export would cycle).
+ * All three ship through the same CloudWatch Logs → Firehose → S3 pipe, discriminated by `type`.
+ */
 export const FunnelEvent = z.discriminatedUnion("type", [ImpressionEvent, ClickEvent]);
 export type FunnelEvent = z.infer<typeof FunnelEvent>;

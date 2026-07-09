@@ -266,6 +266,9 @@ importers:
 
   services/app-links:
     dependencies:
+      '@aws-sdk/client-cognito-identity-provider':
+        specifier: ^3.600.0
+        version: 3.1076.0
       '@aws-sdk/client-lambda':
         specifier: ^3.600.0
         version: 3.1081.0

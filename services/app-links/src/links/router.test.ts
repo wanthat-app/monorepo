@@ -20,6 +20,8 @@ const { fake } = vi.hoisted(() => ({
 }));
 
 vi.mock("../context", () => ({ getContext: () => fake }));
+// The Cognito given_name lookup is unit-tested in referrer-name.test.ts; here it just resolves.
+vi.mock("./referrer-name", () => ({ referrerFirstName: vi.fn(async () => "Dana") }));
 
 import { recommendationIdFor } from "./rec-id";
 import { productsRouter, recommendationsRouter } from "./router";
@@ -60,6 +62,7 @@ const REC_ITEM = {
   commissionBps: 700,
   cashback: { referrerBps: 5000, consumerBps: 0 },
   review: null,
+  referrerFirstName: "Dana",
   clicks: 0,
   conversions: 0,
   createdAt: NOW,
@@ -207,6 +210,10 @@ describe("POST /recommendations", () => {
     expect(data.recommendation.cashback).toEqual({ referrerBps: 5000, consumerBps: 0 });
     // The affiliate URL is redirect-internal (ADR-0007) — never in the API response.
     expect(JSON.stringify(data)).not.toContain("s.click.aliexpress.com");
+    // The creator's first name is denormalized onto the projection for landing display.
+    expect(fake.recommendations.create).toHaveBeenCalledWith(
+      expect.objectContaining({ referrerFirstName: "Dana" }),
+    );
   });
 
   it("returns the existing link on replay (200, original snapshot kept)", async () => {

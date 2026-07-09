@@ -14,6 +14,8 @@ export const LandingView = z.object({
   product: Product,
   review: Review.nullable(),
   estimate: CashbackEstimate, // derived from the recommendation's snapshot split, in origin currency
+  // Denormalized at link creation for landing display; null on links created before the field existed.
+  referrerFirstName: z.string().nullable(),
 });
 export type LandingView = z.infer<typeof LandingView>;
 
