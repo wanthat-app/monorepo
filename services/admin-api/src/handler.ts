@@ -83,8 +83,8 @@ app.put("/admin/config/:key", async (c) => {
 // admin-credentials function on this same HTTP API — Secrets Manager is unreachable from the
 // endpoint-free VPC this function runs in (ADR-0004).
 
-// GET /admin/stats/overview — `usersCount` is EXACT again: the `#customerCounter` sentinel item
-// in the runtime config table (a DynamoDB read, so this in-VPC function can serve it without
+// GET /admin/stats/overview — `usersCount` is EXACT again: the `customerCounter` item in the
+// OpsCounters table (a DynamoDB read, so this in-VPC function can serve it without
 // cognito-idp — ADR-0004). The counter counts CONFIRMED customers (only the Post-Confirmation
 // trigger increments); the users page's approximate whole-pool total keeps its wider scope. The
 // wallet figures (totalCashbackMinor, conversions30d) become real Aurora reads with the

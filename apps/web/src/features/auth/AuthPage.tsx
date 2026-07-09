@@ -2,6 +2,7 @@ import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
+import { fetchOtpChannelOptions, type OtpChannelOptions } from "../../lib/otp-channels";
 import {
   BackButton,
   Button,
@@ -43,9 +44,13 @@ const SIGNUP_CODE_LENGTH = 6;
  * to Cognito directly; no backend participates in authentication). One unified phone-first
  * flow: the phone is tried as a sign-in and Cognito's user-not-found signal branches to
  * registration, where the whole profile (name + email + language + OTP channel + Terms)
- * rides the SignUp call itself, then the confirmation code and a Face ID enrolment step.
- * Where passkeys are supported AND a remembered phone exists, passkey login is auto-armed
- * on focus and offered as a button (userless login is waived — ADR-0006).
+ * rides the SignUp call itself, then the confirmation code and a biometric enrolment step
+ * (device-matched Face ID / Touch ID label + glyph). The offered OTP channels mirror the
+ * admin kill switches via the public config endpoint (SMS-only when it is unreachable).
+ * Where passkeys are supported AND a remembered phone exists AND a passkey ceremony has
+ * succeeded on this device (per-device flag), passkey login is auto-armed on focus and
+ * offered as a square icon button beside Continue (userless login is waived — ADR-0006);
+ * a failed ceremony falls back to the OTP form with friendly guidance, never a dead button.
  */
 // Mock affiliate store — where the acquisition flow lands after auth (the real per-product affiliate
 // redirect lands with the full-landing slice). A hardcoded constant, so `?ref` can never open-redirect.
@@ -79,11 +84,21 @@ export function AuthPage() {
   const [email, setEmail] = useState("");
   const [agreed, setAgreed] = useState(false);
   // OTP channel (ADR-0019): a sticky signup-time preference riding custom:otpChannel. The
-  // message-sender is the enforcement point (kill switches + fallback), so the UI only
-  // offers the choice — there is no availability endpoint to consult any more.
-  const [channel, setChannel] = useState<OtpChannel>("whatsapp");
+  // offered channels + the preselected default mirror the kill switches via the PUBLIC config
+  // endpoint (same predicate the message-sender enforces, minus the private phoneNumberId);
+  // SMS is the safe initial value in case the fetch never lands. The sender remains the
+  // enforcement point either way.
+  const [channel, setChannel] = useState<OtpChannel>("sms");
+  const [channelOptions, setChannelOptions] = useState<OtpChannelOptions | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
+  // Friendly (non-alarming) guidance after a failed biometric ceremony — steers to the OTP form.
+  const [notice, setNotice] = useState<string | undefined>();
+  // Snapshot of the per-device passkey gate: state (not a render-time call) so a ceremony
+  // failure that clears the device flag also removes the button — never a dead button.
+  const [passkeyAvailable, setPasskeyAvailable] = useState(
+    () => passkeysSupported() && canLoginWithPasskey(),
+  );
 
   // The pending Cognito ceremonies (module flow objects) — refs, not state: they carry no UI.
   const loginFlow = useRef<OtpLoginFlow | null>(null);
@@ -92,11 +107,27 @@ export function AuthPage() {
   const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
   const armed = useRef(false);
 
+  // Kill-switch-aware channel options, fetched once per mount (a registration may follow the
+  // phone step within seconds — prefetching hides the latency). Failure resolves SMS-only
+  // inside the fetcher, so the chooser degrades gracefully instead of offering WhatsApp blind.
+  useEffect(() => {
+    let cancelled = false;
+    void fetchOtpChannelOptions().then((options) => {
+      if (cancelled) return;
+      setChannelOptions(options);
+      setChannel(options.defaultChannel);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   // Automatic passkey login (ADR-0006): armed once per mount, ONLY when this device remembers
-  // a phone (Cognito's WEB_AUTHN challenge is username-gated — userless login is waived). The
-  // module waits for document focus internally (iOS rejects an unfocused ceremony), so this
-  // fires right after load or at worst on the member's first tap. Cancel/failure quietly
-  // leaves the OTP form in charge.
+  // a phone (Cognito's WEB_AUTHN challenge is username-gated — userless login is waived) AND a
+  // passkey ceremony has succeeded here before (per-device flag). The module waits for document
+  // focus internally (iOS rejects an unfocused ceremony), so this fires right after load or at
+  // worst on the member's first tap. Cancel/failure leaves the OTP form in charge with a gentle
+  // pointer at it — and re-reads the gate, which the module clears on a no-credential failure.
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
@@ -107,9 +138,10 @@ export function AuthPage() {
     loginWithPasskey()
       .then(complete)
       .catch(() => {
-        // cancelled / no passkey — OTP and the manual button remain.
+        setPasskeyAvailable(passkeysSupported() && canLoginWithPasskey());
+        setNotice(t("auth.passkeyFallback"));
       });
-  }, [complete]);
+  }, [complete, t]);
 
   // The country affordance is IL (+972); the field carries the local part. Normalize + validate to
   // E.164 (null until it's a valid number); Cognito re-validates the attribute server-side.
@@ -159,11 +191,22 @@ export function AuthPage() {
       }
     });
 
-  const onPasskeyLogin = () =>
-    run(async () => {
+  // Deliberately NOT run(): a biometric failure must fall back to the OTP flow with friendly
+  // guidance (and re-read the per-device gate), not surface as a red error on the phone field.
+  const onPasskeyLogin = async () => {
+    setBusy(true);
+    setError(undefined);
+    setNotice(undefined);
+    try {
       await loginWithPasskey();
       complete();
-    });
+    } catch {
+      setPasskeyAvailable(passkeysSupported() && canLoginWithPasskey());
+      setNotice(t("auth.passkeyFallback"));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const onVerifyLogin = () =>
     run(async () => {
@@ -243,14 +286,6 @@ export function AuthPage() {
               <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
               <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
             </div>
-            {/* Manual passkey button — only where passkeys are supported AND a phone is
-                remembered (the native WEB_AUTHN challenge is username-gated, ADR-0006). A
-                cancelled auto-prompt lands here; one tap re-opens the OS sheet. */}
-            {passkeysSupported() && canLoginWithPasskey() && (
-              <Button onClick={onPasskeyLogin} loading={busy}>
-                {t("auth.passkeyCta", { label: bioLabel })}
-              </Button>
-            )}
             <label htmlFor="phone" className="block">
               <span className="mb-1.5 block text-sm font-medium text-muted">
                 {t("auth.phoneLabel")}
@@ -275,9 +310,31 @@ export function AuthPage() {
               </div>
               {error ? <span className="mt-1 block text-sm text-rejected">{error}</span> : null}
             </label>
-            <Button onClick={onSubmitPhone} loading={busy} disabled={!e164}>
-              {t("auth.continue")}
-            </Button>
+            {notice ? <p className="text-sm text-muted">{notice}</p> : null}
+            <div className="flex gap-2">
+              <div className="min-w-0 flex-1">
+                <Button onClick={onSubmitPhone} loading={busy} disabled={!e164}>
+                  {t("auth.continue")}
+                </Button>
+              </div>
+              {/* Manual biometric login — a square icon button per platform convention (FaceID /
+                  fingerprint glyph via the device-match logic), shown only where passkeys are
+                  supported AND a ceremony has succeeded on this device AND a phone is remembered
+                  (the native WEB_AUTHN challenge is username-gated, ADR-0006). A cancelled
+                  auto-prompt lands here; one tap re-opens the OS sheet. */}
+              {passkeyAvailable && (
+                <button
+                  type="button"
+                  onClick={() => void onPasskeyLogin()}
+                  disabled={busy}
+                  aria-label={t("auth.passkeyCta", { label: bioLabel })}
+                  title={t("auth.passkeyCta", { label: bioLabel })}
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-button border border-line bg-surface text-accent transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  <BiometricGlyph size={24} />
+                </button>
+              )}
+            </div>
           </>
         )}
 
@@ -352,19 +409,24 @@ export function AuthPage() {
                 ]}
               />
             </div>
-            <div>
-              <span className="mb-1.5 block text-sm font-medium text-muted">
-                {t("auth.channelLabel")}
-              </span>
-              <Segmented
-                value={channel}
-                onChange={(value) => setChannel(value as OtpChannel)}
-                options={[
-                  { value: "whatsapp", label: t("auth.channel.whatsapp") },
-                  { value: "sms", label: t("auth.channel.sms") },
-                ]}
-              />
-            </div>
+            {/* Channel chooser only when there is an actual choice: the options mirror the
+                admin kill switches (public config endpoint; SMS-only when the fetch failed),
+                so a disabled channel is never offered and a single channel needs no UI. */}
+            {channelOptions && channelOptions.channels.length > 1 && (
+              <div>
+                <span className="mb-1.5 block text-sm font-medium text-muted">
+                  {t("auth.channelLabel")}
+                </span>
+                <Segmented
+                  value={channel}
+                  onChange={(value) => setChannel(value as OtpChannel)}
+                  options={channelOptions.channels.map((c) => ({
+                    value: c,
+                    label: t(`auth.channel.${c}`),
+                  }))}
+                />
+              </div>
+            )}
             <Checkbox id="agree-terms" checked={agreed} onChange={setAgreed}>
               {t("auth.agreePre")}{" "}
               <a
@@ -422,35 +484,22 @@ export function AuthPage() {
           </>
         )}
 
+        {/* Post-registration enrolment step: device-matched label + glyph (Face ID on iPhone,
+            fingerprint elsewhere); Skip is one tap and goes straight home. Only rendered where
+            passkeysSupported() (see onVerifySignup). */}
         {step === "face" && (
           <div className="flex flex-col items-center gap-4 text-center">
-            <div className="flex h-24 w-24 items-center justify-center rounded-3xl border border-line bg-accent-soft">
-              <svg
-                width="46"
-                height="46"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="#1f7a57"
-                strokeWidth="1.7"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-                aria-hidden
-              >
-                <title>Face ID</title>
-                <path d="M4 8V6a2 2 0 0 1 2-2h2" />
-                <path d="M16 4h2a2 2 0 0 1 2 2v2" />
-                <path d="M20 16v2a2 2 0 0 1-2 2h-2" />
-                <path d="M8 20H6a2 2 0 0 1-2-2v-2" />
-                <path d="M9 10.5v.5M15 10.5v.5" />
-                <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
-              </svg>
+            <div className="flex h-24 w-24 items-center justify-center rounded-3xl border border-line bg-accent-soft text-accent">
+              <BiometricGlyph size={46} strokeWidth={1.7} />
             </div>
-            <h1 className="text-[25px] tracking-[-0.02em]">{t("auth.face.title")}</h1>
+            <h1 className="text-[25px] tracking-[-0.02em]">
+              {t("auth.face.title", { label: bioLabel })}
+            </h1>
             <p className="text-[15px] leading-normal text-muted">{t("auth.face.subtitle")}</p>
             {error ? <p className="text-sm text-rejected">{error}</p> : null}
             <div className="flex w-full flex-col gap-2">
               <Button onClick={onEnableFace} loading={busy}>
-                {t("auth.face.enable")}
+                {t("auth.face.enable", { label: bioLabel })}
               </Button>
               <Button variant="ghost" onClick={complete}>
                 {t("auth.face.skip")}
@@ -460,5 +509,51 @@ export function AuthPage() {
         )}
       </Card>
     </Screen>
+  );
+}
+
+/**
+ * The device-matched biometric glyph (design system convention: inline SVG, stroke
+ * currentColor): the Face ID frame-and-face for iPhone/iPad, a fingerprint everywhere else
+ * (Touch ID / Windows Hello / generic passkey) — same device-match logic as the label
+ * (`biometricLabelKey`). Decorative: the surrounding control carries the accessible name.
+ */
+function BiometricGlyph({ size = 24, strokeWidth = 2 }: { size?: number; strokeWidth?: number }) {
+  const face = biometricLabelKey() === "faceId";
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={strokeWidth}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {face ? (
+        <>
+          <path d="M4 8V6a2 2 0 0 1 2-2h2" />
+          <path d="M16 4h2a2 2 0 0 1 2 2v2" />
+          <path d="M20 16v2a2 2 0 0 1-2 2h-2" />
+          <path d="M8 20H6a2 2 0 0 1-2-2v-2" />
+          <path d="M9 10.5v.5M15 10.5v.5" />
+          <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
+        </>
+      ) : (
+        <>
+          <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
+          <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
+          <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" />
+          <path d="M2 12a10 10 0 0 1 18-6" />
+          <path d="M2 16h.01" />
+          <path d="M21.8 16c.2-2 .131-5.354 0-6" />
+          <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
+          <path d="M8.65 22c.21-.66.45-1.32.57-2" />
+          <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
+        </>
+      )}
+    </svg>
   );
 }

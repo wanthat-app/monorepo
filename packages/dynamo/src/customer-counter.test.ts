@@ -28,31 +28,40 @@ afterEach(() => {
 describe("CustomerCounterRepo.get", () => {
   it("reads the sentinel counter item", async () => {
     const { doc, calls } = stub(() => ({
-      Item: { configKey: CUSTOMER_COUNTER_KEY, total: 41, disabled: 3 },
+      Item: { counterKey: CUSTOMER_COUNTER_KEY, total: 41, disabled: 3 },
     }));
-    expect(await new CustomerCounterRepo(doc, "config").get()).toEqual({ total: 41, disabled: 3 });
+    expect(await new CustomerCounterRepo(doc, "ops-counters").get()).toEqual({
+      total: 41,
+      disabled: 3,
+    });
     expect(calls[0]?.name).toBe("GetCommand");
-    expect(calls[0]?.input.Key).toEqual({ configKey: CUSTOMER_COUNTER_KEY });
+    expect(calls[0]?.input.Key).toEqual({ counterKey: CUSTOMER_COUNTER_KEY });
   });
 
   it("reads a missing item as zeros (both pools start empty - no seed write)", async () => {
     const { doc } = stub(() => ({}));
-    expect(await new CustomerCounterRepo(doc, "config").get()).toEqual({ total: 0, disabled: 0 });
+    expect(await new CustomerCounterRepo(doc, "ops-counters").get()).toEqual({
+      total: 0,
+      disabled: 0,
+    });
   });
 
   it("reads a missing disabled attribute as 0 (only increments have happened)", async () => {
-    const { doc } = stub(() => ({ Item: { configKey: CUSTOMER_COUNTER_KEY, total: 7 } }));
-    expect(await new CustomerCounterRepo(doc, "config").get()).toEqual({ total: 7, disabled: 0 });
+    const { doc } = stub(() => ({ Item: { counterKey: CUSTOMER_COUNTER_KEY, total: 7 } }));
+    expect(await new CustomerCounterRepo(doc, "ops-counters").get()).toEqual({
+      total: 7,
+      disabled: 0,
+    });
   });
 });
 
 describe("CustomerCounterRepo.incrementTotal", () => {
   it("adds 1 to total on the sentinel key, unconditionally", async () => {
     const { doc, calls } = stub(() => ({}));
-    await new CustomerCounterRepo(doc, "config").incrementTotal();
+    await new CustomerCounterRepo(doc, "ops-counters").incrementTotal();
     expect(calls[0]?.name).toBe("UpdateCommand");
     expect(calls[0]?.input).toMatchObject({
-      Key: { configKey: CUSTOMER_COUNTER_KEY },
+      Key: { counterKey: CUSTOMER_COUNTER_KEY },
       UpdateExpression: "ADD #total :one",
       ExpressionAttributeNames: { "#total": "total" },
       ExpressionAttributeValues: { ":one": 1 },
@@ -64,9 +73,9 @@ describe("CustomerCounterRepo.incrementTotal", () => {
 describe("CustomerCounterRepo.decrementTotal", () => {
   it("decrements only total for an enabled user, floor-guarded at 0", async () => {
     const { doc, calls } = stub(() => ({}));
-    expect(await new CustomerCounterRepo(doc, "config").decrementTotal(false)).toBe(true);
+    expect(await new CustomerCounterRepo(doc, "ops-counters").decrementTotal(false)).toBe(true);
     expect(calls[0]?.input).toMatchObject({
-      Key: { configKey: CUSTOMER_COUNTER_KEY },
+      Key: { counterKey: CUSTOMER_COUNTER_KEY },
       UpdateExpression: "ADD #total :minusOne",
       ConditionExpression: "#total >= :one",
       ExpressionAttributeNames: { "#total": "total" },
@@ -76,7 +85,7 @@ describe("CustomerCounterRepo.decrementTotal", () => {
 
   it("decrements total AND disabled for a suspended user, both floor-guarded", async () => {
     const { doc, calls } = stub(() => ({}));
-    expect(await new CustomerCounterRepo(doc, "config").decrementTotal(true)).toBe(true);
+    expect(await new CustomerCounterRepo(doc, "ops-counters").decrementTotal(true)).toBe(true);
     expect(calls[0]?.input).toMatchObject({
       UpdateExpression: "ADD #total :minusOne, #disabled :minusOne",
       ConditionExpression: "#total >= :one AND #disabled >= :one",
@@ -88,12 +97,12 @@ describe("CustomerCounterRepo.decrementTotal", () => {
     const { doc } = stub(() => {
       throw denied();
     });
-    expect(await new CustomerCounterRepo(doc, "config").decrementTotal(true)).toBe(false);
+    expect(await new CustomerCounterRepo(doc, "ops-counters").decrementTotal(true)).toBe(false);
     expect(warn).toHaveBeenCalledWith(
       JSON.stringify({
         warn: "customer_counter_floor_skip",
         op: "decrementTotal",
-        table: "config",
+        table: "ops-counters",
       }),
     );
   });
@@ -102,9 +111,9 @@ describe("CustomerCounterRepo.decrementTotal", () => {
     const { doc } = stub(() => {
       throw new Error("dynamo down");
     });
-    await expect(new CustomerCounterRepo(doc, "config").decrementTotal(false)).rejects.toThrow(
-      "dynamo down",
-    );
+    await expect(
+      new CustomerCounterRepo(doc, "ops-counters").decrementTotal(false),
+    ).rejects.toThrow("dynamo down");
     expect(warn).not.toHaveBeenCalled();
   });
 });
@@ -112,9 +121,9 @@ describe("CustomerCounterRepo.decrementTotal", () => {
 describe("CustomerCounterRepo.markDisabled", () => {
   it("adds 1 to disabled, guarded so disabled never exceeds total (missing disabled = 0)", async () => {
     const { doc, calls } = stub(() => ({}));
-    expect(await new CustomerCounterRepo(doc, "config").markDisabled()).toBe(true);
+    expect(await new CustomerCounterRepo(doc, "ops-counters").markDisabled()).toBe(true);
     expect(calls[0]?.input).toMatchObject({
-      Key: { configKey: CUSTOMER_COUNTER_KEY },
+      Key: { counterKey: CUSTOMER_COUNTER_KEY },
       UpdateExpression: "ADD #disabled :one",
       ConditionExpression:
         "#total >= :one AND (attribute_not_exists(#disabled) OR #disabled < #total)",
@@ -127,9 +136,13 @@ describe("CustomerCounterRepo.markDisabled", () => {
     const { doc } = stub(() => {
       throw denied();
     });
-    expect(await new CustomerCounterRepo(doc, "config").markDisabled()).toBe(false);
+    expect(await new CustomerCounterRepo(doc, "ops-counters").markDisabled()).toBe(false);
     expect(warn).toHaveBeenCalledWith(
-      JSON.stringify({ warn: "customer_counter_floor_skip", op: "markDisabled", table: "config" }),
+      JSON.stringify({
+        warn: "customer_counter_floor_skip",
+        op: "markDisabled",
+        table: "ops-counters",
+      }),
     );
   });
 });
@@ -137,9 +150,9 @@ describe("CustomerCounterRepo.markDisabled", () => {
 describe("CustomerCounterRepo.markEnabled", () => {
   it("subtracts 1 from disabled, floor-guarded at 0", async () => {
     const { doc, calls } = stub(() => ({}));
-    expect(await new CustomerCounterRepo(doc, "config").markEnabled()).toBe(true);
+    expect(await new CustomerCounterRepo(doc, "ops-counters").markEnabled()).toBe(true);
     expect(calls[0]?.input).toMatchObject({
-      Key: { configKey: CUSTOMER_COUNTER_KEY },
+      Key: { counterKey: CUSTOMER_COUNTER_KEY },
       UpdateExpression: "ADD #disabled :minusOne",
       ConditionExpression: "#disabled >= :one",
       ExpressionAttributeNames: { "#disabled": "disabled" },
@@ -151,9 +164,13 @@ describe("CustomerCounterRepo.markEnabled", () => {
     const { doc } = stub(() => {
       throw denied();
     });
-    expect(await new CustomerCounterRepo(doc, "config").markEnabled()).toBe(false);
+    expect(await new CustomerCounterRepo(doc, "ops-counters").markEnabled()).toBe(false);
     expect(warn).toHaveBeenCalledWith(
-      JSON.stringify({ warn: "customer_counter_floor_skip", op: "markEnabled", table: "config" }),
+      JSON.stringify({
+        warn: "customer_counter_floor_skip",
+        op: "markEnabled",
+        table: "ops-counters",
+      }),
     );
   });
 });

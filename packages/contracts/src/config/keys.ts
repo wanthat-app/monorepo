@@ -186,6 +186,23 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "retailer.aliexpressTrackingId": "default",
 };
 
+/**
+ * Keys the UNAUTHENTICATED `GET /config` endpoint may serve — values the SPA needs *before* any
+ * sign-in (e.g. which OTP channels the register screen offers). Default is PRIVATE: a key is
+ * public only when explicitly listed here, so a newly added key can never leak by omission
+ * (`auth.otpSink` and `whatsapp.phoneNumberId` in particular stay private).
+ */
+export const CONFIG_PUBLIC: Partial<Record<ConfigKey, boolean>> = {
+  "auth.whatsappEnabled": true,
+  "auth.smsEnabled": true,
+  "auth.defaultOtpChannel": true,
+};
+
+/** Whether `key` may be served by the public config endpoint (default false). */
+export function isPublicConfigKey(key: ConfigKey): boolean {
+  return CONFIG_PUBLIC[key] === true;
+}
+
 /** Validate a value against its key's schema — use in the config API handler before persisting. */
 export function parseConfigValue(key: ConfigKey, value: unknown): ConfigValue {
   return CONFIG_SCHEMAS[key].parse(value);

@@ -32,7 +32,8 @@ export interface DataStackProps extends StackProps {
  *
  * DynamoDB (on-demand) holds everything that isn't money: the landing projection
  * (`recommendationId → affiliate url + product`, `byOwner` GSI), `guest_attribution`, the runtime
- * `config` table, the `fx_rate` cache, and the notification outbox. The former auth working tables
+ * `config` table, the `OpsCounters` table (exact operational counters, e.g. the customer
+ * counter), the `fx_rate` cache, and the notification outbox. The former auth working tables
  * (`auth_challenge`, `phone_velocity`, `passkey_credential`) died with the app-owned auth
  * ceremonies (ADR-0006: the browser talks to Cognito directly). Aurora Serverless v2
  * (scale-to-zero, IAM auth, no RDS Proxy) holds money only. A one-shot migrator Trigger runs the
@@ -44,6 +45,8 @@ export class DataStack extends Stack {
   readonly recommendationTable: dynamodb.Table;
   readonly guestAttributionTable: dynamodb.Table;
   readonly runtimeConfigTable: dynamodb.Table;
+  /** Operational counters (exact entity totals), disjoint from config - see OpsCounters below. */
+  readonly opsCountersTable: dynamodb.Table;
   readonly fxRateTable: dynamodb.Table;
   readonly notificationOutboxTable: dynamodb.Table;
   /** Absent in prod by design (fail-closed) — see the DevOtpSink construct below. */
@@ -94,6 +97,15 @@ export class DataStack extends Stack {
     // Admin-tunable runtime config (key-value), e.g. `landing.countdownSeconds` (ADR-0003).
     this.runtimeConfigTable = new dynamodb.Table(this, "RuntimeConfig", {
       partitionKey: { name: "configKey", type: dynamodb.AttributeType.STRING },
+      ...common,
+    });
+
+    // Operational counters keyed by counterKey - e.g. the exact customerCounter item
+    // (CustomerCounterRepo). A dedicated table so the counter writers (post-confirmation,
+    // admin-credentials) hold NO write grant on the config table above: admin-api stays the
+    // config table's single writer. Counters start at zero, so no seed or migration is needed.
+    this.opsCountersTable = new dynamodb.Table(this, "OpsCounters", {
+      partitionKey: { name: "counterKey", type: dynamodb.AttributeType.STRING },
       ...common,
     });
 

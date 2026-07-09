@@ -1,3 +1,4 @@
+import type { ConfigKey, ConfigValue } from "@wanthat/contracts";
 import { getConfig } from "./config";
 
 /**
@@ -31,6 +32,18 @@ async function request<T>(
   if (!res.ok) throw new ApiError(res.status, (data.error as string) ?? "request_failed");
   return data as T;
 }
+
+/**
+ * PUBLIC runtime-config projection (`GET /config?keys=…`, no auth): the server answers only
+ * keys allow-listed in contracts `CONFIG_PUBLIC` — anything else is a 400. Read pre-sign-in
+ * (e.g. which OTP channels the register screen offers).
+ */
+export const configApi = {
+  getPublic: (keys: readonly ConfigKey[]) =>
+    request<{ values: Record<string, ConfigValue> }>(
+      `/config?keys=${encodeURIComponent(keys.join(","))}`,
+    ),
+};
 
 /**
  * Wire types for the wallet surface: `Money.amountMinor` travels as a decimal string (JSON has

@@ -41,7 +41,7 @@ export function getContext(): AdminCredentialsContext {
     ),
     customerCounter: new CustomerCounterRepo(
       getDocClient(region),
-      requireEnv("RUNTIME_CONFIG_TABLE"),
+      requireEnv("OPS_COUNTERS_TABLE"),
     ),
   };
   return cached;

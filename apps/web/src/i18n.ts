@@ -29,6 +29,7 @@ const en = {
     sentCode: "We sent you a sign-in code.",
     finish: "Create account",
     passkeyCta: "Sign in with {{label}}",
+    passkeyFallback: "Biometric sign-in didn't work here — enter your phone and we'll send a code.",
     biometric: {
       faceId: "Face ID",
       touchId: "Touch ID",
@@ -42,9 +43,9 @@ const en = {
     and: "and",
     privacy: "Privacy Policy",
     face: {
-      title: "Faster sign-in with Face ID",
+      title: "Faster sign-in with {{label}}",
       subtitle: "Skip SMS codes next time — log in instantly and securely.",
-      enable: "Enable Face ID",
+      enable: "Enable {{label}}",
       skip: "Maybe later",
     },
     errors: {
@@ -250,6 +251,7 @@ const en = {
     },
     units: { minutes: "min", hours: "hrs", sends: "sends" },
     fxProvider: { ecb: "ECB", boi: "BoI" },
+    otpChannel: { whatsapp: "WhatsApp", sms: "SMS" },
     integrations: {
       title: "Integrations",
       desc: "Third-party retailer credentials. Write-only: values can be replaced but never viewed.",
@@ -306,9 +308,17 @@ const en = {
         title: "Poller lookback",
         desc: "How far back each poll re-scans for status changes.",
       },
+      auth_whatsappEnabled: {
+        title: "WhatsApp one-time codes",
+        desc: "Master switch for OTP delivery over WhatsApp (kill switch; sign-up hides the option while off).",
+      },
       auth_smsEnabled: {
         title: "SMS one-time codes",
         desc: "Master switch for SMS OTP sign-in (kill switch during abuse).",
+      },
+      auth_defaultOtpChannel: {
+        title: "Default OTP channel",
+        desc: "Preselected code channel for new sign-ups; the sender falls back when it is disabled.",
       },
       auth_smsMaxPerWindow: {
         title: "SMS sends per window",
@@ -365,6 +375,7 @@ const he: typeof en = {
     sentCode: "שלחנו לך קוד כניסה.",
     finish: "יצירת חשבון",
     passkeyCta: "כניסה עם {{label}}",
+    passkeyFallback: "הכניסה הביומטרית לא הצליחה כאן — הזינו את מספר הטלפון ונשלח לכם קוד.",
     biometric: {
       faceId: "Face ID",
       touchId: "Touch ID",
@@ -378,9 +389,9 @@ const he: typeof en = {
     and: "ול",
     privacy: "מדיניות הפרטיות",
     face: {
-      title: "התחברות מהירה עם Face ID",
+      title: "התחברות מהירה עם {{label}}",
       subtitle: "דלגו על קודי SMS בפעם הבאה — התחברו מיד ובאופן מאובטח.",
-      enable: "הפעילו Face ID",
+      enable: "הפעלת {{label}}",
       skip: "אולי מאוחר יותר",
     },
     errors: {
@@ -582,6 +593,7 @@ const he: typeof en = {
     },
     units: { minutes: "דק׳", hours: "שע׳", sends: "שליחות" },
     fxProvider: { ecb: "ECB", boi: "בנק ישראל" },
+    otpChannel: { whatsapp: "וואטסאפ", sms: "SMS" },
     integrations: {
       title: "אינטגרציות",
       desc: "פרטי גישה לקמעונאים חיצוניים. לכתיבה בלבד: אפשר להחליף את הערכים אך לא לצפות בהם.",
@@ -637,9 +649,17 @@ const he: typeof en = {
         title: "טווח סריקה לאחור",
         desc: "כמה אחורה כל סריקה בודקת שינויי סטטוס.",
       },
+      auth_whatsappEnabled: {
+        title: "קודים חד-פעמיים בוואטסאפ",
+        desc: "מתג ראשי לשליחת קודים בוואטסאפ (מנגנון נטרול; כשהוא כבוי ההרשמה מסתירה את האפשרות).",
+      },
       auth_smsEnabled: {
         title: "קודי SMS חד-פעמיים",
         desc: "מתג ראשי לכניסה עם קוד SMS (מנגנון נטרול בעת ניצול לרעה).",
+      },
+      auth_defaultOtpChannel: {
+        title: "ערוץ קוד ברירת מחדל",
+        desc: "הערוץ שנבחר מראש לנרשמים חדשים; השולח עובר לערוץ אחר כשהוא מנוטרל.",
       },
       auth_smsMaxPerWindow: {
         title: "שליחות SMS לחלון",

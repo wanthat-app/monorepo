@@ -18,6 +18,7 @@ import {
   updateUserAttributes,
   verifyUserAttribute,
 } from "./cognito";
+import { clearDevicePasskey, hasDevicePasskey, markDevicePasskey } from "./passkey-device";
 import {
   clearSession,
   completeSignIn,
@@ -222,7 +223,16 @@ export async function loginWithPasskey(opts?: {
   const raw = JSON.parse(res.ChallengeParameters?.CREDENTIAL_REQUEST_OPTIONS ?? "{}") as {
     publicKey?: unknown;
   };
-  const credential = await getAssertion(raw.publicKey ?? raw);
+  let credential: Awaited<ReturnType<typeof getAssertion>>;
+  try {
+    credential = await getAssertion(raw.publicKey ?? raw);
+  } catch (err) {
+    // NotAllowedError = the browser found no usable credential here (or the member dismissed
+    // the sheet): drop the per-device flag so the biometric button stops arming a ceremony
+    // that cannot succeed on this device. Re-set by the next successful enrolment/login.
+    if (isNoCredentialError(err)) clearDevicePasskey();
+    throw err;
+  }
   opts?.onCredential?.();
   const final = await respondToAuthChallenge({
     challengeName: "WEB_AUTHN",
@@ -233,11 +243,25 @@ export async function loginWithPasskey(opts?: {
     },
   });
   completeSignIn(requireAuthResult(final));
+  markDevicePasskey();
 }
 
-/** Whether the automatic/manual passkey login can work here at all (ADR-0006 gate). */
+/** WebAuthn's "no usable credential / dismissed" signal — DOMException, so match by name. */
+function isNoCredentialError(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    (err as { name?: unknown }).name === "NotAllowedError"
+  );
+}
+
+/**
+ * Whether the automatic/manual passkey login can work here at all (ADR-0006 gate): a phone is
+ * remembered (Cognito's WEB_AUTHN challenge is username-gated) AND a passkey ceremony has
+ * actually succeeded on THIS device (per-device flag — see passkey-device.ts).
+ */
 export function canLoginWithPasskey(): boolean {
-  return !!rememberedPhone();
+  return hasDevicePasskey() && !!rememberedPhone();
 }
 
 /**
@@ -253,6 +277,8 @@ export async function enrollPasskey(): Promise<void> {
   >;
   const credential = await createCredential(options);
   await completeWebAuthnRegistration(token, credential);
+  // A credential now verifiably exists on this device — arm the biometric login gate.
+  markDevicePasskey();
 }
 
 export interface PasskeySummary {

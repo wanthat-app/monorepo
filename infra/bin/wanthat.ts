@@ -58,6 +58,8 @@ const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), {
   ...common,
   crossRegionReferences: true,
   runtimeConfigTable: data.runtimeConfigTable,
+  // Exact customer counter (customerCounter in OpsCounters) - incremented by post-confirmation.
+  opsCountersTable: data.opsCountersTable,
   devOtpSinkTable: data.devOtpSinkTable,
   // Post-Confirmation trigger targets (ADR-0006 decision 7): welcome outbox + guest attribution.
   notificationOutboxTable: data.notificationOutboxTable,
@@ -87,6 +89,8 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   // Customer pool: the users page deletes member accounts (non-VPC credentials fn only).
   customerPool: identity.userPool,
   runtimeConfigTable: data.runtimeConfigTable,
+  // Exact customer counter: admin-api reads the stats; admin-credentials writes moderation moves.
+  opsCountersTable: data.opsCountersTable,
   productTable: data.productTable,
   recommendationTable: data.recommendationTable,
   // Dev OTP sink: activity page lists parked codes (undefined in prod - fail-closed).
