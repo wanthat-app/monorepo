@@ -176,6 +176,7 @@ describe("POST /products/resolve", () => {
   it.each([
     ["retailer_not_configured", 503],
     ["upstream_error", 502],
+    ["product_not_supported", 422],
   ] as const)("maps the proxy error %s to %d", async (code, status) => {
     fake.products.get.mockResolvedValue(undefined);
     fake.retailerProxy.generateLink.mockResolvedValue({ status: "error", code });

@@ -106,6 +106,8 @@ const en = {
     pulling: "Pulling product details…", // (design)
     unsupported: "Only AliExpress product links are supported right now.",
     notConfigured: "Link creation isn't available right now. Please try again later.",
+    notSupported:
+      "AliExpress doesn't offer cashback on this item, so a link can't be created for it.",
     resolveFailed: "We couldn't pull that product. Please try again.",
     linkReady: "Your link is ready", // (design)
     detailsPulled: "Details pulled from AliExpress", // (design)
@@ -410,6 +412,7 @@ const he: typeof en = {
     pulling: "שולפים פרטי מוצר…",
     unsupported: "כרגע נתמכים רק קישורי מוצר מ-AliExpress.",
     notConfigured: "יצירת קישורים אינה זמינה כרגע. נסו שוב מאוחר יותר.",
+    notSupported: "AliExpress אינו מציע קאשבק על מוצר זה, לכן לא ניתן ליצור עבורו קישור.",
     resolveFailed: "לא הצלחנו לשלוף את המוצר. נסו שוב.",
     linkReady: "הקישור שלכם מוכן",
     detailsPulled: "הפרטים נשלפו מ-AliExpress",

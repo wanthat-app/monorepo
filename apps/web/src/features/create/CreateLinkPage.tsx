@@ -87,6 +87,7 @@ const FRIENDS_ICON = (
 const RESOLVE_ERROR_KEYS: Record<string, string> = {
   unsupported_url: "create.unsupported",
   retailer_not_configured: "create.notConfigured",
+  product_not_supported: "create.notSupported",
 };
 
 /** The share row shows the link without its protocol, like the design's `wnt.ht/…`. */

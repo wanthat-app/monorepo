@@ -134,9 +134,11 @@ function toRecommendation(item: RecommendationItem, appUrl: string): Recommendat
 }
 
 /** HTTP status for each proxy error code (the proxy never throws on a known failure). */
-const PROXY_ERROR_STATUS: Record<GenerateLinkErrorCode, 400 | 502 | 503> = {
+const PROXY_ERROR_STATUS: Record<GenerateLinkErrorCode, 400 | 422 | 502 | 503> = {
   unsupported_url: 400,
   retailer_not_configured: 503,
+  // Definitive per-product miss (not in the affiliate catalog) — a retry cannot help.
+  product_not_supported: 422,
   upstream_error: 502,
 };
 
