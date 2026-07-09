@@ -3,7 +3,7 @@ import {
   getDocClient,
   ProductRepo,
   RecommendationRepo,
-  type RuntimeConfigReader,
+  type RuntimeConfigBatchReader,
   RuntimeConfigRepo,
 } from "@wanthat/dynamo";
 import { RetailerProxyClient } from "./links/proxy-client";
@@ -16,8 +16,9 @@ function requireEnv(name: string): string {
 
 export interface LinksContext {
   region: string;
-  /** Read-only by design: the config table is single-writer (admin-api) — ADR-0019 spec. */
-  config: RuntimeConfigReader;
+  /** Read-only by design: the config table is single-writer (admin-api) — ADR-0019 spec.
+   * Batched reads serve the public GET /config projection (config/router.ts). */
+  config: RuntimeConfigBatchReader;
   /** Links module (ADR-0002; served from this non-VPC edge so the retailer-proxy invoke is free —
    * the in-VPC placement would need a paid lambda interface endpoint, ADR-0004). */
   products: ProductRepo;

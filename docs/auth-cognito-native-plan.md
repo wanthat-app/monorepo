@@ -257,8 +257,8 @@ sections. Mermaid rules: pure ASCII, no semicolons, validate with mermaid.parse.
 ## Follow-up implemented: exact customer counter (2026-07-09)
 
 The approximate dashboard user KPI (`DescribeUserPool.EstimatedNumberOfUsers`, shown as "~N")
-is replaced by an EXACT confirmed-customer counter: a `#customerCounter` sentinel item in the
-runtime config DynamoDB table (`total` / `disabled`, atomic ADD with conditional floor guards -
+is replaced by an EXACT confirmed-customer counter: a `customerCounter` item in the dedicated
+`OpsCounters` DynamoDB table (`total` / `disabled`, atomic ADD with conditional floor guards -
 `packages/dynamo/src/customer-counter.ts`). Writers: the Post-Confirmation trigger increments
 `total` per confirmed signup (best-effort, a miss is logged as `customer_counter_drift`);
 admin-credentials decrements on cognito-delete and moves `disabled` on suspend / lift

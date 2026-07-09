@@ -4,8 +4,8 @@
  * so DynamoDB stays the operational, non-PII store behind a typed boundary.
  *
  * Repositories are added per feature slice. Present: runtime `config`, the customer counter
- * (a sentinel item in the config table), the `fx_rate` cache, `guest_attribution`,
- * products/recommendations, the notification outbox, and the dev OTP sink.
+ * (the `customerCounter` item in the dedicated `OpsCounters` table), the `fx_rate` cache,
+ * `guest_attribution`, products/recommendations, the notification outbox, and the dev OTP sink.
  */
 export { getDocClient } from "./client";
 export {
@@ -28,4 +28,9 @@ export {
   type RecommendationPage,
   RecommendationRepo,
 } from "./recommendation";
-export { type RuntimeConfigReader, RuntimeConfigRepo } from "./runtime-config";
+export {
+  CONFIG_GET_MANY_MAX,
+  type RuntimeConfigBatchReader,
+  type RuntimeConfigReader,
+  RuntimeConfigRepo,
+} from "./runtime-config";

@@ -17,7 +17,7 @@ export interface ConfirmDeps {
     /** Map `guestId → sub` if unclaimed (first-claim-wins). Returns true if this call created it. */
     claim(guestId: string, sub: string, claimedAt: string): Promise<boolean>;
   };
-  /** The exact customer counter (`#customerCounter` in the runtime config table). */
+  /** The exact customer counter (`customerCounter` in the OpsCounters table). */
   counter: { incrementTotal(): Promise<void> };
   /** Canonical SPA origin for links in outbound messages (env APP_URL). */
   appUrl: string;
@@ -44,7 +44,8 @@ function messageLanguage(locale: string | undefined): "he" | "en" {
  *    exactly as `/auth/register` did before registration became the public `SignUp` call.
  * 2. Claim the `guest_attribution` mapping (`guestId → sub`, ADR-0008/0020) when the confirming
  *    call carried a `guestId` in ClientMetadata.
- * 3. Increment the exact customer counter (`#customerCounter` total) — the dashboard's users KPI.
+ * 3. Increment the exact customer counter (`customerCounter` total, OpsCounters table) — the
+ *    dashboard's users KPI.
  *    Because ONLY this trigger increments, the counter counts CONFIRMED customers; the users
  *    page's approximate whole-pool total (incl. UNCONFIRMED) deliberately keeps a wider scope.
  *

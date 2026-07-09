@@ -21,6 +21,8 @@ export interface IdentityStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
   /** From DataStack — message-sender reads whatsapp.phoneNumberId at send time (ADR-0019). */
   readonly runtimeConfigTable: dynamodb.ITable;
+  /** From DataStack — the post-confirmation trigger increments the exact customer counter here. */
+  readonly opsCountersTable: dynamodb.ITable;
   /** From DataStack — message-sender's dev-only OTP park (docs/dev-otp-sink.md), write-only grant. */
   /** Dev OTP sink table — absent in prod by design (fail-closed; docs/dev-otp-sink.md). */
   readonly devOtpSinkTable?: dynamodb.ITable;
@@ -216,9 +218,9 @@ export class IdentityStack extends Stack {
       environment: {
         NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
         GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
-        // The exact customer counter lives as the #customerCounter sentinel item in this table
-        // (disjoint from the dotted config keys); every confirmed signup increments its total.
-        RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
+        // The exact customer counter - the customerCounter item in the dedicated OpsCounters
+        // table; every confirmed signup increments its total.
+        OPS_COUNTERS_TABLE: props.opsCountersTable.tableName,
         APP_URL: appUrl(wanthatEnv),
       },
       bundling: { minify: true, sourceMap: true },
@@ -226,9 +228,9 @@ export class IdentityStack extends Stack {
     this.postConfirmationFn = postConfirmationFn;
     props.notificationOutboxTable.grantWriteData(postConfirmationFn);
     props.guestAttributionTable.grantWriteData(postConfirmationFn);
-    // Write-only: the counter increment is an UpdateItem on the sentinel item; the trigger never
-    // reads config values.
-    props.runtimeConfigTable.grantWriteData(postConfirmationFn);
+    // Write-only: the counter increment is an UpdateItem on the counter item. Deliberately NOT a
+    // grant on the config table - admin-api stays the config table's single writer.
+    props.opsCountersTable.grantWriteData(postConfirmationFn);
     this.userPool.addTrigger(cognito.UserPoolOperation.POST_CONFIRMATION, postConfirmationFn);
 
     // Browser origins allowed to complete the ADMIN hosted-UI OAuth redirect — the same list the

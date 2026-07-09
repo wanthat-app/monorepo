@@ -2,7 +2,8 @@
  * app-links — the non-VPC "links edge" (ADR-0006 rev: Cognito-native auth), behind the shared app
  * HTTP API.
  *
- * Serves ONLY the links module (`/products/resolve` + `/recommendations*`) — Aurora-free by design
+ * Serves the links module (`/products/resolve` + `/recommendations*`) plus the tiny PUBLIC
+ * `/config` projection (allow-listed runtime-config keys) — Aurora-free by design
  * (ADR-0004), and placed on a non-VPC function so its synchronous retailer-proxy invoke is a free
  * non-VPC-to-Lambda call instead of needing a paid lambda interface endpoint in the VPC. The former
  * `/auth/*` surface is gone: the browser talks to Cognito directly (ADR-0006), so this function
@@ -13,6 +14,7 @@
 import { Hono } from "hono";
 import type { LambdaEvent } from "hono/aws-lambda";
 import { handle } from "hono/aws-lambda";
+import { publicConfigRouter } from "./config/router";
 import { productsRouter, recommendationsRouter } from "./links/router";
 
 const SERVICE = "app-links";
@@ -20,6 +22,10 @@ const app = new Hono<{ Bindings: { event: LambdaEvent } }>();
 
 // Unauthenticated liveness probe — the one positive signal for the pipeline smoke test.
 app.get("/healthz", (c) => c.json({ ok: true, service: SERVICE }));
+
+// PUBLIC config projection (allow-listed keys only) — no JWT authorizer at the gateway, like
+// /healthz. The SPA reads it pre-sign-in (e.g. the register screen's OTP channel options).
+app.route("/config", publicConfigRouter());
 
 // The links module (ADR-0002), behind the JWT authorizer at the gateway.
 app.route("/products", productsRouter());

@@ -136,7 +136,7 @@ describe("admin users (whole surface lives on admin-credentials since T7)", () =
   });
 });
 
-describe("admin user stats (exact customer counter - the #customerCounter sentinel item)", () => {
+describe("admin user stats (exact customer counter - the customerCounter item in OpsCounters)", () => {
   it("serves the exact counter figures on /admin/stats/users", async () => {
     ctx.customerCounter.get.mockResolvedValue({ total: 41, disabled: 3 });
     const res = await app.request("/admin/stats/users", {}, adminEnv);

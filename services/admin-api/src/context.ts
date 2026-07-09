@@ -22,7 +22,7 @@ export interface AdminContext {
   /** Read-only (stats): the transactional entity counters live in these tables. */
   products: ProductRepo;
   recommendations: RecommendationRepo;
-  /** Read-only (stats): the exact customer counter (`#customerCounter` in the config table). */
+  /** Read-only (stats): the exact customer counter (`customerCounter` in OpsCounters). */
   customerCounter: CustomerCounterRepo;
   /** Dev only — undefined in prod (no table, no env var; fail-closed). */
   devOtpSink?: DevOtpSinkRepo;
@@ -51,7 +51,7 @@ export function getContext(): AdminContext {
     config: new RuntimeConfigRepo(getDocClient(region), requireEnv("RUNTIME_CONFIG_TABLE")),
     customerCounter: new CustomerCounterRepo(
       getDocClient(region),
-      requireEnv("RUNTIME_CONFIG_TABLE"),
+      requireEnv("OPS_COUNTERS_TABLE"),
     ),
     products: new ProductRepo(getDocClient(region), requireEnv("PRODUCT_TABLE")),
     recommendations: new RecommendationRepo(

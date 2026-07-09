@@ -5,8 +5,9 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
  * Cognito runs the protocol (challenge mint + verification); this file only drives the
  * browser ceremony and the UX gates that survived the native migration: focus-arming and
  * device-matched biometric labels. The userless/conditional-UI machinery of the replaced
- * app-owned design (autofill, immediate mode, per-device flag) is gone — the gate is now
- * simply "a remembered phone exists" (see store.rememberedPhone).
+ * app-owned design (autofill, immediate mode) is gone — the gate is "a remembered phone
+ * exists AND a passkey ceremony succeeded on this device" (store.rememberedPhone +
+ * passkey-device.ts).
  */
 
 /** Whether this browser can use platform passkeys (Face ID / Touch ID / Windows Hello). */

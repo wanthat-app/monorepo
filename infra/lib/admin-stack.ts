@@ -37,6 +37,9 @@ export interface AdminStackProps extends StackProps {
   // touches it (cognito-idp is unreachable from the VPC, ADR-0004).
   readonly customerPool: cognito.IUserPool;
   readonly runtimeConfigTable: dynamodb.ITable;
+  // Exact operational counters (customerCounter): admin-api READS the dashboard figures;
+  // admin-credentials WRITES the moderation moves (decrement / suspend / lift).
+  readonly opsCountersTable: dynamodb.ITable;
   readonly productTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
   // Dev OTP sink (docs/dev-otp-sink.md) - the activity page lists parked codes in dev. Absent in
@@ -89,6 +92,8 @@ export class AdminStack extends Stack {
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
+        // The exact customer counter (customerCounter in OpsCounters) - dashboard stats reads.
+        OPS_COUNTERS_TABLE: props.opsCountersTable.tableName,
         PRODUCT_TABLE: props.productTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
         ...(props.devOtpSinkTable ? { DEV_OTP_SINK_TABLE: props.devOtpSinkTable.tableName } : {}),
@@ -110,6 +115,7 @@ export class AdminStack extends Stack {
     props.cluster.grantConnect(fn, "app_ro");
     props.runtimeConfigTable.grantReadWriteData(fn);
     // Stats reads (the transactional counters live in these tables).
+    props.opsCountersTable.grantReadData(fn);
     props.productTable.grantReadData(fn);
     props.recommendationTable.grantReadData(fn);
     // Dev-only: the activity feed scans the parked OTP codes (read-only; table absent in prod).
@@ -135,9 +141,9 @@ export class AdminStack extends Stack {
         CUSTOMER_USER_POOL_ID: props.customerPool.userPoolId,
         // User erasure also deletes the member's DynamoDB recommendations (ADR-0006 decision 8).
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
-        // The exact customer counter - the #customerCounter sentinel item in the runtime config
+        // The exact customer counter - the customerCounter item in the dedicated OpsCounters
         // table: cognito-delete decrements the total, suspend/lift move the disabled count.
-        RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
+        OPS_COUNTERS_TABLE: props.opsCountersTable.tableName,
       },
     });
     this.adminCredentialsFn = credentialsFn;
@@ -163,9 +169,9 @@ export class AdminStack extends Stack {
     // deleteByOwner pages the byOwner GSI and pairs each delete with the counter decrement -
     // read + write on the table and its indexes.
     props.recommendationTable.grantReadWriteData(credentialsFn);
-    // Write-only on the config table: the customer-counter moves are UpdateItems on the sentinel
-    // item; this function never reads config values (admin-api stays the config read/write owner).
-    props.runtimeConfigTable.grantWriteData(credentialsFn);
+    // Write-only on OpsCounters: the customer-counter moves are UpdateItems on the counter item.
+    // Deliberately NO grant on the config table - admin-api stays its single writer.
+    props.opsCountersTable.grantWriteData(credentialsFn);
     // WRITE-ONLY grant on the retailer credential secret: PutSecretValue (replace the value) +
     // DescribeSecret (non-secret status metadata). Deliberately not grantWrite (adds UpdateSecret)
     // and no GetSecretValue - the admin role structurally cannot read the credential back.

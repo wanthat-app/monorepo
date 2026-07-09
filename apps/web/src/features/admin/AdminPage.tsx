@@ -131,8 +131,8 @@ function DashboardView({ token }: { token: string | null }) {
   const [failed, setFailed] = useState(false);
   // undefined = loading, null = fetch failed.
   const [catalog, setCatalog] = useState<CatalogStats | null | undefined>(undefined);
-  // The user-count KPI: EXACT — `statsOverview.usersCount` reads the `#customerCounter` sentinel
-  // item (kept by the Post-Confirmation trigger + the moderation routes), so it counts CONFIRMED
+  // The user-count KPI: EXACT — `statsOverview.usersCount` reads the `customerCounter` item in
+  // OpsCounters (kept by the Post-Confirmation trigger + the moderation routes), so it counts CONFIRMED
   // customers only. The users PAGE header deliberately keeps the other, approximate semantic:
   // `ListUsersResponse.total` estimates the WHOLE pool, including UNCONFIRMED signups.
   const [overview, setOverview] = useState<StatsOverview | null | undefined>(undefined);
@@ -369,7 +369,7 @@ function KpiCard({
 // ---------------------------------------------------------------------------
 
 type SectionId = "margins" | "payouts" | "automation";
-type Control = "percent" | "number" | "fxProvider" | "switch";
+type Control = "percent" | "number" | "fxProvider" | "switch" | "otpChannel";
 
 interface FieldMeta {
   key: ConfigKey;
@@ -434,7 +434,12 @@ const FIELDS: FieldMeta[] = [
     max: 2160,
     unit: "hours",
   },
+  // The OTP delivery kill switches + default channel (ADR-0019): both switches surface here so
+  // an abuse spike (or Meta onboarding) is flippable without a redeploy; the sign-up screen
+  // mirrors them via the public config endpoint. auth.otpSink is deliberately NOT exposed.
+  { key: "auth.whatsappEnabled", section: "automation", control: "switch" },
   { key: "auth.smsEnabled", section: "automation", control: "switch" },
+  { key: "auth.defaultOtpChannel", section: "automation", control: "otpChannel" },
   {
     key: "auth.smsMaxPerWindow",
     section: "automation",
@@ -879,6 +884,21 @@ function FieldControl({
           options={[
             { value: "ecb", label: t("admin.fxProvider.ecb") },
             { value: "boi", label: t("admin.fxProvider.boi") },
+          ]}
+        />
+      </div>
+    );
+  }
+
+  if (field.control === "otpChannel") {
+    return (
+      <div className="flex sm:justify-end">
+        <Segmented
+          value={String(value)}
+          onChange={onChange}
+          options={[
+            { value: "whatsapp", label: t("admin.otpChannel.whatsapp") },
+            { value: "sms", label: t("admin.otpChannel.sms") },
           ]}
         />
       </div>

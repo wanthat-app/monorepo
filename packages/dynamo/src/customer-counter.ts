@@ -3,13 +3,13 @@ import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
 import { GetCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 
 /**
- * Sentinel PK of the exact customer counter: `{ configKey: "#customerCounter", total: N,
- * disabled: M }` in the runtime `config` table. `#` sits outside the dotted config-key alphabet
- * (`ConfigKey` in `@wanthat/contracts`), so the item is disjoint from every config entry and
- * `RuntimeConfigRepo.getAll` skips it as an unknown key. A missing item reads as
- * `{ total: 0, disabled: 0 }` — both pools started empty, so no seed write is needed.
+ * PK of the exact customer counter: `{ counterKey: "customerCounter", total: N, disabled: M }`
+ * in the dedicated `OpsCounters` table (PK attribute `counterKey`; env `OPS_COUNTERS_TABLE`).
+ * A dedicated table so counter writers (post-confirmation, admin-credentials) carry no write
+ * grant on the runtime `config` table — admin-api stays its single writer. A missing item reads
+ * as `{ total: 0, disabled: 0 }` — both pools started empty, so no seed write is needed.
  */
-export const CUSTOMER_COUNTER_KEY = "#customerCounter";
+export const CUSTOMER_COUNTER_KEY = "customerCounter";
 
 /** `total` = confirmed customers, `disabled` = the suspended subset. Active = total - disabled. */
 export interface CustomerCounts {
@@ -43,7 +43,7 @@ export class CustomerCounterRepo {
   /** Current counts; a missing item (or attribute) reads as zero. */
   async get(): Promise<CustomerCounts> {
     const res = await this.doc.send(
-      new GetCommand({ TableName: this.tableName, Key: { configKey: CUSTOMER_COUNTER_KEY } }),
+      new GetCommand({ TableName: this.tableName, Key: { counterKey: CUSTOMER_COUNTER_KEY } }),
     );
     return { total: Number(res.Item?.total ?? 0), disabled: Number(res.Item?.disabled ?? 0) };
   }
@@ -56,7 +56,7 @@ export class CustomerCounterRepo {
     await this.doc.send(
       new UpdateCommand({
         TableName: this.tableName,
-        Key: { configKey: CUSTOMER_COUNTER_KEY },
+        Key: { counterKey: CUSTOMER_COUNTER_KEY },
         UpdateExpression: "ADD #total :one",
         ExpressionAttributeNames: { "#total": "total" },
         ExpressionAttributeValues: { ":one": 1 },
@@ -121,7 +121,7 @@ export class CustomerCounterRepo {
       await this.doc.send(
         new UpdateCommand({
           TableName: this.tableName,
-          Key: { configKey: CUSTOMER_COUNTER_KEY },
+          Key: { counterKey: CUSTOMER_COUNTER_KEY },
           ...input,
         }),
       );
