@@ -29,33 +29,10 @@ export const ClickEvent = z.object({
 export type ClickEvent = z.infer<typeof ClickEvent>;
 
 /**
- * Money as it appears in LOG events: the JSON-wire form (decimal-string minor units), because
- * funnel events are `JSON.stringify`-ed console.log lines and bigint would throw.
+ * The landing-path funnel events. The funnel's third stage — the conversion — has its own
+ * contract in `../conversion/event.ts` (ADR-0009; it needs wallet/money types this module must
+ * not import: `conversion` already imports `ConsumerKind` from here, so a re-export would cycle).
+ * All three ship through the same CloudWatch Logs → Firehose → S3 pipe, discriminated by `type`.
  */
-export const EventMoney = z.object({
-  amountMinor: z.string().regex(/^-?\d+$/),
-  currency: z.string().regex(/^[A-Z]{3}$/),
-});
-export type EventMoney = z.infer<typeof EventMoney>;
-
-/**
- * Emitted by the conversion poller (ADR-0009) when an order lands. Defined NOW so the Athena
- * schema (funnel-analytics pipeline) is stable before the poller slice starts emitting it.
- * `consumer` is the attribution outcome resolved from `c`/`g`/`ref` (ADR-0008); `none` = untracked.
- */
-export const ConversionEvent = z.object({
-  type: z.literal("conversion"),
-  recommendationId: RecommendationId,
-  consumer: ConsumerKind,
-  orderId: z.string().min(1),
-  commission: EventMoney.nullable(),
-  at: IsoDateTime,
-});
-export type ConversionEvent = z.infer<typeof ConversionEvent>;
-
-export const FunnelEvent = z.discriminatedUnion("type", [
-  ImpressionEvent,
-  ClickEvent,
-  ConversionEvent,
-]);
+export const FunnelEvent = z.discriminatedUnion("type", [ImpressionEvent, ClickEvent]);
 export type FunnelEvent = z.infer<typeof FunnelEvent>;

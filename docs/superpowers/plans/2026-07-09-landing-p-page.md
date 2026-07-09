@@ -34,7 +34,7 @@
 - Test: `packages/contracts/src/landing/events.test.ts` (create)
 
 **Interfaces:**
-- Produces: `LandingView` gains `referrerFirstName: string | null`; new `ConversionEvent`, `EventMoney`; `FunnelEvent` = impression | click | conversion. Consumed by Tasks 3, 5, 8, 13.
+- Produces: `LandingView` gains `referrerFirstName: string | null`. NOTE (found during execution): a funnel `ConversionEvent` already exists at `packages/contracts/src/conversion/event.ts` (type/orderId/recommendationId/consumer/amount/status/at) — reuse it; do NOT add a second one (it cannot join the landing `FunnelEvent` union without an import cycle — `conversion` imports `ConsumerKind` from `landing`). Lock its wire shape with a test instead.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -709,7 +709,7 @@ Post-merge verification on dev: signed-in click lands on AliExpress with `ref`+`
     - Verify the two processor type names against the current CfnDeliveryStream docs at implementation time (`Decompression` + `CloudWatchLogProcessing` are the documented names for the CW-Logs message-extraction feature); `pnpm synth` + a dev deploy prove them.
     - Role: `firehose.amazonaws.com` principal with `bucket.grantReadWrite(role)`.
   - **Subscription filters:** one `logs.CfnSubscriptionFilter` per input log group, `filterPattern: '{ $.type = "impression" || $.type = "click" || $.type = "conversion" }'`, `destinationArn: stream.attrArn`, role assumed by `logs.${region}.amazonaws.com` with `firehose:PutRecord`/`PutRecordBatch` on the stream ARN.
-  - **Glue:** database `wanthat_${env}_analytics`; table `funnel_events`, external, `org.openx.data.jsonserde.JsonSerDe`, location `s3://<bucket>/funnel/`, columns `type string, recommendationid string, consumer string, orderid string, commission struct<amountminor:string,currency:string>, at string` (JsonSerDe is case-insensitive on JSON keys), partition key `date string` with partition projection: `projection.enabled=true`, `projection.date.type=date`, `projection.date.format=yyyy-MM-dd`, `projection.date.range=2026-07-01,NOW`, `storage.location.template=s3://<bucket>/funnel/date=${date}/`.
+  - **Glue:** database `wanthat_${env}_analytics`; table `funnel_events`, external, `org.openx.data.jsonserde.JsonSerDe`, location `s3://<bucket>/funnel/`, columns `type string, recommendationid string, consumer string, orderid string, amount struct<amountminor:string,currency:string>, status string, at string` (matches `conversion/event.ts`; JsonSerDe is case-insensitive on JSON keys), partition key `date string` with partition projection: `projection.enabled=true`, `projection.date.type=date`, `projection.date.format=yyyy-MM-dd`, `projection.date.range=2026-07-01,NOW`, `storage.location.template=s3://<bucket>/funnel/date=${date}/`.
 - [ ] **Step 2: Wire it:** `ObservabilityStackProps` gains `readonly funnelLogGroups: logs.ILogGroup[];`; the stack body instantiates `FunnelAnalytics`; `wanthat.ts` passes `[edgeServices.landingFn.logGroup, edgeServices.conversionPollerFn.logGroup]`. Observability deploys LAST already, so the new cross-stack log-group references respect the existing order (removing them later = consumers-first dance).
 - [ ] **Step 3: Gate:** `pnpm lint && pnpm typecheck && pnpm synth` — inspect the synthesized template for the stream + two subscription filters + Glue table. Commit `"feat(infra): funnel analytics pipeline — CloudWatch Logs to Firehose to S3 with Athena projection"`.
 
