@@ -28,5 +28,34 @@ export const ClickEvent = z.object({
 });
 export type ClickEvent = z.infer<typeof ClickEvent>;
 
-export const FunnelEvent = z.discriminatedUnion("type", [ImpressionEvent, ClickEvent]);
+/**
+ * Money as it appears in LOG events: the JSON-wire form (decimal-string minor units), because
+ * funnel events are `JSON.stringify`-ed console.log lines and bigint would throw.
+ */
+export const EventMoney = z.object({
+  amountMinor: z.string().regex(/^-?\d+$/),
+  currency: z.string().regex(/^[A-Z]{3}$/),
+});
+export type EventMoney = z.infer<typeof EventMoney>;
+
+/**
+ * Emitted by the conversion poller (ADR-0009) when an order lands. Defined NOW so the Athena
+ * schema (funnel-analytics pipeline) is stable before the poller slice starts emitting it.
+ * `consumer` is the attribution outcome resolved from `c`/`g`/`ref` (ADR-0008); `none` = untracked.
+ */
+export const ConversionEvent = z.object({
+  type: z.literal("conversion"),
+  recommendationId: RecommendationId,
+  consumer: ConsumerKind,
+  orderId: z.string().min(1),
+  commission: EventMoney.nullable(),
+  at: IsoDateTime,
+});
+export type ConversionEvent = z.infer<typeof ConversionEvent>;
+
+export const FunnelEvent = z.discriminatedUnion("type", [
+  ImpressionEvent,
+  ClickEvent,
+  ConversionEvent,
+]);
 export type FunnelEvent = z.infer<typeof FunnelEvent>;
