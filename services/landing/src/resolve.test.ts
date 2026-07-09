@@ -1,6 +1,6 @@
 import { ResolveResponse } from "@wanthat/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolve, type ResolveDeps } from "./resolve";
+import { type ResolveDeps, resolve } from "./resolve";
 
 const NOW = "2026-07-01T00:00:00.000Z";
 const ITEM = {
@@ -64,9 +64,7 @@ describe("resolve", () => {
     expect(u.searchParams.get("ref")).toBe("abc123DEF45");
     expect(u.searchParams.get("c")).toBe(SUB);
     expect(u.searchParams.get("g")).toBeNull();
-    expect(clickEvents()).toEqual([
-      expect.objectContaining({ type: "click", consumer: "member" }),
-    ]);
+    expect(clickEvents()).toEqual([expect.objectContaining({ type: "click", consumer: "member" })]);
   });
 
   it("redirects a guest with ref + g and emits a guest click", async () => {

@@ -104,9 +104,7 @@ export function convertMinor(amountMinor: bigint, rate: string, commissionBps: n
 }
 
 /** Who a click resolves to (ADR-0008): a member's Cognito sub or a guest's opaque localStorage id. */
-export type ResolvedConsumer =
-  | { kind: "member"; sub: string }
-  | { kind: "guest"; guestId: string };
+export type ResolvedConsumer = { kind: "member"; sub: string } | { kind: "guest"; guestId: string };
 
 /**
  * Attribution at click-through (ADR-0008): append `custom_parameters` onto the PRODUCT-level
