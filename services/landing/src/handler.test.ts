@@ -1,90 +1,157 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { injectLanding, MOCK_PRODUCT, ogHead, pickLocale } from "./landing-page";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Hoisted fakes so the vi.mock factory can close over them (vitest hoists vi.mock above imports).
+const { fake } = vi.hoisted(() => ({
+  fake: {
+    recommendations: { get: vi.fn() },
+    config: { get: vi.fn() },
+    fx: { get: vi.fn() },
+  },
+}));
+vi.mock("./context", () => ({ getContext: () => fake }));
+
+import { handler, resetCachesForTests } from "./handler";
 
 const SHELL =
   '<!doctype html><html lang="en"><head><meta charset="utf-8" />' +
   "<title>Wanthat</title>" +
   '<script type="module" crossorigin src="/assets/index-abc123.js"></script>' +
-  '<link rel="stylesheet" href="/assets/index-abc123.css" />' +
   '</head><body><div id="root"></div></body></html>';
 
-describe("pickLocale", () => {
-  it("defaults to Hebrew, honours ?lang, falls back to Accept-Language", () => {
-    expect(pickLocale(undefined, undefined)).toBe("he");
-    expect(pickLocale("en", undefined)).toBe("en");
-    expect(pickLocale("he", "en-US")).toBe("he");
-    expect(pickLocale(undefined, "en-GB,en;q=0.9")).toBe("en");
-  });
-});
+const NOW = "2026-07-01T00:00:00.000Z";
+const ITEM = {
+  recommendationId: "abc123DEF45",
+  ownerId: "sub-1",
+  storeId: "aliexpress",
+  storeProductId: "1005006123456789",
+  affiliateUrl: "https://s.click.aliexpress.com/e/_x",
+  title: "Jebao Smart Aquarium Fish Feeder",
+  imageUrl: "https://ae01.alicdn.com/kf/feeder.jpg",
+  price: { amountMinor: "2500", currency: "USD" },
+  commissionBps: 800,
+  cashback: { referrerBps: 5000, consumerBps: 2500 },
+  review: { text: "Great feeder!" },
+  referrerFirstName: "Dana",
+  clicks: 0,
+  conversions: 0,
+  createdAt: NOW,
+  updatedAt: NOW,
+};
 
-describe("ogHead", () => {
-  const head = ogHead(MOCK_PRODUCT, "https://dev.wanthat.app", "rec_123", "en");
-  it("emits full OG + Twitter tags with absolute image + page URLs", () => {
-    expect(head).toContain(
-      '<meta property="og:title" content="Jebao Smart Aquarium Fish Feeder" />',
-    );
-    expect(head).toContain(
-      '<meta property="og:image" content="https://dev.wanthat.app/product-feeder.jpg" />',
-    );
-    expect(head).toContain(
-      '<meta property="og:url" content="https://dev.wanthat.app/p/rec_123" />',
-    );
-    expect(head).toContain('<meta name="twitter:card" content="summary_large_image" />');
-    expect(head).toContain("₪12.40"); // the earn amount, in the description
-  });
-});
-
-describe("injectLanding", () => {
-  const html = injectLanding(SHELL, MOCK_PRODUCT, "https://dev.wanthat.app", "rec_123", "en");
-
-  it("injects OG into <head> and a bot snapshot into #root, keeping the SPA's asset tags", () => {
-    expect(html).toContain('property="og:title"');
-    expect(html).toContain('src="/assets/index-abc123.js"'); // the SPA still boots
-    expect(html).toContain('href="/assets/index-abc123.css"');
-    expect(html).toMatch(/<div id="root">.*Jebao.*<\/div>/s); // bot-readable snapshot
-    expect(html).not.toContain("<title>Wanthat</title>"); // generic title dropped
-  });
-});
+/** The parsed `window.__WANTHAT_LANDING__` object out of the served HTML. */
+function snapshotOf(body: string): Record<string, unknown> {
+  const m = body.match(/window\.__WANTHAT_LANDING__ = (.*?);<\/script>/s);
+  if (!m?.[1]) throw new Error("no snapshot in body");
+  return JSON.parse(m[1]) as Record<string, unknown>;
+}
 
 describe("handler", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetCachesForTests();
+    vi.stubEnv("SITE_ORIGIN", "https://dev.wanthat.app");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: true, text: async () => SHELL })),
+    );
+    fake.config.get.mockImplementation(async (key: string) => {
+      if (key === "landing.countdownSeconds") return 5;
+      if (key === "fx.conversionCommissionBps") return 0;
+      return 0;
+    });
+    fake.fx.get.mockResolvedValue({ base: "USD", quote: "ILS", rate: "3.5000", asOf: NOW });
+    fake.recommendations.get.mockResolvedValue(ITEM);
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.unstubAllEnvs();
   });
 
-  it("fetches the SPA shell from SITE_ORIGIN, injects OG, serves 200 HTML for /p/{id}", async () => {
-    vi.stubEnv("SITE_ORIGIN", "https://dev.wanthat.app");
-    const fetchMock = vi.fn((_url: string, _init?: unknown) =>
-      Promise.resolve({ ok: true, text: async () => SHELL }),
+  it("serves real OG tags, the server card, and an ok snapshot for a resolved link", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    const res = await handler({ rawPath: "/p/abc123DEF45" } as never);
+    expect(res.statusCode).toBe(200);
+    expect(res.body).toContain(
+      '<meta property="og:title" content="Jebao Smart Aquarium Fish Feeder" />',
     );
-    vi.stubGlobal("fetch", fetchMock);
-    const { handler } = await import("./handler");
-    // The shell fetch targets SITE_ORIGIN — never a request-derived host (SSRF guard).
+    expect(res.body).toContain("₪87.50"); // 2500 USD-minor x 3.5, server-rendered
+    expect(res.body).toContain('src="/assets/index-abc123.js"'); // the SPA still boots
+
+    const snap = snapshotOf(res.body);
+    expect(snap.status).toBe("ok");
+    expect(snap.countdownSeconds).toBe(5);
+    const landing = snap.landing as {
+      recommendationId: string;
+      product: { price: { amountMinor: string } };
+      referrerFirstName: string;
+    };
+    expect(landing.recommendationId).toBe("abc123DEF45");
+    expect(landing.referrerFirstName).toBe("Dana");
+    expect(landing.product.price.amountMinor).toBe("2500"); // wire form, not bigint
+
+    // The impression funnel event, contract-shaped for the Logs→Firehose subscription filter.
+    const line = logSpy.mock.calls.map((c) => String(c[0])).find((l) => l.includes('"impression"'));
+    expect(line).toBeDefined();
+    expect(JSON.parse(line as string)).toMatchObject({
+      type: "impression",
+      recommendationId: "abc123DEF45",
+    });
+    logSpy.mockRestore();
+  });
+
+  it("serves a notFound snapshot + generic OG for an unknown id, without an impression", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    fake.recommendations.get.mockResolvedValue(undefined);
+    const res = await handler({ rawPath: "/p/gone1234567" } as never);
+    expect(res.statusCode).toBe(200);
+    expect(snapshotOf(res.body)).toEqual({ status: "notFound" });
+    expect(res.body).toContain("<title>wanthat</title>");
+    expect(res.body).not.toContain("og:image");
+    expect(logSpy.mock.calls.flat().join("\n")).not.toContain('"impression"');
+    logSpy.mockRestore();
+  });
+
+  it("degrades a resolve failure to the notFound snapshot (page still serves, no 5xx)", async () => {
+    fake.recommendations.get.mockRejectedValue(new Error("dynamo down"));
+    const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await handler({ rawPath: "/p/abc123DEF45" } as never);
+    expect(res.statusCode).toBe(200);
+    expect(snapshotOf(res.body)).toEqual({ status: "notFound" });
+    errSpy.mockRestore();
+  });
+
+  it("escapes </script> in stored content so it cannot break out of the snapshot tag", async () => {
+    fake.recommendations.get.mockResolvedValue({
+      ...ITEM,
+      review: { text: '</script><script>alert(1)</script>' },
+    });
+    const res = await handler({ rawPath: "/p/abc123DEF45" } as never);
+    expect(res.body).not.toContain("</script><script>alert(1)");
+    expect(res.body).toContain("\\u003c/script"); // escaped inside the JSON payload
+  });
+
+  it("fetches the shell from SITE_ORIGIN, never a request-derived host (SSRF guard)", async () => {
     const res = await handler({
-      rawPath: "/p/rec_abc",
+      rawPath: "/p/abc123DEF45",
       headers: { host: "attacker.example" },
     } as never);
     expect(res.statusCode).toBe(200);
-    expect(res.body).toContain("og:title");
-    expect(res.body).toContain("/p/rec_abc");
-    expect(res.body).toContain("/assets/index-abc123.js");
-    // The malicious Host header did NOT influence where we fetched from.
+    const fetchMock = globalThis.fetch as unknown as { mock: { calls: unknown[][] } };
     expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://dev.wanthat.app/index.html");
   });
 
   it("500s when SITE_ORIGIN is unset (fails closed, no header fallback)", async () => {
     vi.stubEnv("SITE_ORIGIN", "");
-    const { handler } = await import("./handler");
-    const res = await handler({
-      rawPath: "/p/rec_abc",
-      headers: { host: "attacker.example" },
-    } as never);
+    const res = await handler({ rawPath: "/p/abc123DEF45" } as never);
     expect(res.statusCode).toBe(500);
   });
 
-  it("404s a non-/p path", async () => {
-    const { handler } = await import("./handler");
-    const res = await handler({ rawPath: "/healthz" } as never);
-    expect(res.statusCode).toBe(404);
+  it("404s a non-/p path and 502s when the shell is unavailable", async () => {
+    expect((await handler({ rawPath: "/healthz" } as never)).statusCode).toBe(404);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() => Promise.resolve({ ok: false, status: 503, text: async () => "" })),
+    );
+    expect((await handler({ rawPath: "/p/abc123DEF45" } as never)).statusCode).toBe(502);
   });
 });
