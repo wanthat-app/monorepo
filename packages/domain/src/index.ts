@@ -102,3 +102,28 @@ export function convertMinor(amountMinor: bigint, rate: string, commissionBps: n
   const gross = (amountMinor * scaledRate) / scale;
   return (gross * BigInt(10_000 - commissionBps)) / BPS_DENOMINATOR;
 }
+
+/** Who a click resolves to (ADR-0008): a member's Cognito sub or a guest's opaque localStorage id. */
+export type ResolvedConsumer =
+  | { kind: "member"; sub: string }
+  | { kind: "guest"; guestId: string };
+
+/**
+ * Attribution at click-through (ADR-0008): append `custom_parameters` onto the PRODUCT-level
+ * affiliate URL — `ref` always, plus the consumer key (`c` member sub / `g` guest id). Opaque
+ * ids only — nothing internal leaks. The input URL comes ONLY from the stored recommendation
+ * projection (open-redirect safety, ADR-0007); `new URL` throws on malformed storage rather
+ * than emitting a broken redirect. Integration caveat (ADR-0008): the retailer must round-trip
+ * redirect-appended params — confirmed on the first real dev conversion.
+ */
+export function withAttribution(
+  affiliateUrl: string,
+  recommendationId: string,
+  consumer: ResolvedConsumer,
+): string {
+  const url = new URL(affiliateUrl);
+  url.searchParams.set("ref", recommendationId);
+  if (consumer.kind === "member") url.searchParams.set("c", consumer.sub);
+  else url.searchParams.set("g", consumer.guestId);
+  return url.toString();
+}
