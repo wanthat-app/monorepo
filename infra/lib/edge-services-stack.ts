@@ -152,8 +152,11 @@ export class EdgeServicesStack extends Stack {
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
-      // Serializes runs AND caps Aurora connection pressure (ADR-0002 reserved-concurrency rule).
-      reservedConcurrentExecutions: 1,
+      // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap —
+      // reserving ANY amount here trips "UnreservedConcurrentExecution below its minimum" (bit
+      // the 2026-07-10 deploy). Runs are serialized anyway: the heartbeat gate allows one due
+      // poll at a time and the proxy's 300s timeout ends well inside the 15-minute heartbeat.
+      // Re-introduce a reserved budget once the account quota is raised (ADR-0002 note).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         DB_HOST: props.cluster.clusterEndpoint.hostname,
