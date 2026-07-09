@@ -13,12 +13,7 @@ import {
   type ConversionWrite,
   type WriteConversionsResponse,
 } from "@wanthat/contracts";
-import {
-  appendAudit,
-  appendWalletEntry,
-  type createDb,
-  type WalletEntryInsert,
-} from "@wanthat/db";
+import { appendAudit, appendWalletEntry, type createDb, type WalletEntryInsert } from "@wanthat/db";
 
 /** The Kysely handle type, derived from createDb so this service needs no direct kysely dep. */
 type Db = ReturnType<typeof createDb>;

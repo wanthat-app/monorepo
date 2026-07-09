@@ -115,6 +115,10 @@ const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-serv
   // Offline JWT verification on the landing resolve path (ADR-0007: JWKS, never a Cognito call).
   userPoolId: identity.userPool.userPoolId,
   userPoolClientId: identity.userPoolClient.userPoolClientId,
+  // The in-VPC conversion-poller-writer (ADR-0002): Aurora as poller_writer.
+  vpc: network.vpc,
+  lambdaSg: network.lambdaSg,
+  cluster: data.cluster,
 });
 
 // WhatsAppStack (ADR-0019): the notification dispatcher. Depends only on DataStack; deploys

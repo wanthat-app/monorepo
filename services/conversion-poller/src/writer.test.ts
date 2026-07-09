@@ -1,12 +1,13 @@
 import type { ConversionWrite } from "@wanthat/contracts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { writeConversions, type WriterDeps } from "./writer";
+import { type WriterDeps, writeConversions } from "./writer";
 
 // The db primitives are unit-tested against real Postgres in @wanthat/db; here they are fakes.
 vi.mock("@wanthat/db", () => ({
   appendWalletEntry: vi.fn(),
   appendAudit: vi.fn(),
 }));
+
 import { appendAudit, appendWalletEntry } from "@wanthat/db";
 
 const appendEntryMock = vi.mocked(appendWalletEntry);
@@ -29,7 +30,9 @@ const memberWrite = (orderId: string): ConversionWrite => ({
   consumer: "member",
 });
 
-function makeDeps(): WriterDeps & { recommendations: { incrementConversions: ReturnType<typeof vi.fn> } } {
+function makeDeps(): WriterDeps & {
+  recommendations: { incrementConversions: ReturnType<typeof vi.fn> };
+} {
   return {
     db: {} as never,
     recommendations: { incrementConversions: vi.fn(async () => {}) },
@@ -102,9 +105,7 @@ describe("writeConversions", () => {
   });
 
   it("isolates a failing conversion; the rest of the batch lands", async () => {
-    appendEntryMock
-      .mockRejectedValueOnce(new Error("aurora hiccup"))
-      .mockResolvedValue(true);
+    appendEntryMock.mockRejectedValueOnce(new Error("aurora hiccup")).mockResolvedValue(true);
     const deps = makeDeps();
     const res = await writeConversions([memberWrite("o-bad"), memberWrite("o-good")], deps);
     expect(res.failed).toEqual([{ orderId: "o-bad", error: "Error: aurora hiccup" }]);

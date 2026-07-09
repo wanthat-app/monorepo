@@ -36,7 +36,10 @@ export function getContext(): WriterContext {
       region,
       caCerts: process.env.DB_CA_CERT,
     }),
-    recommendations: new RecommendationRepo(getDocClient(region), requireEnv("RECOMMENDATION_TABLE")),
+    recommendations: new RecommendationRepo(
+      getDocClient(region),
+      requireEnv("RECOMMENDATION_TABLE"),
+    ),
   };
   return cached;
 }

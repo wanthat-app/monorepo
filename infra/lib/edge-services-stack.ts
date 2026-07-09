@@ -2,9 +2,12 @@ import { CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
 import { HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
+import type * as ec2 from "aws-cdk-lib/aws-ec2";
+import { SubnetType } from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import type * as rds from "aws-cdk-lib/aws-rds";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import type * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
@@ -12,6 +15,8 @@ import {
   applyThrottle,
   LAMBDA_ARCHITECTURE,
   LAMBDA_RUNTIME,
+  RDS_CA_ENV,
+  rdsCaBundling,
   serviceEntry,
   serviceLogGroup,
   THROTTLING,
@@ -30,6 +35,10 @@ export interface EdgeServicesStackProps extends StackProps {
   /** Customer pool + SPA client ids: the landing resolve verifies Bearer tokens OFFLINE (JWKS). */
   readonly userPoolId: string;
   readonly userPoolClientId: string;
+  /** The conversion-poller-WRITER is the stack's one in-VPC function (ADR-0002: Aurora access). */
+  readonly vpc: ec2.IVpc;
+  readonly lambdaSg: ec2.ISecurityGroup;
+  readonly cluster: rds.IDatabaseCluster;
 }
 
 /**
@@ -39,11 +48,12 @@ export interface EdgeServicesStackProps extends StackProps {
  *   projection. (CloudFront fronts this in the EdgeStack.) A Lambda Function URL was the original
  *   front door, but those are unavailable in il-central-1 — ADR-0007 settled on the HTTP API.
  * - `retailer-proxy`: the sole egress to retailer APIs; holds the secret-scoped credential.
- * - `conversion-poller` / `fx-rates`: scheduled. The EventBridge schedules are created **disabled**
- *   (the handlers are 501 stubs); they're enabled and made admin-tunable with their real slices.
- *
- * The poller's in-VPC writer split (ADR-0009) is deferred — for the skeleton it's a single non-VPC
- * stub. Aurora-touching wiring lands with the wallet slice.
+ * - `conversion-poller`: the ADR-0009 chain's in-VPC WRITER — the one deliberate exception to the
+ *   stack's non-VPC charter. It stays in this stack (rather than api-stack) so its log group's
+ *   cross-stack export to Observability's funnel subscription survives the slice unchanged
+ *   (removing a consumed export mid-deploy fails — see the export-ordering note in the infra
+ *   README). Invoked by the retailer-proxy poll, never scheduled directly.
+ * - `fx-rates`: scheduled, live (ADR-0017).
  */
 export class EdgeServicesStack extends Stack {
   /** The public landing HTTP API — the us-east-1 EdgeStack fronts it on `/p/*` (cross-region). */
@@ -127,11 +137,41 @@ export class EdgeServicesStack extends Stack {
     retailerProxy.addEnvironment("GUEST_ATTRIBUTION_TABLE", props.guestAttributionTable.tableName);
     retailerProxy.addEnvironment("POLLER_STATE_TABLE", props.pollerStateTable.tableName);
 
-    // --- scheduled writers ---
-    const poller = makeFn("ConversionPoller", "conversion-poller");
+    // --- conversion-poller-writer: IN-VPC, the sole money mutator (ADR-0002/0009) ---
+    const poller = new NodejsFunction(this, "ConversionPoller", {
+      functionName: `wanthat-${wanthatEnv.name}-conversion-poller`,
+      entry: serviceEntry("conversion-poller"),
+      handler: "handler",
+      runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
+      memorySize: 256,
+      // One Aurora scale-to-zero resume (waitForDb, 60s budget) + a batch of inserts.
+      timeout: Duration.seconds(90),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "ConversionPollerLogs", wanthatEnv),
+      vpc: props.vpc,
+      vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [props.lambdaSg],
+      // Serializes runs AND caps Aurora connection pressure (ADR-0002 reserved-concurrency rule).
+      reservedConcurrentExecutions: 1,
+      environment: {
+        WANTHAT_ENV: wanthatEnv.name,
+        DB_HOST: props.cluster.clusterEndpoint.hostname,
+        DB_NAME: "wanthat",
+        DB_USER: "poller_writer",
+        RECOMMENDATION_TABLE: props.recommendationTable.tableName,
+        ...RDS_CA_ENV,
+      },
+      bundling: rdsCaBundling,
+    });
     this.conversionPollerFn = poller;
-    props.recommendationTable.grantReadData(poller);
-    props.guestAttributionTable.grantReadData(poller);
+    // Aurora as poller_writer via IAM auth (ADR-0003) — append-only by DB grants (0006).
+    props.cluster.grantConnect(poller, "poller_writer");
+    // The conversions stat (DynamoDB over the VPC's free gateway endpoint) — read+write.
+    props.recommendationTable.grantReadWriteData(poller);
+    // The proxy poll invokes the writer with resolved conversions (same stack — direct grant).
+    poller.grantInvoke(retailerProxy);
+    retailerProxy.addEnvironment("CONVERSION_WRITER_FUNCTION", poller.functionName);
 
     // fx-rates is implemented (ADR-0017): reads CONFIG `fx.provider`, writes the fx_rate cache.
     const fxRates = makeFn("FxRates", "fx-rates");
@@ -141,8 +181,16 @@ export class EdgeServicesStack extends Stack {
     fxRates.addEnvironment("FX_RATE_TABLE", props.fxRateTable.tableName);
     fxRates.addEnvironment("RUNTIME_CONFIG_TABLE", props.runtimeConfigTable.tableName);
 
-    // The poller is still a 501 stub → its schedule stays DISABLED until that slice lands (ADR-0009).
-    this.addSchedule("ConversionPollerSchedule", poller, "rate(15 minutes)", false);
+    // The conversion poll heartbeat (ADR-0009): fires the PROXY every 15 minutes; the op gates
+    // itself on CONFIG poller.intervalMinutes (default 30), so admins tune cadence without any
+    // scheduler mutation. Dev only for now — prod stays disabled (decision 2026-07-10).
+    this.addSchedule(
+      "OrderPollHeartbeat",
+      retailerProxy,
+      "rate(15 minutes)",
+      wanthatEnv.name === "dev",
+      JSON.stringify({ op: "listOrders", retailer: "aliexpress" }),
+    );
     // fx-rates is live: refresh on the CONFIG default cadence (fx.updateIntervalMinutes = 720m).
     // admin-api retunes this schedule when the config key changes (later slice).
     this.addSchedule("FxRatesSchedule", fxRates, "rate(720 minutes)", true);
@@ -159,6 +207,7 @@ export class EdgeServicesStack extends Stack {
     fn: lambda.IFunction,
     expression: string,
     enabled: boolean,
+    input?: string,
   ): void {
     const role = new iam.Role(this, `${id}Role`, {
       assumedBy: new iam.ServicePrincipal("scheduler.amazonaws.com"),
@@ -168,7 +217,7 @@ export class EdgeServicesStack extends Stack {
       flexibleTimeWindow: { mode: "OFF" },
       scheduleExpression: expression,
       state: enabled ? "ENABLED" : "DISABLED",
-      target: { arn: fn.functionArn, roleArn: role.roleArn },
+      target: { arn: fn.functionArn, roleArn: role.roleArn, input },
     });
   }
 }
