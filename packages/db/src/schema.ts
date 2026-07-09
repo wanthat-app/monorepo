@@ -2,31 +2,19 @@ import type { ColumnType, Generated } from "kysely";
 
 /**
  * Kysely table interfaces — the typed view of the Postgres schema (ADR-0012).
- * Aurora holds only **PII (customer) + money (wallet ledger + audit log)** (ADR-0003);
- * products, recommendations, and guest_attribution live in DynamoDB. Money columns are
- * typed `never` on update to encode the append-only ledger (ADR-0002): the type system
- * refuses `.set(amount_minor)` on those tables.
+ * Aurora holds **money only** — the wallet ledger + hash-chained audit log, keyed directly by
+ * the Cognito `sub` (ADR-0006 decision 4, ADR-0020 as amended). Customer PII lives in Cognito
+ * user attributes; products, recommendations, and guest_attribution live in DynamoDB (ADR-0003).
+ * Money columns are typed `never` on update to encode the append-only ledger (ADR-0002): the
+ * type system refuses `.set(...)` on those tables.
  */
-
-export interface CustomerTable {
-  id: Generated<string>;
-  phone_e164: string;
-  email: string | null;
-  first_name: string;
-  last_name: string;
-  locale: string;
-  status: "active" | "suspended";
-  // Stable link to the Cognito user (the `sub` claim). Phone is mutable + the sign-in alias, so it
-  // is unsuitable as the join key; this is the canonical identity anchor for /me (0002_auth, ADR-0020).
-  // NOT NULL (fail-fast): set at registration, so the type forbids inserting a customer without a sub.
-  cognito_sub: string;
-  created_at: Generated<Date>;
-  updated_at: Generated<Date>;
-}
 
 export interface WalletEntryTable {
   id: Generated<string>;
-  customer_id: string;
+  // The Cognito sub of the member this money belongs to (ADR-0020: sub is the canonical id).
+  // No FK — the user store is Cognito; a deleted account leaves its rows keyed by an orphaned
+  // sub (pseudonymous history, ADR-0006 decision 8).
+  cognito_sub: ColumnType<string, string, never>;
   kind: "referrer_cashback" | "consumer_reward" | "adjustment" | "withdrawal";
   amount_minor: ColumnType<bigint, bigint, never>;
   currency: ColumnType<string, string, never>;
@@ -46,7 +34,6 @@ export interface AuditLogTable {
 }
 
 export interface Database {
-  customer: CustomerTable;
   wallet_entry: WalletEntryTable;
   audit_log: AuditLogTable;
 }

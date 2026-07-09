@@ -7,7 +7,7 @@ import {
 import type { MessageLanguage } from "@wanthat/contracts";
 
 /**
- * Repository over the `notification_outbox` table (ADR-0023) — the transactional outbox bridging
+ * Repository over the `notification_outbox` table (ADR-0019) — the transactional outbox bridging
  * in-VPC producers (app-core writes over the DynamoDB gateway endpoint) to the non-VPC
  * whatsapp-dispatcher (via the table's Stream). At-least-once: the dispatcher is idempotent on
  * `status` ("pending" is the only sendable state). TTL self-cleans (~30 days), so items skipped

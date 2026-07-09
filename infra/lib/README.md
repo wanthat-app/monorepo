@@ -6,7 +6,7 @@ Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices 
 > **Status.** All of `Network`, `Data`, `Identity`, `Api`, `Admin`, `EdgeServices`, and the
 > us-east-1 `Edge` stack are implemented and deploy as `wanthat-{env}-*` (dev/prod, selected by
 > `WANTHAT_ENV`; account resolved from the deploy credentials, not pinned in the repo). The auth
-> slice (UC1/UC2, ADR-0020) added **`NetworkStack` (the VPC) + Aurora Serverless v2** to `DataStack`
+> slice (UC1/UC2, ADR-0006) added **`NetworkStack` (the VPC) + Aurora Serverless v2** to `DataStack`
 > and a one-shot in-VPC migration runner; `app-api`/`admin` move in-VPC with their auth backends.
 > `ObservabilityStack` is now wired (starter scope; see its row). Still deferred: **Firehose/Athena +
 > cross-region backup** in `DataStack`.
@@ -38,7 +38,7 @@ Notes:
 
 ## Runbook — first-admin bootstrap (employee pool)
 
-The admin surface authenticates against the **employee** Cognito pool (ADR-0020 §two-pool, decision
+The admin surface authenticates against the **employee** Cognito pool (ADR-0006 §two-pool, decision
 6), which has **no self-signup** — staff are provisioned, never registered. The very first admin is
 created out-of-band by an operator; everyone after that can be added the same way (or, later, from
 the console). This is the only manual identity step, and every command below is CloudTrail-audited.

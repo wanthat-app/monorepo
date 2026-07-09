@@ -1,4 +1,4 @@
-# ADR 0003 — Datastore: Aurora (PII + money) + DynamoDB (everything else)
+# ADR 0003 — Datastore: Aurora (money) + DynamoDB (everything else non-money)
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
@@ -8,27 +8,27 @@
 
 The system has two distinct access-pattern classes:
 
-- **PII + money** — customer PII and the append-only wallet ledger + hash-chained audit log. Needs
-  ACID (registration provisions customer+wallet atomically), engine-enforced immutability, flexible
-  reconciliation/finance queries against retailer payouts, and the strongest residency/sovereignty
-  guarantees. → **relational**.
+- **Money** — the append-only wallet ledger + hash-chained audit log. Needs ACID,
+  engine-enforced immutability, flexible reconciliation/finance queries against retailer
+  payouts, and the strongest residency/sovereignty guarantees. → **relational**.
+  (Customer PII is NOT stored here — it lives in Cognito user attributes, ADR-0006.)
 - **Catalog + operational, non-PII** — shared products, recommendations (incl. the
   `recommendation_id → affiliate_url` resolution on the viral redirect hot path), and the opaque,
   best-effort `guestId → customer_id` map. Point-lookups / simple queries, no PII, no ACID
   requirement. → **key-value**.
 
-This holds the money ledger and Israeli PII, so data residency, sovereignty, and DR weigh as
-heavily as cost.
+This holds the money ledger, so data residency, sovereignty, and DR weigh as heavily as cost.
 
 ## Decision
 
 **Polyglot persistence — the right engine per access-pattern class.**
 
-### Aurora Serverless v2 (PostgreSQL ≥ 15.7, scale-to-zero), `il-central-1` — PII + money only
+### Aurora Serverless v2 (PostgreSQL ≥ 15.7, scale-to-zero), `il-central-1` — money only
 
-Holds **only** the crown jewels: **customer PII** and the **money ledger** (wallet entries +
-hash-chained audit log). Nothing else — products and recommendations are catalog/operational data
-and live in DynamoDB. Lambdas connect via **IAM database authentication** (locally-signed token, no
+Holds **only** the crown jewels: the **money ledger** (wallet entries + hash-chained audit
+log), keyed directly by the Cognito `sub` (ADR-0020/0006). Nothing else — customer PII lives
+in Cognito user attributes (ADR-0006); products and recommendations are catalog/operational
+data and live in DynamoDB. Lambdas connect via **IAM database authentication** (locally-signed token, no
 Secrets Manager call on any hot path), each role scoped to its per-function Postgres user.
 Scale-to-zero means idle ≈ storage cost.
 
@@ -41,8 +41,8 @@ Holds everything that isn't PII or money:
   (+ optional review + stats). Denormalises `affiliate_url` so the redirect resolves in one lookup;
   a GSI on the owner backs "list my recommendations". This keeps the viral redirect burst off the
   relational layer.
-- **`guest_attribution` (guestId → customer_id)** — opaque→opaque, best-effort (ADR-0008); written
-  at registration outside the atomic Aurora transaction (allowed to fail), read at conversion by the
+- **`guest_attribution` (guestId → sub)** — opaque→opaque, best-effort (ADR-0008); written
+  after sign-up outside any transaction (allowed to fail), read at conversion by the
   non-VPC Retailer Proxy.
 
 References from these items into Aurora (a recommendation's owner; a wallet entry's recommendation)
@@ -76,10 +76,10 @@ holding under `max_connections`.
 
 ## Consequences
 
-- Residency strengthened: all PII consolidated in one in-region relational store — cleaner
-  data-subject deletion and audit than scattering PII across engines.
-- Registration stays a single ACID Aurora transaction (customer + empty wallet); products,
-  recommendations, and `guest_attribution` are DynamoDB writes outside it.
+- Customer PII is consolidated in Cognito (ADR-0006): data-subject deletion is one
+  `AdminDeleteUser`; the ledger stays pseudonymous under the orphaned sub.
+- Registration writes nothing here — wallet rows appear lazily keyed by sub; products,
+  recommendations, and `guest_attribution` are DynamoDB writes.
 - Aurora-touching functions are in-VPC; redirect is not — the public path touches only the
   non-PII DynamoDB table.
 - **Verify at provisioning:** `il-central-1` Aurora engine + scale-to-zero; reserved-concurrency

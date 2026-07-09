@@ -1,10 +1,10 @@
 import { Navigate } from "react-router-dom";
-import { useSession } from "./lib/session";
 import { Screen, Spinner } from "./ui/components";
+import { useSession } from "./user";
 
 /** Index route — route to the wallet home or the auth flow once the session is resolved. */
 export function App() {
-  const { loading, customer } = useSession();
+  const { loading, status } = useSession();
   if (loading) {
     return (
       <Screen>
@@ -14,5 +14,5 @@ export function App() {
       </Screen>
     );
   }
-  return <Navigate to={customer ? "/home" : "/auth"} replace />;
+  return <Navigate to={status === "signedIn" ? "/home" : "/auth"} replace />;
 }

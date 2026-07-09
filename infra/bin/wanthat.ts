@@ -59,6 +59,9 @@ const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), {
   crossRegionReferences: true,
   runtimeConfigTable: data.runtimeConfigTable,
   devOtpSinkTable: data.devOtpSinkTable,
+  // Post-Confirmation trigger targets (ADR-0006 decision 7): welcome outbox + guest attribution.
+  notificationOutboxTable: data.notificationOutboxTable,
+  guestAttributionTable: data.guestAttributionTable,
 });
 const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   ...common,
@@ -68,12 +71,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   productTable: data.productTable,
   recommendationTable: data.recommendationTable,
   fxRateTable: data.fxRateTable,
-  guestAttributionTable: data.guestAttributionTable,
   runtimeConfigTable: data.runtimeConfigTable,
-  authChallengeTable: data.authChallengeTable,
-  phoneVelocityTable: data.phoneVelocityTable,
-  notificationOutboxTable: data.notificationOutboxTable,
-  passkeyCredentialTable: data.passkeyCredentialTable,
   vpc: network.vpc,
   lambdaSg: network.lambdaSg,
   cluster: data.cluster,
@@ -82,7 +80,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
 const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   ...common,
   crossRegionReferences: true,
-  // Admin API authorizes against the employee pool (ADR-0020 §two-pool); app-api keeps the customer
+  // Admin API authorizes against the employee pool (ADR-0006 §two-pool); app-api keeps the customer
   // pool above. A customer token therefore can't reach /admin.
   employeePool: identity.employeePool,
   employeePoolClient: identity.employeePoolClient,
@@ -111,7 +109,7 @@ const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-serv
   retailerSecret: data.retailerSecret,
 });
 
-// WhatsAppStack (ADR-0023): the notification dispatcher. Depends only on DataStack; deploys
+// WhatsAppStack (ADR-0019): the notification dispatcher. Depends only on DataStack; deploys
 // before Observability (which watches its Lambda).
 const whatsapp = new WhatsAppStack(app, stackName(wanthatEnv, "whatsapp"), {
   ...common,
@@ -129,7 +127,9 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
   spaConfig: {
     apiUrl: api.httpApi.apiEndpoint,
     adminApiUrl: admin.httpApi.apiEndpoint,
-    managedLoginUrl: identity.userPoolDomain.baseUrl(),
+    // ADR-0006: the SPA calls cognito-idp.<region>.amazonaws.com directly for every customer auth
+    // ceremony (no Managed Login for customers). A synth-time literal, not a stack output.
+    cognitoRegion: wanthatEnv.region,
     userPoolClientId: identity.userPoolClient.userPoolClientId,
     adminManagedLoginUrl: identity.employeePoolDomain.baseUrl(),
     adminPoolClientId: identity.employeePoolClient.userPoolClientId,
@@ -148,7 +148,7 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
     { label: "landing", api: edgeServices.landingApi },
   ],
   functions: [
-    { label: "app-auth", fn: api.appAuthFn },
+    { label: "app-links", fn: api.appLinksFn },
     { label: "app-core", fn: api.appCoreFn },
     { label: "admin-api", fn: admin.adminApiFn },
     { label: "admin-credentials", fn: admin.adminCredentialsFn },
@@ -157,6 +157,7 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
     { label: "conversion-poller", fn: edgeServices.conversionPollerFn },
     { label: "fx-rates", fn: edgeServices.fxRatesFn },
     { label: "message-sender", fn: identity.messageSenderFn },
+    { label: "post-confirmation", fn: identity.postConfirmationFn },
     { label: "whatsapp-dispatcher", fn: whatsapp.dispatcherFn },
   ],
   cluster: data.cluster,

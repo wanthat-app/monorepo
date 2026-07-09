@@ -2,7 +2,7 @@ import { getConfig } from "./config";
 import { isAdminToken } from "./jwt";
 
 /**
- * Admin (employee) login via the **employee** Cognito pool's Managed Login (ADR-0020 §two-pool):
+ * Admin (employee) login via the **employee** Cognito pool's Managed Login (ADR-0006 §two-pool):
  * email + password + mandatory TOTP, OAuth authorization-code + PKCE completed in the browser,
  * callback at `/admin/callback`. This mirrors the consumer `managed-login.ts` passkey flow but points
  * at a different pool/client, so an admin session is structurally separate from a customer session —

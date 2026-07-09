@@ -1,6 +1,7 @@
 import { CognitoIdentityProviderClient } from "@aws-sdk/client-cognito-identity-provider";
 import { SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
-import { CognitoUserRemover } from "./cognito-users";
+import { getDocClient, RecommendationRepo } from "@wanthat/dynamo";
+import { CognitoUserAdmin } from "./cognito-users";
 import { RetailerSecretWriter } from "./retailer-secret";
 
 function requireEnv(name: string): string {
@@ -11,12 +12,15 @@ function requireEnv(name: string): string {
 
 export interface AdminCredentialsContext {
   retailerSecret: RetailerSecretWriter;
-  cognitoUsers: CognitoUserRemover;
+  cognitoUsers: CognitoUserAdmin;
+  /** User erasure also deletes the member's recommendations (deleteByOwner, ADR-0006 d8). */
+  recommendations: RecommendationRepo;
 }
 
 let cached: AdminCredentialsContext | undefined;
 
-/** Per-container deps: the write-only Secrets Manager accessor + the customer-pool remover. */
+/** Per-container deps: the write-only Secrets Manager accessor + the customer-pool user admin
+ * + the recommendation repo (erased alongside the account on delete). */
 export function getContext(): AdminCredentialsContext {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
@@ -25,9 +29,13 @@ export function getContext(): AdminCredentialsContext {
       new SecretsManagerClient({ region }),
       requireEnv("RETAILER_SECRET_ARN"),
     ),
-    cognitoUsers: new CognitoUserRemover(
+    cognitoUsers: new CognitoUserAdmin(
       new CognitoIdentityProviderClient({ region }),
       requireEnv("CUSTOMER_USER_POOL_ID"),
+    ),
+    recommendations: new RecommendationRepo(
+      getDocClient(region),
+      requireEnv("RECOMMENDATION_TABLE"),
     ),
   };
   return cached;

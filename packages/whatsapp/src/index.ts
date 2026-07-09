@@ -1,5 +1,5 @@
 /**
- * `@wanthat/whatsapp` (ADR-0023) — a pure library over AWS End User Messaging Social: the
+ * `@wanthat/whatsapp` (ADR-0019) — a pure library over AWS End User Messaging Social: the
  * message-type registry, the template payload builder, and the sender. Consumed by
  * services/message-sender (OTP) and services/whatsapp-dispatcher (notifications).
  */

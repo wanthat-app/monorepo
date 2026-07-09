@@ -1,5 +1,5 @@
 /**
- * Referral landing rendering (ADR-0007/0018/0019). The landing is a DYNAMIC SPA page (`/p/{id}`,
+ * Referral landing rendering (ADR-0007/0007/0018). The landing is a DYNAMIC SPA page (`/p/{id}`,
  * `SharedProductPage`) — it runs the same session + passkey mechanism as the rest of the app. The only
  * thing this service must server-render is the bot-facing content: real Open Graph tags + a product
  * snapshot injected into the SPA shell, so a shared link previews richly for crawlers. Humans get the

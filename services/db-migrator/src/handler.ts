@@ -1,5 +1,5 @@
 /**
- * DB migrator (ADR-0012, ADR-0020) — a one-shot, in-VPC Lambda invoked by a CDK
+ * DB migrator (ADR-0012, ADR-0006) — a one-shot, in-VPC Lambda invoked by a CDK
  * `triggers.Trigger` after the Aurora cluster is created, and on every subsequent deploy.
  *
  * It runs `@wanthat/db` `migrateToLatest()` as **`wanthat_migrator` via IAM auth** (0003) — no

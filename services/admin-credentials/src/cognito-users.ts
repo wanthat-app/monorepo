@@ -1,31 +1,158 @@
 import {
   AdminDeleteUserCommand,
+  AdminDisableUserCommand,
+  AdminEnableUserCommand,
+  AdminGetUserCommand,
+  AdminUserGlobalSignOutCommand,
   type CognitoIdentityProviderClient,
+  DescribeUserPoolCommand,
+  ListUsersCommand,
   UserNotFoundException,
+  type UserType,
 } from "@aws-sdk/client-cognito-identity-provider";
+import { AdminUserItem } from "@wanthat/contracts";
 
 /**
- * Customer-pool account removal for the admin users page. Runs here (non-VPC) because the
- * endpoint-free VPC cannot reach cognito-idp (ADR-0004) — admin-api deletes the Aurora row, this
- * function removes the sign-in account. Username is the phone (phone-as-username, ADR-0020);
- * an already-deleted account resolves as `existed: false` so the SPA's retry is idempotent.
+ * Customer-pool user management for the admin users page (ADR-0006 decision 8). Runs here
+ * (non-VPC) because the endpoint-free VPC cannot reach cognito-idp (ADR-0004). Username is the
+ * phone throughout (phone-as-username): list/search via `ListUsers`, suspend/lift/kick via the
+ * Admin lifecycle calls, erasure via `AdminGetUser` (sub resolution for the recommendation
+ * cleanup) + `AdminDeleteUser`.
  */
-export class CognitoUserRemover {
+
+/**
+ * Map one Cognito `ListUsers` entry onto the contract row (PURE, exported for tests). Users the
+ * mapping cannot represent (no sub, no phone, malformed email) are skipped rather than failing
+ * the whole page - `undefined` here means "drop the row".
+ */
+export function toAdminUserItem(user: UserType): AdminUserItem | undefined {
+  const attrs = new Map((user.Attributes ?? []).map((a) => [a.Name, a.Value]));
+  const createdAt = user.UserCreateDate?.toISOString();
+  const parsed = AdminUserItem.safeParse({
+    id: attrs.get("sub"),
+    phone: attrs.get("phone_number"),
+    email: attrs.get("email") ?? null,
+    // The pool keeps the name attributes optional (T1) - absent maps to the empty string.
+    firstName: attrs.get("given_name") ?? "",
+    lastName: attrs.get("family_name") ?? "",
+    locale: attrs.get("locale") ?? "he-IL",
+    status: user.Enabled === false ? "suspended" : "active",
+    ...(user.UserStatus ? { userStatus: user.UserStatus } : {}),
+    createdAt,
+    updatedAt: user.UserLastModifiedDate?.toISOString() ?? createdAt,
+  });
+  return parsed.success ? parsed.data : undefined;
+}
+
+export interface ListUsersPage {
+  users: AdminUserItem[];
+  /** DescribeUserPool.EstimatedNumberOfUsers - the whole pool, approximate (never filtered). */
+  total: number;
+  approximate: true;
+  nextToken?: string;
+}
+
+export class CognitoUserAdmin {
   constructor(
     private readonly client: CognitoIdentityProviderClient,
     private readonly userPoolId: string,
   ) {}
 
-  /** Returns whether the account existed (false = already gone; treated as success). */
-  async remove(phone: string): Promise<boolean> {
+  /**
+   * One page of the users list. `phonePrefix` becomes the pool filter `phone_number ^= "..."`
+   * (Cognito filters ONE attribute, exact or prefix - ADR-0006 consequence); pagination is the
+   * opaque forward-only `PaginationToken`. The approximate pool total rides along from
+   * `DescribeUserPool` so the response stays backward-shaped for the SPA.
+   */
+  async list(opts: {
+    phonePrefix?: string;
+    limit: number;
+    nextToken?: string;
+  }): Promise<ListUsersPage> {
+    // The filter value sits inside a quoted string - strip quote/backslash rather than escaping
+    // (neither can appear in an E.164 prefix anyway).
+    const prefix = opts.phonePrefix?.replace(/["\\]/g, "");
+    const [page, described] = await Promise.all([
+      this.client.send(
+        new ListUsersCommand({
+          UserPoolId: this.userPoolId,
+          Limit: opts.limit,
+          ...(opts.nextToken ? { PaginationToken: opts.nextToken } : {}),
+          ...(prefix ? { Filter: `phone_number ^= "${prefix}"` } : {}),
+        }),
+      ),
+      this.client.send(new DescribeUserPoolCommand({ UserPoolId: this.userPoolId })),
+    ]);
+    return {
+      users: (page.Users ?? [])
+        .map(toAdminUserItem)
+        .filter((u): u is AdminUserItem => u !== undefined),
+      total: described.UserPool?.EstimatedNumberOfUsers ?? 0,
+      approximate: true,
+      ...(page.PaginationToken ? { nextToken: page.PaginationToken } : {}),
+    };
+  }
+
+  /** `AdminDisableUser` - reversible suspension. False = unknown phone (contract: plain 404);
+   * re-disabling an already-disabled user is idempotent success in Cognito. */
+  async disable(phone: string): Promise<boolean> {
+    return this.lifecycle(
+      new AdminDisableUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
+    );
+  }
+
+  /** `AdminEnableUser` - lift a suspension. Same idempotent semantics as disable. */
+  async enable(phone: string): Promise<boolean> {
+    return this.lifecycle(
+      new AdminEnableUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
+    );
+  }
+
+  /** `AdminUserGlobalSignOut` - revoke every refresh token (issued access tokens live out
+   * their hour - the stateless-authorizer caveat lives in the contract comment). */
+  async globalSignOut(phone: string): Promise<boolean> {
+    return this.lifecycle(
+      new AdminUserGlobalSignOutCommand({ UserPoolId: this.userPoolId, Username: phone }),
+    );
+  }
+
+  private async lifecycle(
+    command: AdminDisableUserCommand | AdminEnableUserCommand | AdminUserGlobalSignOutCommand,
+  ): Promise<boolean> {
     try {
-      await this.client.send(
-        new AdminDeleteUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
-      );
+      await this.client.send(command);
       return true;
     } catch (err) {
       if (err instanceof UserNotFoundException) return false;
       throw err;
     }
+  }
+
+  /**
+   * Remove the account, resolving the sub FIRST (via `AdminGetUser`) so the caller can erase the
+   * member's DynamoDB recommendations under it (ADR-0006 decision 8). An already-deleted account
+   * resolves as `existed: false` so the SPA's retry is idempotent.
+   */
+  async remove(phone: string): Promise<{ existed: boolean; sub?: string }> {
+    let sub: string | undefined;
+    try {
+      const user = await this.client.send(
+        new AdminGetUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
+      );
+      sub = user.UserAttributes?.find((a) => a.Name === "sub")?.Value;
+    } catch (err) {
+      if (err instanceof UserNotFoundException) return { existed: false };
+      throw err;
+    }
+    try {
+      await this.client.send(
+        new AdminDeleteUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
+      );
+    } catch (err) {
+      // Vanished between the two calls: still report existed (we saw it) and hand back the sub
+      // so the recommendation cleanup runs regardless.
+      if (!(err instanceof UserNotFoundException)) throw err;
+    }
+    return { existed: true, ...(sub ? { sub } : {}) };
   }
 }

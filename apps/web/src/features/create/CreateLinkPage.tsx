@@ -14,9 +14,9 @@ import {
 } from "../../lib/api";
 import { formatMoneyMinor } from "../../lib/money";
 import { extractSupportedUrl } from "../../lib/product-url";
-import { useSession } from "../../lib/session";
 import { BackButton, Button } from "../../ui/components";
 import { ProductCard, ShareLinkRow } from "../../ui/wallet";
+import { useSession } from "../../user";
 
 const LIGHTNING_ICON = (
   <svg
@@ -102,7 +102,7 @@ const displayLink = (shareUrl: string) => shareUrl.replace(/^https?:\/\//, "");
 export function CreateLinkPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { customer, loading: sessionLoading, accessToken } = useSession();
+  const { profile, loading: sessionLoading, accessToken } = useSession();
   const token = accessToken();
 
   const [url, setUrl] = useState("");
@@ -155,7 +155,7 @@ export function CreateLinkPage() {
   // Wait out the session rehydrate before deciding: a hard reload of /create must not bounce a
   // signed-in member to /auth (and lose this page) while the refresh-token exchange is in flight.
   if (sessionLoading) return null;
-  if (!customer) {
+  if (!profile) {
     navigate("/auth", { replace: true });
     return null;
   }

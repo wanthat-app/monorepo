@@ -20,25 +20,19 @@ describe("UsersStats contract", () => {
     expect(ok.success).toBe(true);
   });
 
-  it("rejects a signup series that is not exactly 30 entries", () => {
-    expect(
-      UsersStats.safeParse({
-        total: 0,
-        active: 0,
-        suspended: 0,
-        newToday: 0,
-        new7d: 0,
-        new30d: 0,
-        dailySignups: dense.slice(0, 29),
-      }).success,
-    ).toBe(false);
+  it("accepts the empty object — every field is optional since T7 (Aurora is money-only)", () => {
+    expect(UsersStats.safeParse({}).success).toBe(true);
   });
 
-  it("rejects negative counts and malformed dates", () => {
+  it("rejects a signup series that is not exactly 30 entries", () => {
+    expect(UsersStats.safeParse({ dailySignups: dense.slice(0, 29) }).success).toBe(false);
+  });
+
+  it("rejects negative counts and malformed dates when fields are present", () => {
     expect(UsersStats.safeParse({ total: -1 }).success).toBe(false);
-    expect(UsersStats.pick({ total: true }).shape.total.safeParse(-1).success).toBe(false);
     expect(
-      UsersStats.shape.dailySignups.element.safeParse({ date: "2026/06/01", count: 1 }).success,
+      UsersStats.shape.dailySignups.unwrap().element.safeParse({ date: "2026/06/01", count: 1 })
+        .success,
     ).toBe(false);
   });
 });

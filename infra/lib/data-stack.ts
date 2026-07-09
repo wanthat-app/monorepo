@@ -21,21 +21,23 @@ import {
 
 export interface DataStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
-  /** From NetworkStack — Aurora + the in-VPC migrator live here (ADR-0004/0020). */
+  /** From NetworkStack — Aurora + the in-VPC migrator live here (ADR-0004/0006). */
   readonly vpc: ec2.IVpc;
   readonly auroraSg: ec2.ISecurityGroup;
   readonly lambdaSg: ec2.ISecurityGroup;
 }
 
 /**
- * DataStack — the data plane (ADR-0003, ADR-0005, ADR-0020).
+ * DataStack — the data plane (ADR-0003, ADR-0005, ADR-0006).
  *
- * DynamoDB (on-demand) holds everything that isn't PII or money: the landing projection
+ * DynamoDB (on-demand) holds everything that isn't money: the landing projection
  * (`recommendationId → affiliate url + product`, `byOwner` GSI), `guest_attribution`, the runtime
- * `config` table, the `fx_rate` cache, plus the auth working tables (`auth_challenge`,
- * `phone_velocity`, both TTL-expiring). Aurora Serverless v2 (scale-to-zero, IAM auth, no RDS Proxy)
- * holds PII + ledger. A one-shot migrator Trigger runs the schema after the cluster is created. PITR
- * on all DynamoDB tables; a Secrets Manager placeholder holds the retailer credential.
+ * `config` table, the `fx_rate` cache, and the notification outbox. The former auth working tables
+ * (`auth_challenge`, `phone_velocity`, `passkey_credential`) died with the app-owned auth
+ * ceremonies (ADR-0006: the browser talks to Cognito directly). Aurora Serverless v2
+ * (scale-to-zero, IAM auth, no RDS Proxy) holds money only. A one-shot migrator Trigger runs the
+ * schema after the cluster is created. PITR on all DynamoDB tables; a Secrets Manager placeholder
+ * holds the retailer credential.
  */
 export class DataStack extends Stack {
   readonly productTable: dynamodb.Table;
@@ -43,10 +45,7 @@ export class DataStack extends Stack {
   readonly guestAttributionTable: dynamodb.Table;
   readonly runtimeConfigTable: dynamodb.Table;
   readonly fxRateTable: dynamodb.Table;
-  readonly authChallengeTable: dynamodb.Table;
-  readonly phoneVelocityTable: dynamodb.Table;
   readonly notificationOutboxTable: dynamodb.Table;
-  readonly passkeyCredentialTable: dynamodb.Table;
   /** Absent in prod by design (fail-closed) — see the DevOtpSink construct below. */
   readonly devOtpSinkTable?: dynamodb.Table;
   readonly retailerSecret: secretsmanager.Secret;
@@ -104,22 +103,7 @@ export class DataStack extends Stack {
       ...common,
     });
 
-    // Auth OTP challenge state (ADR-0020): one item per /auth/start, carrying the Cognito session and
-    // resend cooldown. TTL-expired by `ttl` so abandoned challenges self-clean.
-    this.authChallengeTable = new dynamodb.Table(this, "AuthChallenge", {
-      partitionKey: { name: "challengeId", type: dynamodb.AttributeType.STRING },
-      timeToLiveAttribute: "ttl",
-      ...common,
-    });
-
-    // Per-phone SMS velocity counter (ADR-0006 kill-switch layer 1). Hashed phone key; TTL windows.
-    this.phoneVelocityTable = new dynamodb.Table(this, "PhoneVelocity", {
-      partitionKey: { name: "phoneHash", type: dynamodb.AttributeType.STRING },
-      timeToLiveAttribute: "ttl",
-      ...common,
-    });
-
-    // ADR-0023: transactional outbox for WhatsApp notifications. In-VPC producers (app-core)
+    // ADR-0019: transactional outbox for WhatsApp notifications. In-VPC producers (app-core)
     // write over the free DynamoDB gateway endpoint; the Stream triggers the NON-VPC
     // whatsapp-dispatcher (the NAT-free bridge - no SQS interface endpoint). TTL ~30 days:
     // items skipped while the kill switch is off age out by design.
@@ -128,18 +112,6 @@ export class DataStack extends Stack {
       timeToLiveAttribute: "ttl",
       stream: dynamodb.StreamViewType.NEW_IMAGE,
       ...common,
-    });
-
-    // ADR-0022: passkey public keys we store + verify ourselves (Cognito no longer holds them).
-    // PK credentialId; byCustomerSub GSI lists a member's passkeys. Non-PII (sub + public key).
-    this.passkeyCredentialTable = new dynamodb.Table(this, "PasskeyCredential", {
-      partitionKey: { name: "credentialId", type: dynamodb.AttributeType.STRING },
-      ...common,
-    });
-    this.passkeyCredentialTable.addGlobalSecondaryIndex({
-      indexName: "byCustomerSub",
-      partitionKey: { name: "customerSub", type: dynamodb.AttributeType.STRING },
-      sortKey: { name: "createdAt", type: dynamodb.AttributeType.STRING },
     });
 
     // Dev OTP sink (auth.otpSink = "devSink", docs/dev-otp-sink.md): message-sender parks codes
@@ -187,7 +159,7 @@ export class DataStack extends Stack {
       removalPolicy,
     });
 
-    // --- One-shot migration runner (ADR-0012/0020) ---
+    // --- One-shot migration runner (ADR-0012/0006) ---
     // A NodejsFunction (so esbuild bundles the TS handler + pg/kysely) wrapped by triggers.Trigger,
     // NOT triggers.TriggerFunction (which is a plain lambda.Function and would not bundle). Connects
     // as wanthat_migrator via IAM auth (0003) - no Secrets Manager read, so the VPC keeps no
@@ -218,7 +190,7 @@ export class DataStack extends Stack {
         DB_HOST: this.cluster.clusterEndpoint.hostname,
         DB_PORT: String(this.cluster.clusterEndpoint.port),
         DB_NAME: "wanthat",
-        // Trust the Amazon RDS CA so the migrator's TLS connection to Aurora verifies (ADR-0020).
+        // Trust the Amazon RDS CA so the migrator's TLS connection to Aurora verifies (ADR-0006).
         ...RDS_CA_ENV,
         // Where the bundled .sql migrations live in the artifact (esbuild bundles only JS).
         ...MIGRATIONS_DIR_ENV,
@@ -237,5 +209,47 @@ export class DataStack extends Stack {
       // even though the Lambda itself has 5 (the migrator now retries the connect via waitForDb).
       timeout: Duration.minutes(5),
     });
+
+    // TRANSITIONAL (T8 teardown) - REMOVE in a follow-up once every env's api stack has redeployed.
+    // Same trap as the api-stack's retained AppAuth export: the currently-deployed api template
+    // still imports the deleted auth tables' name + ARN exports, and a single-pass
+    // `cdk deploy --all` updates `data` BEFORE `api`, so dropping these exports while in use rolls
+    // the data deploy back ("cannot delete export ... in use"). An in-use export's VALUE is as
+    // frozen as its existence, so each one is retained with the exact literal it exported while the
+    // table still existed (per env; captured from the last dev/prod Deploy run logs - nothing
+    // evaluates them once api redeploys without the imports). The follow-up PR drops this block.
+    const transitionalAuthTableExports: Record<WanthatEnv["name"], Record<string, string>> = {
+      dev: {
+        ExportsOutputRefAuthChallenge21A195103CDA51C6:
+          "wanthat-dev-data-AuthChallenge21A19510-13395QR3QNJOM",
+        ExportsOutputFnGetAttAuthChallenge21A19510Arn23793D65:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-AuthChallenge21A19510-13395QR3QNJOM",
+        ExportsOutputRefPasskeyCredential849E2127F7C0C649:
+          "wanthat-dev-data-PasskeyCredential849E2127-1M6GGW4K4KJIG",
+        ExportsOutputFnGetAttPasskeyCredential849E2127ArnD735496D:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-PasskeyCredential849E2127-1M6GGW4K4KJIG",
+        ExportsOutputRefPhoneVelocity457B1C8C1EA8A4AE:
+          "wanthat-dev-data-PhoneVelocity457B1C8C-13JA693RLTI5P",
+        ExportsOutputFnGetAttPhoneVelocity457B1C8CArnA937956E:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-PhoneVelocity457B1C8C-13JA693RLTI5P",
+      },
+      prod: {
+        ExportsOutputRefAuthChallenge21A195103CDA51C6:
+          "wanthat-prod-data-AuthChallenge21A19510-J6D3YKQGCIHC",
+        ExportsOutputFnGetAttAuthChallenge21A19510Arn23793D65:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-AuthChallenge21A19510-J6D3YKQGCIHC",
+        ExportsOutputRefPasskeyCredential849E2127F7C0C649:
+          "wanthat-prod-data-PasskeyCredential849E2127-1MLD5187AHXZ1",
+        ExportsOutputFnGetAttPasskeyCredential849E2127ArnD735496D:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-PasskeyCredential849E2127-1MLD5187AHXZ1",
+        ExportsOutputRefPhoneVelocity457B1C8C1EA8A4AE:
+          "wanthat-prod-data-PhoneVelocity457B1C8C-WYGKFL5E9DM1",
+        ExportsOutputFnGetAttPhoneVelocity457B1C8CArnA937956E:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-PhoneVelocity457B1C8C-WYGKFL5E9DM1",
+      },
+    };
+    for (const [output, value] of Object.entries(transitionalAuthTableExports[wanthatEnv.name])) {
+      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-data:${output}` });
+    }
   }
 }

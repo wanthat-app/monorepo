@@ -9,7 +9,7 @@ import {
 import { Spinner } from "../../ui/components";
 
 /**
- * OAuth callback for the employee Managed Login flow (ADR-0020 §two-pool): verify CSRF `state`,
+ * OAuth callback for the employee Managed Login flow (ADR-0006 §two-pool): verify CSRF `state`,
  * exchange the code for admin tokens, then route into the console. Follows the document direction
  * (RTL for Hebrew, the default) like the rest of the admin surface.
  */

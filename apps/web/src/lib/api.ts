@@ -1,27 +1,11 @@
-import type {
-  AttributionClaimResponse,
-  AuthConfigResponse,
-  AuthRefreshResponse,
-  AuthResendResponse,
-  AuthSession,
-  AuthSessionResponse,
-  AuthStartResponse,
-  AuthVerifyResponse,
-  CustomerProfile,
-  MessageLanguage,
-  OtpChannel,
-  PasskeyListResponse,
-  PasskeyLoginChallengeResponse,
-  PasskeyLoginVerifyResponse,
-  PasskeyRegisterOptionsResponse,
-  PasskeyRegisterVerifyResponse,
-} from "@wanthat/contracts";
 import { getConfig } from "./config";
 
 /**
- * Typed client for the app-api `/auth` + `/me` surface. Cookieless (ADR-0007): the access token is
- * passed as a Bearer header per call; nothing is stored in a cookie. The base URL comes from the
- * runtime config (`/config.json` on the deployed site; `.env.local` in local dev).
+ * Typed client for the app-api surface — wallet + links only since ADR-0006 (authentication
+ * and profile live entirely in the `user/` module, which talks to Cognito directly).
+ * Cookieless (ADR-0007): the access token is passed as a Bearer header per call; nothing is
+ * stored in a cookie. The base URL comes from the runtime config (`/config.json` on the
+ * deployed site; `.env.local` in local dev).
  */
 export class ApiError extends Error {
   constructor(
@@ -47,81 +31,6 @@ async function request<T>(
   if (!res.ok) throw new ApiError(res.status, (data.error as string) ?? "request_failed");
   return data as T;
 }
-
-/**
- * Fire-and-forget Aurora warm-up (GET /healthz/db). Called when a page that will need the DB soon
- * mounts (landing, auth): the scale-to-zero resume (~20s cold) then overlaps the human reading the
- * page / doing Face ID instead of running after the biometric. Never throws, never awaited for UX.
- */
-export function warmDb(): void {
-  void fetch(`${getConfig().apiUrl}/healthz/db`).catch(() => {});
-}
-
-export const authApi = {
-  // Channel availability projection (ADR-0023) — fetched pre-login to render the channel choice.
-  config: () => request<AuthConfigResponse>("/auth/config"),
-  start: (phone: string, channel: OtpChannel, locale?: MessageLanguage) =>
-    request<AuthStartResponse>("/auth/start", {
-      method: "POST",
-      body: { phone, channel, ...(locale ? { locale } : {}) },
-    }),
-  resend: (challengeId: string, channel: OtpChannel) =>
-    request<AuthResendResponse>("/auth/resend", { method: "POST", body: { challengeId, channel } }),
-  verify: (challengeId: string, code: string) =>
-    request<AuthVerifyResponse>("/auth/verify", { method: "POST", body: { challengeId, code } }),
-  // Resolve a verify ticket to a session: `authenticated` (login) or `registration_required` (new).
-  session: (registrationTicket: string) =>
-    request<AuthSessionResponse>("/auth/session", { method: "POST", body: { registrationTicket } }),
-  register: (body: {
-    registrationTicket: string;
-    firstName: string;
-    lastName: string;
-    email?: string;
-    locale?: string;
-  }) => request<AuthSession>("/auth/register", { method: "POST", body }),
-  refresh: (refreshToken: string) =>
-    request<AuthRefreshResponse>("/auth/refresh", { method: "POST", body: { refreshToken } }),
-  signout: (refreshToken: string) =>
-    request<{ ok: true }>("/auth/signout", { method: "POST", body: { refreshToken } }),
-  // The member's enrolled passkeys (summaries). Gates the home "set up Face ID" prompt: it shows
-  // only while this list is empty (user-level truth, unlike the per-device localStorage flag).
-  passkeyList: (token: string) => request<PasskeyListResponse>("/auth/passkey/list", { token }),
-  passkeyRegisterOptions: (token: string) =>
-    request<PasskeyRegisterOptionsResponse>("/auth/passkey/register/options", {
-      method: "POST",
-      body: {},
-      token,
-    }),
-  passkeyRegisterVerify: (challengeId: string, credential: unknown, token: string) =>
-    request<PasskeyRegisterVerifyResponse>("/auth/passkey/register/verify", {
-      method: "POST",
-      body: { challengeId, credential },
-      token,
-    }),
-  // Userless discoverable passkey login (ADR-0022): no phone/username, the server sends an empty
-  // allowCredentials so the OS shows the member's passkeys for this origin.
-  passkeyLoginChallenge: () =>
-    request<PasskeyLoginChallengeResponse>("/auth/passkey/login/challenge"),
-  passkeyLoginVerify: (challengeId: string, credential: unknown) =>
-    request<PasskeyLoginVerifyResponse>("/auth/passkey/login/verify", {
-      method: "POST",
-      body: { challengeId, credential },
-    }),
-};
-
-export const meApi = {
-  get: (token: string) => request<{ profile: CustomerProfile }>("/me", { token }),
-  update: (
-    token: string,
-    patch: Partial<Pick<CustomerProfile, "firstName" | "lastName" | "locale" | "email">>,
-  ) => request<{ profile: CustomerProfile }>("/me", { method: "PATCH", body: patch, token }),
-  claimAttribution: (token: string, guestIds: string[]) =>
-    request<AttributionClaimResponse>("/me/attribution/claim", {
-      method: "POST",
-      body: { guestIds },
-      token,
-    }),
-};
 
 /**
  * Wire types for the wallet surface: `Money.amountMinor` travels as a decimal string (JSON has

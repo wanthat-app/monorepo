@@ -28,7 +28,8 @@ export interface EdgeStackProps extends StackProps {
   readonly spaConfig: {
     readonly apiUrl: string;
     readonly adminApiUrl: string;
-    readonly managedLoginUrl: string;
+    /** Region of the Cognito customer pool — the SPA calls cognito-idp directly (ADR-0006). */
+    readonly cognitoRegion?: string;
     readonly userPoolClientId: string;
     readonly adminManagedLoginUrl: string;
     readonly adminPoolClientId: string;
@@ -36,7 +37,7 @@ export interface EdgeStackProps extends StackProps {
 }
 
 /**
- * EdgeStack — the public front door (ADR-0007, ADR-0016, ADR-0007, ADR-0019). **Must be us-east-1**:
+ * EdgeStack — the public front door (ADR-0007, ADR-0016, ADR-0007, ADR-0018). **Must be us-east-1**:
  * CloudFront's ACM cert and the `CLOUDFRONT`-scoped WAF web ACL are control-plane resources that
  * only live there (traffic still terminates at the edge near the user — Israel via the
  * PRICE_CLASS_200 footprint).
@@ -44,10 +45,10 @@ export interface EdgeStackProps extends StackProps {
  * One CloudFront distribution, two origins:
  * - **default** → a private S3 bucket (OAC) holding the Vite/React SPA (ADR-0016). SPA client-side
  *   routing is served by rewriting 403/404 to `/index.html`.
- * - **`/p/*`** → the landing HTTP API (ADR-0007/0018), the viral redirect hot path.
+ * - **`/p/*`** → the landing HTTP API (ADR-0007/0007), the viral redirect hot path.
  *
  * The app-api and admin APIs are **not** fronted here: the SPA is cookieless and calls them directly
- * with a Bearer JWT (ADR-0008/0016), so cross-origin is fine and there is no proxy hop (ADR-0019).
+ * with a Bearer JWT (ADR-0008/0016), so cross-origin is fine and there is no proxy hop (ADR-0018).
  *
  * Custom domain + Route 53 alias + DNS-validated cert are wired wherever the env carries a
  * `domainName`/`hostedZoneId` — the apex in prod (`wanthat.app`) or a subdomain in dev

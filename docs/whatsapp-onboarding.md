@@ -1,4 +1,4 @@
-# WhatsApp onboarding runbook (ADR-0023)
+# WhatsApp onboarding runbook (ADR-0019)
 
 The code ships kill-switched OFF; this out-of-band onboarding is the critical path to flipping it
 on. No redeploys anywhere below.

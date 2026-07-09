@@ -27,7 +27,7 @@ coverage/
 .env.*
 !.env.example
 *.pem
-# Exception: AWS's *public* RDS CA bundle is shipped in Lambda artifacts for Aurora TLS (ADR-0020).
+# Exception: AWS's *public* RDS CA bundle is shipped in Lambda artifacts for Aurora TLS (ADR-0006).
 !packages/db/certs/rds-global-bundle.pem
 
 # Logs
@@ -54,3 +54,4 @@ ds-bundle/
 .design-sync/sb-reference/
 apps/web/storybook-static/
 apps/web/dist/
+.claude/

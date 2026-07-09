@@ -1,19 +1,7 @@
-import { type AuthSession, normalizePhone, type OtpChannel } from "@wanthat/contracts";
+import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ApiError, authApi, warmDb } from "../../lib/api";
-import {
-  biometricLabelKey,
-  deviceHasPasskey,
-  enrollPasskey,
-  loginWithPasskey,
-  loginWithPasskeyAutofill,
-  passkeyAutofillSupported,
-  passkeyImmediateSupported,
-  passkeysSupported,
-} from "../../lib/passkey";
-import { hasStoredSession, useSession } from "../../lib/session";
 import {
   BackButton,
   Button,
@@ -26,17 +14,38 @@ import {
   Spinner,
   TextField,
 } from "../../ui";
+import {
+  biometricLabelKey,
+  CognitoError,
+  canLoginWithPasskey,
+  enrollPasskey,
+  hasStoredSession,
+  loginWithOtp,
+  loginWithPasskey,
+  type OtpLoginFlow,
+  passkeysSupported,
+  resumeSignUp,
+  type SignUpFlow,
+  signUpWithOtp,
+  useSession,
+} from "../../user";
 
-type Step = "phone" | "otp" | "register" | "face";
+type Step = "phone" | "loginOtp" | "register" | "signupOtp" | "face";
 
 const LOCALE_BY_LANG: Record<string, string> = { he: "he-IL", en: "en-US" };
+// Cognito code lengths: USER_AUTH SMS_OTP sign-in codes are 8 digits; sign-up confirmation
+// codes are 6 (they come from the verification-message pipeline, not the OTP challenge).
+const LOGIN_CODE_LENGTH = 8;
+const SIGNUP_CODE_LENGTH = 6;
 
 /**
- * UC1 Onboard + UC2 Sign-in. One unified phone-OTP flow: a phone that has no profile yet branches to
- * the registration step (name + email + language + Terms), then a Face ID enrolment step; a known
- * phone signs straight in. Wherever this browser supports passkeys (ADR-0022), a userless
- * discoverable passkey login button is offered up front, above the phone form — the OS shows a
- * modal picker of the member's passkeys for this origin; OTP is always the fallback.
+ * UC1 Onboard + UC2 Sign-in — pure consumer of the user module (ADR-0006: the module talks
+ * to Cognito directly; no backend participates in authentication). One unified phone-first
+ * flow: the phone is tried as a sign-in and Cognito's user-not-found signal branches to
+ * registration, where the whole profile (name + email + language + OTP channel + Terms)
+ * rides the SignUp call itself, then the confirmation code and a Face ID enrolment step.
+ * Where passkeys are supported AND a remembered phone exists, passkey login is auto-armed
+ * on focus and offered as a button (userless login is waived — ADR-0006).
  */
 // Mock affiliate store — where the acquisition flow lands after auth (the real per-product affiliate
 // redirect lands with the full-landing slice). A hardcoded constant, so `?ref` can never open-redirect.
@@ -46,7 +55,7 @@ export function AuthPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { signIn, accessToken, customer, loading } = useSession();
+  const { status, loading } = useSession();
 
   // A `?ref={id}` means the member came from a referral landing — on success send them straight to the
   // store (the acquisition destination), a full navigation out of the SPA. A plain login goes home.
@@ -59,8 +68,8 @@ export function AuthPage() {
   // Already logged in (e.g. a returning member the referral landing routed here) → don't ask them to
   // authenticate again; go straight on once the session has rehydrated.
   useEffect(() => {
-    if (!loading && customer) complete();
-  }, [loading, customer, complete]);
+    if (status === "signedIn") complete();
+  }, [status, complete]);
 
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
@@ -69,106 +78,52 @@ export function AuthPage() {
   const [lastName, setLastName] = useState("");
   const [email, setEmail] = useState("");
   const [agreed, setAgreed] = useState(false);
-  const [challengeId, setChallengeId] = useState("");
-  const [ticket, setTicket] = useState("");
+  // OTP channel (ADR-0019): a sticky signup-time preference riding custom:otpChannel. The
+  // message-sender is the enforcement point (kill switches + fallback), so the UI only
+  // offers the choice — there is no availability endpoint to consult any more.
+  const [channel, setChannel] = useState<OtpChannel>("whatsapp");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | undefined>();
 
-  // Channel choice (ADR-0023): the UI owns the default and the recovery path. Availability comes
-  // from /auth/config; until (or unless) it loads, sms-only keeps the flow working.
-  const [channels, setChannels] = useState<OtpChannel[]>(["sms"]);
-  const [channel, setChannel] = useState<OtpChannel>("sms");
-  const [errorCode, setErrorCode] = useState<string | undefined>();
+  // The pending Cognito ceremonies (module flow objects) — refs, not state: they carry no UI.
+  const loginFlow = useRef<OtpLoginFlow | null>(null);
+  const signUpFlow = useRef<SignUpFlow | null>(null);
 
   const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
-
   const armed = useRef(false);
 
-  useEffect(() => {
-    // Kick the Aurora resume early — every successful auth ends in /auth/session (Aurora), so the
-    // scale-to-zero resume overlaps the member typing/biometric instead of the post-auth wait.
-    warmDb();
-    void authApi
-      .config()
-      .then((cfg) => {
-        setChannels(cfg.channels);
-        if (cfg.defaultChannel) setChannel(cfg.defaultChannel);
-      })
-      .catch(() => {}); // advisory only — the server re-checks on /auth/start
-  }, []);
-
-  // Automatic passkey login on load (ADR-0022). Two regimes, chosen once per mount:
-  //  - Immediate mode supported (Chrome 149+) → the ZERO-STORAGE path: on the member's first
-  //    interaction fire a `uiMode:"immediate"` get() — the sheet pops iff a locally-available
-  //    passkey exists (including ones synced from another device) and rejects silently otherwise,
-  //    so a brand-new visitor sees nothing. On rejection we fall back to the autofill offer.
-  //  - Otherwise (Safari, Firefox) → the per-device localStorage flag decides: a returning passkey
-  //    device gets an AUTOMATIC modal prompt on load (iOS 16 spends its one gesture-free get()
-  //    here; iOS 17.4+ has no gesture limit); a first-time device gets the gentle conditional-UI
-  //    autofill, which sets the flag once used.
-  // The manual button below is ALWAYS rendered where passkeys are supported — it is the affordance
-  // for synced-but-never-used-here passkeys that no automatic regime can discover.
-  // The passkey ceremony must be the first async op on load (Safari allows only one), so nothing is
-  // awaited before it. Guarded so it runs exactly once.
+  // Automatic passkey login (ADR-0006): armed once per mount, ONLY when this device remembers
+  // a phone (Cognito's WEB_AUTHN challenge is username-gated — userless login is waived). The
+  // module waits for document focus internally (iOS rejects an unfocused ceremony), so this
+  // fires right after load or at worst on the member's first tap. Cancel/failure quietly
+  // leaves the OTP form in charge.
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
-    // A returning member with a stored session is being rehydrated — the effect above will forward
-    // them; don't pop a passkey prompt at someone who's already logged in.
+    // A returning member with a stored session is being rehydrated — the effect above will
+    // forward them; don't pop a passkey prompt at someone who's already logged in.
     if (hasStoredSession()) return;
-    if (!passkeysSupported()) return;
-    const loginVia = async (fn: () => Promise<AuthSession>) => {
-      const session = await fn();
-      signIn(session);
-      complete();
-    };
-    const armAutofill = async () => {
-      if (!(await passkeyAutofillSupported())) return;
-      try {
-        await loginVia(loginWithPasskeyAutofill);
-      } catch {
-        // aborted / not used — stay on the form; OTP or the manual button continues.
-      }
-    };
-    void (async () => {
-      if (await passkeyImmediateSupported()) {
-        try {
-          await loginVia(() => loginWithPasskey({ mode: "immediate" }));
-        } catch (err) {
-          // AbortError = another ceremony (manual button, enrolment) took over — get out of its
-          // way. Anything else = no local passkey / dismissed → re-offer via autofill.
-          if ((err as Error | null)?.name !== "AbortError") void armAutofill();
-        }
-        return;
-      }
-      if (deviceHasPasskey()) {
-        try {
-          await loginVia(() => loginWithPasskey()); // modal; auto-prompts on load
-        } catch {
-          // cancelled / no passkey — OTP and the manual button remain.
-        }
-        return;
-      }
-      void armAutofill();
-    })();
-  }, [complete, signIn]);
+    if (!passkeysSupported() || !canLoginWithPasskey()) return;
+    loginWithPasskey()
+      .then(complete)
+      .catch(() => {
+        // cancelled / no passkey — OTP and the manual button remain.
+      });
+  }, [complete]);
 
   // The country affordance is IL (+972); the field carries the local part. Normalize + validate to
-  // E.164 (null until it's a valid number); the API re-normalizes defensively. A country picker would
-  // just pass a different default here.
+  // E.164 (null until it's a valid number); Cognito re-validates the attribute server-side.
   const e164 = normalizePhone(phone, "IL");
   const lang = i18n.language.startsWith("he") ? "he" : "en";
 
   const run = async (fn: () => Promise<void>) => {
     setBusy(true);
     setError(undefined);
-    setErrorCode(undefined);
     try {
       await fn();
     } catch (err) {
-      setErrorCode(err instanceof ApiError ? err.code : undefined);
       setError(
-        err instanceof ApiError
+        err instanceof CognitoError
           ? t(`auth.errors.${err.code}`, t("auth.errors.generic"))
           : t("auth.errors.generic"),
       );
@@ -177,49 +132,82 @@ export function AuthPage() {
     }
   };
 
-  const goHome = () => complete();
+  const goToOtp = (next: Extract<Step, "loginOtp" | "signupOtp">) => {
+    setCode("");
+    setStep(next);
+  };
 
-  const onStart = (ch: OtpChannel = channel) =>
+  // The unified branch (ADR-0006): try the phone as a sign-in; user-not-found → registration;
+  // an abandoned sign-up (unconfirmed phone) → re-send the confirmation code and resume it.
+  const onSubmitPhone = () =>
     run(async () => {
       if (!e164) return; // guarded by the disabled button, but narrows the type
-      const res = await authApi.start(e164, ch, lang);
-      setChannel(res.channel);
-      setChallengeId(res.challengeId);
-      setStep("otp");
+      try {
+        loginFlow.current = await loginWithOtp(e164);
+        goToOtp("loginOtp");
+      } catch (err) {
+        if (err instanceof CognitoError && err.code === "user_not_found") {
+          setStep("register");
+          return;
+        }
+        if (err instanceof CognitoError && err.code === "user_not_confirmed") {
+          signUpFlow.current = await resumeSignUp(e164);
+          goToOtp("signupOtp");
+          return;
+        }
+        throw err;
+      }
     });
 
   const onPasskeyLogin = () =>
     run(async () => {
-      const session = await loginWithPasskey();
-      signIn(session);
+      await loginWithPasskey();
       complete();
     });
 
-  const onVerify = () =>
+  const onVerifyLogin = () =>
     run(async () => {
-      // /auth/verify (app-auth) only hands back a ticket; /auth/session (app-core) resolves it to a
-      // login or a registration prompt, since that decision needs Aurora (ADR-0020).
-      const { registrationTicket } = await authApi.verify(challengeId, code);
-      const res = await authApi.session(registrationTicket);
-      if (res.status === "authenticated") {
-        signIn(res);
-        complete();
-      } else {
-        setTicket(res.registrationTicket);
-        setStep("register");
-      }
+      await loginFlow.current?.submit(code);
+      complete();
     });
 
+  // Registration IS SignUp (ADR-0006): the profile rides UserAttributes; Cognito then sends
+  // the confirmation code via the chosen channel.
   const onRegister = () =>
     run(async () => {
-      const session = await authApi.register({
-        registrationTicket: ticket,
-        firstName,
-        lastName,
-        ...(email ? { email } : {}),
-        locale: LOCALE_BY_LANG[lang],
-      });
-      signIn(session);
+      if (!e164) return;
+      try {
+        signUpFlow.current = await signUpWithOtp({
+          phone: e164,
+          firstName,
+          lastName,
+          ...(email ? { email } : {}),
+          locale: LOCALE_BY_LANG[lang] ?? "he-IL",
+          otpChannel: channel,
+        });
+      } catch (err) {
+        // A prior SignUp for this phone already exists (e.g. the member went Back and
+        // resubmitted): the account is sitting UNCONFIRMED — resume its confirmation
+        // rather than dead-ending on "already registered".
+        if (err instanceof CognitoError && err.code === "phone_exists") {
+          signUpFlow.current = await resumeSignUp(e164);
+        } else {
+          throw err;
+        }
+      }
+      goToOtp("signupOtp");
+    });
+
+  const onVerifySignup = () =>
+    run(async () => {
+      const outcome = await signUpFlow.current?.confirm(code);
+      if (outcome === "loginRequired") {
+        // Confirmed, but Cognito declined the seamless continuation — fall back to a normal
+        // OTP sign-in (sends a fresh code).
+        if (e164) loginFlow.current = await loginWithOtp(e164);
+        goToOtp("loginOtp");
+        return;
+      }
       // Offer Face ID enrolment as its own step (only where passkeys are possible), then land home.
       if (passkeysSupported()) setStep("face");
       else complete();
@@ -227,10 +215,8 @@ export function AuthPage() {
 
   const onEnableFace = () =>
     run(async () => {
-      const token = accessToken();
-      // A successful enrolment marks the device inside the lib, so the next visit auto-prompts.
-      if (token) await enrollPasskey(token);
-      goHome();
+      await enrollPasskey();
+      complete();
     });
 
   // Rehydrating a returning member's session — show a spinner (not the login form) until it resolves,
@@ -257,12 +243,10 @@ export function AuthPage() {
               <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
               <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
             </div>
-            {/* Manual passkey button — ALWAYS visible where passkeys are supported. The automatic
-                regimes can't discover a passkey that was enrolled on another device (e.g. iPhone →
-                iCloud → this Mac) on browsers without immediate mode, and a cancelled auto-prompt
-                also lands here; one tap opens the OS picker, which handles the no-passkey case
-                (cross-device QR) gracefully. */}
-            {passkeysSupported() && (
+            {/* Manual passkey button — only where passkeys are supported AND a phone is
+                remembered (the native WEB_AUTHN challenge is username-gated, ADR-0006). A
+                cancelled auto-prompt lands here; one tap re-opens the OS sheet. */}
+            {passkeysSupported() && canLoginWithPasskey() && (
               <Button onClick={onPasskeyLogin} loading={busy}>
                 {t("auth.passkeyCta", { label: bioLabel })}
               </Button>
@@ -280,9 +264,7 @@ export function AuthPage() {
                   name="phone"
                   type="tel"
                   inputMode="tel"
-                  // `webauthn` makes this field the conditional-UI autofill target: focusing it surfaces
-                  // the member's passkeys for this origin (ADR-0022 Slice 2), armed in the effect above.
-                  autoComplete="tel webauthn"
+                  autoComplete="tel"
                   placeholder="50 123 4567"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -293,80 +275,43 @@ export function AuthPage() {
               </div>
               {error ? <span className="mt-1 block text-sm text-rejected">{error}</span> : null}
             </label>
-            {channels.length > 1 && (
-              <div>
-                <span className="mb-1.5 block text-sm font-medium text-muted">
-                  {t("auth.channelLabel")}
-                </span>
-                <Segmented
-                  value={channel}
-                  onChange={(value) => setChannel(value as OtpChannel)}
-                  options={channels.map((ch) => ({ value: ch, label: t(`auth.channel.${ch}`) }))}
-                />
-              </div>
-            )}
-            <Button onClick={() => onStart()} loading={busy} disabled={!e164}>
+            <Button onClick={onSubmitPhone} loading={busy} disabled={!e164}>
               {t("auth.continue")}
             </Button>
-            {errorCode &&
-              ["send_failed", "channel_disabled"].includes(errorCode) &&
-              channel === "whatsapp" &&
-              channels.includes("sms") && (
-                <Button variant="ghost" onClick={() => onStart("sms")}>
-                  {t("auth.trySms")}
-                </Button>
-              )}
           </>
         )}
 
-        {step === "otp" && (
+        {step === "loginOtp" && (
           <>
             <div>
               <BackButton onClick={() => setStep("phone")} label={t("auth.back")} />
             </div>
-            <p className="text-[15px] leading-normal text-muted">{t(`auth.sentVia.${channel}`)}</p>
+            <p className="text-[15px] leading-normal text-muted">{t("auth.sentCode")}</p>
             <OtpInput
               name="code"
               label={t("auth.codeLabel")}
               value={code}
               onChange={setCode}
               error={error}
-              maxLength={8}
+              maxLength={LOGIN_CODE_LENGTH}
             />
-            <Button onClick={onVerify} loading={busy} disabled={code.length !== 8}>
+            <Button
+              onClick={onVerifyLogin}
+              loading={busy}
+              disabled={code.length !== LOGIN_CODE_LENGTH}
+            >
               {t("auth.verify")}
             </Button>
-            <Button
-              variant="ghost"
-              onClick={() =>
-                run(async () => {
-                  const r = await authApi.resend(challengeId, channel);
-                  setChannel(r.channel);
-                })
-              }
-            >
+            <Button variant="ghost" onClick={() => run(async () => loginFlow.current?.resend())}>
               {t("auth.resend")}
             </Button>
-            {channel === "whatsapp" && channels.includes("sms") && (
-              <Button
-                variant="ghost"
-                onClick={() =>
-                  run(async () => {
-                    const r = await authApi.resend(challengeId, "sms");
-                    setChannel(r.channel);
-                  })
-                }
-              >
-                {t("auth.resendSms")}
-              </Button>
-            )}
           </>
         )}
 
         {step === "register" && (
           <>
             <div>
-              <BackButton onClick={() => setStep("otp")} label={t("auth.back")} />
+              <BackButton onClick={() => setStep("phone")} label={t("auth.back")} />
             </div>
             <div className="flex flex-col gap-1">
               <h1 className="text-[27px] tracking-[-0.03em]">{t("auth.registerTitle")}</h1>
@@ -407,6 +352,19 @@ export function AuthPage() {
                 ]}
               />
             </div>
+            <div>
+              <span className="mb-1.5 block text-sm font-medium text-muted">
+                {t("auth.channelLabel")}
+              </span>
+              <Segmented
+                value={channel}
+                onChange={(value) => setChannel(value as OtpChannel)}
+                options={[
+                  { value: "whatsapp", label: t("auth.channel.whatsapp") },
+                  { value: "sms", label: t("auth.channel.sms") },
+                ]}
+              />
+            </div>
             <Checkbox id="agree-terms" checked={agreed} onChange={setAgreed}>
               {t("auth.agreePre")}{" "}
               <a
@@ -433,6 +391,33 @@ export function AuthPage() {
               disabled={!firstName || !lastName || !agreed}
             >
               {t("auth.continue")}
+            </Button>
+          </>
+        )}
+
+        {step === "signupOtp" && (
+          <>
+            <div>
+              <BackButton onClick={() => setStep("register")} label={t("auth.back")} />
+            </div>
+            <p className="text-[15px] leading-normal text-muted">{t(`auth.sentVia.${channel}`)}</p>
+            <OtpInput
+              name="code"
+              label={t("auth.codeLabel")}
+              value={code}
+              onChange={setCode}
+              error={error}
+              maxLength={SIGNUP_CODE_LENGTH}
+            />
+            <Button
+              onClick={onVerifySignup}
+              loading={busy}
+              disabled={code.length !== SIGNUP_CODE_LENGTH}
+            >
+              {t("auth.verify")}
+            </Button>
+            <Button variant="ghost" onClick={() => run(async () => signUpFlow.current?.resend())}>
+              {t("auth.resend")}
             </Button>
           </>
         )}
@@ -467,7 +452,7 @@ export function AuthPage() {
               <Button onClick={onEnableFace} loading={busy}>
                 {t("auth.face.enable")}
               </Button>
-              <Button variant="ghost" onClick={goHome}>
+              <Button variant="ghost" onClick={complete}>
                 {t("auth.face.skip")}
               </Button>
             </div>

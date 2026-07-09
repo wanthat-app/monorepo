@@ -14,7 +14,7 @@ export interface DbConfig {
   ssl?: boolean;
   /**
    * Static password — the master-user path used by the one-shot migrator, which runs **before** the
-   * IAM login roles exist (0001 creates them), so it cannot authenticate via IAM (ADR-0020). When
+   * IAM login roles exist (0001 creates them), so it cannot authenticate via IAM (ADR-0006). When
    * set, it replaces the SigV4 token provider. Application functions never set this; they use IAM.
    */
   password?: string;

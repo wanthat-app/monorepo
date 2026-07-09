@@ -3,7 +3,7 @@
 - **Status:** Accepted
 - **Date:** 2026-06-28
 - **Related:** [ADR-0002](0002-app-compute-topology.md) (compute), [ADR-0003](0003-datastore-aurora-and-dynamodb.md) (datastore), [ADR-0009](0009-conversion-ingestion-poller.md) (poller)
-- **Refined by:** [ADR-0020](0020-auth-foundation.md) (adds one in-VPC `cognito-idp` interface endpoint for `app-api`)
+- **Refined by:** [ADR-0006](0006-cognito-native-auth-and-pii.md) (auth is browser-to-Cognito; the app edge keeps only the `links` module)
 
 ## Context
 
@@ -42,7 +42,7 @@ outside it. Retailer egress happens only from non-VPC functions. No NAT Gateway.
 | Function | In VPC? | Reaches | Internet egress |
 |---|---|---|---|
 | Landing | No | DynamoDB (`recommendation_id→url`) | none |
-| App edge (`app-auth`, incl. the `links` module — ADR-0020 split) | No | Cognito, DynamoDB, Retailer Proxy (Invoke) | none |
+| App edge (`app-links`, the `links` module — ADR-0006) | No | DynamoDB, Retailer Proxy (Invoke) | none |
 | Core / admin (`app-core`, `admin-api`) | Yes | Aurora, DynamoDB (gateway endpoint) | none |
 | **Retailer Proxy** | No | retailer API, Secrets Mgr, DynamoDB | yes (direct) |
 | Poller **writer** | Yes | Aurora only | none |
@@ -59,7 +59,7 @@ cannot reach the Invoke API without a paid interface endpoint:
   `guest_attribution` in DynamoDB) `→ invokes in-VPC writer` (Aurora ledger + audit). The
   non-VPC side initiates → **no interface endpoint, $0**.
 - **Link generation** — touches **no Aurora** (products + recommendations are DynamoDB, ADR-0003),
-  so the `links` module runs on the **non-VPC app edge** (`app-auth`, the ADR-0020 split's
+  so the `links` module runs on the **non-VPC app edge** (`app-links`, ADR-0006's
   non-VPC half) and invokes `Retailer Proxy.generateLink` **synchronously** (the user waits for
   the affiliate URL) as a free non-VPC→Lambda call — **no interface endpoint, $0**, the same
   asymmetry the poll flow uses. The proxy mints/reuses the product-level affiliate URL and

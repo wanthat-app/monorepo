@@ -8,7 +8,7 @@ export interface NetworkStackProps extends StackProps {
 }
 
 /**
- * NetworkStack — VPC + subnets + security groups (ADR-0003/0004/0020).
+ * NetworkStack — VPC + subnets + security groups (ADR-0003/0004/0006).
  *
  * The only reason this app needs a VPC is Aurora: the relational store for PII + ledger runs in a
  * VPC, and the functions that talk to it (Lambdalith, admin, poller-writer) attach there to reach it
@@ -17,9 +17,9 @@ export interface NetworkStackProps extends StackProps {
  *
  * NAT-free (ADR-0004): `natGateways: 0`, a single PRIVATE_ISOLATED subnet group. DynamoDB is reached
  * through a free gateway endpoint. NO interface endpoints (they bill hourly per AZ): `cognito-idp`
- * went with the ADR-0020 split, `secretsmanager` with the secretless in-VPC auth, and the brief
+ * went with the ADR-0006 split, `secretsmanager` with the secretless in-VPC auth, and the brief
  * `lambda` endpoint (PR #110's link generation) went when the links module moved to the non-VPC
- * `app-auth` edge — a non-VPC function invokes the retailer-proxy for free, so nothing in the VPC
+ * `app-links` edge — a non-VPC function invokes the retailer-proxy for free, so nothing in the VPC
  * needs the Lambda Invoke API. Everything else stays out of the VPC.
  *
  * Two SGs split the trust boundary: `lambdaSg` (in-VPC functions) is allowed to reach `auroraSg`
@@ -46,7 +46,7 @@ export class NetworkStack extends Stack {
       // DO NOT edit this string: an EC2 SG description is immutable, so any change forces a REPLACEMENT
       // of the SG, which changes its exported GroupId - and that export is imported by the api/admin/
       // data stacks, so CloudFormation blocks the update ("Cannot update export ... as it is in use").
-      // It still reads "app-api" (now the split app-auth/app-core) deliberately; the name is cosmetic.
+      // It still reads "app-api" (now the split app-links/app-core) deliberately; the name is cosmetic.
       description:
         "In-VPC Lambdas (app-api, admin, poller-writer, migrator) - egress to Aurora + endpoints",
       allowAllOutbound: true,
@@ -65,10 +65,10 @@ export class NetworkStack extends Stack {
     });
 
     // NO interface endpoints (they bill hourly per AZ). History: `cognito-idp` went with the
-    // ADR-0020 split (app-core stopped calling Cognito); `secretsmanager` became unnecessary once
+    // ADR-0006 split (app-core stopped calling Cognito); `secretsmanager` became unnecessary once
     // nothing in the VPC read secrets (Ed25519 PUBLIC keys in plain env + IAM DB auth migrator);
     // and the short-lived `lambda` endpoint (PR #110 link generation) went when the links module
-    // moved to the non-VPC app-auth edge - the sync retailer-proxy invoke is free from there. The
+    // moved to the non-VPC app-links edge - the sync retailer-proxy invoke is free from there. The
     // in-VPC functions' only AWS dependencies are Aurora (in-VPC) + DynamoDB (free gateway endpoint).
   }
 }

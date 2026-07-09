@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 /**
- * Message-type registry (ADR-0023): logical type -> Meta template name, category, and variable
+ * Message-type registry (ADR-0019): logical type -> Meta template name, category, and variable
  * schema. Code is the source of truth for WHAT we send; Meta is the approval authority — the
  * template text submitted for approval lives in docs/whatsapp-onboarding.md and must stay in sync
  * with the components built here.

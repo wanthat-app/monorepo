@@ -11,13 +11,17 @@
  * fallback, so a developer can still point localhost at a deployed environment via `.env.local`.
  */
 export interface RuntimeConfig {
-  /** app-api base URL (identity + links + wallet: /auth, /me). */
+  /** app-api base URL (links + wallet). */
   apiUrl: string;
   /** admin-api base URL (admin surface). */
   adminApiUrl: string;
-  /** Customer pool Managed Login (hosted UI) base URL — discoverable passkey OAuth redirect. */
-  managedLoginUrl: string;
-  /** Customer pool SPA app client id (OAuth client_id). */
+  /**
+   * Region of the Cognito customer pool — the SPA calls `cognito-idp.<region>.amazonaws.com`
+   * directly for every auth ceremony (ADR-0006). Defaults to il-central-1 (the only deployed
+   * region); config.json may override if that ever changes.
+   */
+  cognitoRegion: string;
+  /** Customer pool SPA app client id — the public client for SignUp/InitiateAuth (ADR-0006). */
   userPoolClientId: string;
   /** Employee pool Managed Login (hosted UI) base URL — admin OAuth redirect. */
   adminManagedLoginUrl: string;
@@ -28,7 +32,7 @@ export interface RuntimeConfig {
 const fromEnv = (): RuntimeConfig => ({
   apiUrl: import.meta.env.VITE_API_URL ?? "",
   adminApiUrl: import.meta.env.VITE_ADMIN_API_URL ?? "",
-  managedLoginUrl: import.meta.env.VITE_MANAGED_LOGIN_URL ?? "",
+  cognitoRegion: import.meta.env.VITE_COGNITO_REGION ?? "il-central-1",
   userPoolClientId: import.meta.env.VITE_USER_POOL_CLIENT_ID ?? "",
   adminManagedLoginUrl: import.meta.env.VITE_ADMIN_MANAGED_LOGIN_URL ?? "",
   adminPoolClientId: import.meta.env.VITE_ADMIN_POOL_CLIENT_ID ?? "",

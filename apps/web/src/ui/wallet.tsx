@@ -892,12 +892,15 @@ export function TopNav({
   createLabel,
   profileInitial,
   onProfile,
+  profileSlot,
 }: {
   links: { key: string; label: string; active?: boolean; onClick?: () => void }[];
   onCreate?: () => void;
   createLabel?: string;
   profileInitial?: string;
   onProfile?: () => void;
+  /** Rendered in the profile-chip position instead of the built-in chip (e.g. UserChip). */
+  profileSlot?: ReactNode;
 }) {
   return (
     <nav className="flex items-center gap-2 border-b border-line bg-surface px-7 py-3">
@@ -925,7 +928,9 @@ export function TopNav({
           + {createLabel}
         </button>
       ) : null}
-      {profileInitial ? (
+      {profileSlot ? (
+        <span className={createLabel ? "ms-1.5" : "ms-auto"}>{profileSlot}</span>
+      ) : profileInitial ? (
         <span className={createLabel ? "ms-1.5" : "ms-auto"}>
           <ProfileChip initial={profileInitial} onClick={onProfile} size={36} />
         </span>

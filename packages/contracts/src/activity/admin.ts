@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { OtpChannel } from "../identity/auth";
+import { OtpChannel } from "../identity/channel";
 
 /**
  * Admin activity feed (GET /admin/activity) — one paged list, newest first, over the Aurora

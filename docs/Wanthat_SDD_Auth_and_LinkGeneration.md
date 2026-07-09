@@ -2,11 +2,11 @@
 ### MVP Feature Set: Registration & Sign-in · Link Generation · Consumer Redirect & Onboarding · Two-sided Wallet · Admin Dashboard
 
 > **Authoritative-source note.** This SDD is the original detailed design; the **[`../adrs/`](../adrs)
-> (ADR-0001–0009) now supersede it where they differ** and are authoritative. Key supersessions:
+> now supersede it where they differ** and are authoritative. Key supersessions:
 > - **Compute (ADR-0002):** four Lambda units (Lambdalith + admin + landing + poller), not a single modular monolith.
-> - **Datastore (ADR-0003):** polyglot — Aurora (PII + ledger) + DynamoDB (`recommendation_id→url`, `guest_attribution`); **no RDS Proxy**, IAM database auth.
+> - **Datastore (ADR-0003, amended by ADR-0006):** polyglot — Aurora holds **money only** (ledger + audit) + DynamoDB (`recommendation_id→url`, `guest_attribution`); **no RDS Proxy**, IAM database auth.
 > - **Network (ADR-0004):** NAT-free; only Aurora-touching functions are in-VPC; retailer calls go through non-VPC fetchers.
-> - **Identity (ADR-0006):** SMS OTP + passkeys; WhatsApp deferred; layered SMS kill switch.
+> - **Identity (ADR-0006):** **Cognito-native** — the browser talks to Cognito directly (`SignUp`, SMS-OTP `USER_AUTH`, native `WEB_AUTHN` passkeys with a remembered phone); **all customer PII lives in Cognito user attributes** (no Aurora `customer` table); profile = ID-token claims; no `/auth/*` backend routes. OTP channel WhatsApp-default / SMS with kill switches (ADR-0019).
 > - **Landing (ADR-0007):** resolves `recommendation_id` in DynamoDB (not Postgres) on a non-VPC Lambda.
 > - **Attribution (ADR-0008):** via injected `custom_parameters` (`ref`/`c`/`g`) — **no `click_id` click-log lookup**.
 > - **Conversion (ADR-0009):** scheduled `order.listbyindex` reconciliation **poller**, not a `conversion-webhook` postback.
@@ -157,7 +157,7 @@ Each decision is driven by a requirement from §4, not assumed. **Each is a revi
 | D8 | Audit store | Append-only, write-once **hash-chained Postgres table** (no UPDATE/DELETE grants) | Payment-flow auditing (F4-R7, §14) | Medium | Need cryptographic verifiability → QLDB |
 | D9 | Two-sided split | Commission split server-side from gross; consumer share funded from margin | F4-R5; PRD §8.2 | Low | — |
 
-> Decided (§18 #1): **Cognito** — we accept deeper AWS lock-in for speed and native OTP/JWT/passkey/group support; the identity/profile separation (§7.1) keeps app data portable if we ever switch.
+> Decided (§18 #1): **Cognito** — we accept deeper AWS lock-in for speed and native OTP/JWT/passkey support. Since ADR-0006 Cognito is also the **PII system of record** (§7.1), so the old identity/profile-separation portability hedge is consciously given up.
 
 ### 5.1 Operational cost estimate (monthly, USD)
 
@@ -198,98 +198,169 @@ Per the optimization-priority assumption (§3), each cost driver is modeled at t
         │ /api/*                                 │ /p/*
         ▼                                        ▼
    API Gateway (HTTP API) ──jwt──► Cognito   Landing service (Lambda)
-        │   (groups: user, admin)   User Pool      │  • resolve recommendation_id
-        ├─ /auth/*   ─► identity module             │  • member → auto-redirect
-        ├─ /links    ─► links module ─► AliExpress  │  • anon → OG landing page
-        ├─ /wallet   ─► wallet module      Affiliate │  • on go: click → stream, 301 + SubID
+        │  (auth: browser ↔ Cognito directly —       │  • resolve recommendation_id
+        │   no /auth/* routes; PII in Cognito        │  • member → auto-redirect
+        │   user attributes — ADR-0006)              │  • anon → OG landing page
+        ├─ /links    ─► links module ─► AliExpress   │  • on go: click → stream, 301 + SubID
+        ├─ /wallet   ─► wallet module      Affiliate │
         └─ /admin/*  ─► admin module (admin only)    │
               │                │                     ▼
               ▼                ▼               Kinesis Firehose ─► S3 (clicks/conv)
         PostgreSQL  ◄── Secrets Manager              │
-        (customer, link,     (AliExpress creds)      │ scheduled pull (no postback)
-         referral, ledger,                           ▼
+        (money only: link,   (AliExpress creds)      │ scheduled pull (no postback)
+         ledger — keyed by sub,                      ▼
          conversion, audit)  ◄──────────  conversion poller (EventBridge → listOrders)
                                           • resolve custom_parameters (ref/c/g) → referrer/consumer (no click log)
                                           • append event-log ledger (order_id, kind, status)
                                           • write audit log
 ```
 
-The app API is a modular monolith (`identity`, `links`, `wallet`, `admin`). The **landing service** and the **scheduled conversion poller** (ADR-0009 — not a webhook) are separated because they are public/bursty and latency- or schedule-driven (D1, D7). All money mutations flow through the ledger and the audit log (§10, §14).
+The app API is a modular monolith (`links`, `wallet`, `admin` — the former `identity` module is deleted: authentication is browser↔Cognito, ADR-0006). The **landing service** and the **scheduled conversion poller** (ADR-0009 — not a webhook) are separated because they are public/bursty and latency- or schedule-driven (D1, D7). All money mutations flow through the ledger and the audit log (§10, §14).
 
 ---
 
 ## 7. Feature 1 — Registration & Sign-in
 
-*(Requirements: §4.1)*
+*(Requirements: §4.1 — this section is rewritten to the **ADR-0006 Cognito-native design**: the
+browser talks to Cognito directly, and all customer PII lives in Cognito user attributes. The
+target-state sequence diagram is [`auth-flows-customer.md`](./auth-flows-customer.md).)*
 
 ### 7.1 Design
 
-**Identity provider.** A Cognito User Pool is the system of record for credentials/verification. Phone is the primary username; email a secondary attribute. Authentication is **passwordless OTP** (Custom Auth challenge), matching "no password for MVP." Cognito groups model roles: `user` (default) and `admin` (Feature 5). Cognito handles OTP generation, expiry, throttling, lockout.
+**Identity provider AND PII system of record.** A Cognito User Pool is the system of record for
+credentials, verification, **and the customer profile**. Phone is the username (sign-in alias);
+the profile lives in user attributes — `given_name`, `family_name`, `email`, `locale`, plus
+`custom:otpChannel`. Authentication is **passwordless OTP** via the choice-based `USER_AUTH`
+flow (`PREFERRED_CHALLENGE=SMS_OTP`), not a custom-auth Lambda ceremony. There is **no Aurora
+`customer` table**: the profile the SPA displays is the **ID-token claims**, decoded locally;
+edits go through `UpdateUserAttributes` (+ `VerifyUserAttribute` for email). Cognito handles OTP
+generation, expiry, throttling, lockout.
 
-**Profile vs identity separation.** Cognito owns *authentication state*; our `customer` table owns *application state* (name, wallet, referral, status, locale). Linked by Cognito `sub`. We can swap identity provider later without migrating app data.
+**No auth backend (ADR-0006).** The browser calls the public `cognito-idp` endpoint directly for
+every ceremony: registration is the public `SignUp` + `ConfirmSignUp` (self-signup enabled),
+sign-in is `InitiateAuth` + `RespondToAuthChallenge`. No app code proxies authentication, and
+**nothing on the authentication path touches Aurora** — Aurora holds money only (§10), keyed
+directly by the Cognito `sub` (ADR-0020).
 
-**Profile & language.** Registration collects the customer's **first and last name** (F1-R9) — used to personalize the share message and interstitial ("[First name] recommends this") and greetings. **Preferred language is auto-selected from location** (F1-R10): the edge derives the country from the CloudFront `CloudFront-Viewer-Country` header (fallback `Accept-Language`) and defaults `locale` to Hebrew (`he-IL`) for Israel, English (`en`) elsewhere. This is a *default only* — the user can switch language anytime in settings and the choice persists. Only coarse country is used; no precise geolocation is requested or stored.
+**Two pools, not groups.** Customers (phone, passwordless, ESSENTIALS tier) and employees
+(email + password + mandatory TOTP, Managed Login + PKCE for the admin console) are **separate
+user pools** (ADR-0006) — the admin role is not a customer-pool group.
 
-**Account provisioning.** On first verification, a Cognito **Post-Confirmation trigger** creates the `customer` row + empty wallet + referral edge, idempotently keyed on `cognito_sub` — exactly once, only after the phone is verified.
+**Profile & language.** Registration collects first and last name (F1-R9) as
+`given_name`/`family_name` attributes carried on the `SignUp` call itself. Preferred language
+(F1-R10) defaults from the visitor's coarse country at first touch and is stored as the `locale`
+attribute — a default only, user-overridable, no precise geolocation.
 
-**No per-user affiliate tracking ID.** Registration provisions only the Wanthat `customer` record — no AliExpress/network tracking ID per user, and no external affiliate call. Per-recommender attribution is at link time via SubID (§8.1).
+**Account provisioning.** Registration IS the `SignUp` call — there is no separate provisioning
+step and no per-user database write. A small non-VPC Cognito **Post-Confirmation trigger** queues
+the welcome message (`notification_outbox`, DynamoDB) — that is all it does. The wallet needs no
+provisioning either: the ledger is keyed by the Cognito `sub` (ADR-0020), so a fresh account's
+empty wallet is simply the absence of ledger rows (F1-R7).
 
-**Referral capture.** The client carries a `ref` token from the UC-02 deep link (or the consumer redirect, §9) through sign-up; persisted to `referral` on provisioning. Invalid `ref` is dropped (not an error).
+**Referral capture.** The client carries a `ref` token from the UC-02 deep link (or the consumer
+redirect, §9) through sign-up; the referral edge is persisted keyed by Cognito `sub`s (there is
+no `customer` FK — the table is gone). Invalid `ref` is dropped (not an error).
 
-**Sessions/tokens.** Cognito issues a short-lived access JWT (~1h) + refresh token. The SPA (desktop + mobile web) holds the access token in memory and the refresh token in an httpOnly secure cookie. API Gateway's JWT authorizer validates on every protected call; the API trusts the `sub` + `cognito:groups` claims.
+**Sessions/tokens.** Cognito issues access/id/refresh JWTs (RS256, pool-signed) — the only token
+issuer in the system. The SPA is **cookieless** (ADR-0007): tokens live in localStorage and
+travel as a Bearer header; refresh is `InitiateAuth(REFRESH_TOKEN_AUTH)` straight from the
+browser. API Gateway's JWT authorizer validates every protected call; the API trusts the `sub`
+claim.
 
-**Biometric step-up (F1-R11).** After a customer's first OTP sign-in we offer to enrol a **passkey/WebAuthn** credential (Face ID / Touch ID / Android biometric), handled natively by Cognito (Essentials tier). Subsequent sign-ins via passkey send **no OTP** — cutting the dominant SMS cost and resisting phishing/toll-fraud. Phone-OTP remains the enrolment and recovery path; biometrics are never the first-touch method (WhatsApp in-app browser WebAuthn support is patchy, and forcing it would add first-touch friction).
+**Biometric step-up (F1-R11).** Passkeys are **Cognito-native** (ADR-0006): enrolment via
+`StartWebAuthnRegistration` / `CompleteWebAuthnRegistration` (access-token authorized, offered
+after the first OTP sign-in); login via `InitiateAuth(USER_AUTH, WEB_AUTHN, USERNAME = remembered
+phone)`. Cognito stores and verifies the credentials; the RP ID is the site domain
+(`wanthat.app` / `dev.wanthat.app`). Userless login is waived — on a truly new device the user
+types their phone once; the SPA auto-arms the ceremony on focus when a remembered phone exists.
+Phone-OTP stays the enrolment and recovery path.
+
+**OTP channel (ADR-0019).** WhatsApp default / SMS by choice — a sticky `custom:otpChannel`
+preference set at `SignUp` and editable post-auth from the profile. The **custom-sender trigger
+is the enforcement point**: it reads the runtime-config kill switches (`auth.whatsappEnabled`,
+`auth.smsEnabled`, `auth.defaultOtpChannel`), honours the preference when that channel is
+enabled, and falls back to the other enabled channel otherwise.
 
 ### 7.2 Flows
 
-**Registration:** `POST /auth/register {phone,email,firstName,lastName,ref?}` → validate (IL phone→E.164, email, names) → set `locale` from geo (CloudFront country) → Cognito `SignUp` → OTP via WhatsApp (SMS fallback) → `POST /auth/verify {phone,code,session}` → Post-Confirmation provisioning → tokens. Lands on the next action (generate link, or claim consumer reward if arriving from §9).
+**Registration:** SPA → Cognito `SignUp` (username = phone, UserAttributes: `given_name`,
+`family_name`, `email`, `locale`, `custom:otpChannel`) → confirmation code via WhatsApp/SMS
+(custom sender) → `ConfirmSignUp` → `InitiateAuth` → tokens. Profile = ID-token claims — no
+backend call at all.
 
-**Sign-in:** `POST /auth/login {phone}` → OTP challenge → `POST /auth/verify` → tokens.
-**Refresh:** `POST /auth/refresh` (refresh cookie) → new access token.
+**Sign-in (OTP):** `InitiateAuth(USER_AUTH, USERNAME = phone, PREFERRED_CHALLENGE = SMS_OTP)` →
+code → `RespondToAuthChallenge` → tokens. An unknown phone yields Cognito's user-not-found
+signal and the SPA branches to sign-up.
 
-### 7.3 Data model (PostgreSQL)
+**Sign-in (passkey):** `InitiateAuth(USER_AUTH, WEB_AUTHN, USERNAME = remembered phone)` →
+`navigator.credentials.get()` → `RespondToAuthChallenge(CREDENTIAL = assertion)` → tokens.
+
+**Refresh:** `InitiateAuth(REFRESH_TOKEN_AUTH)` from the browser → fresh access/id tokens.
+
+### 7.3 Data model (Cognito user attributes — no PostgreSQL)
+
+The former `customer` and `referral` tables are deleted (ADR-0006). Customer PII is the Cognito
+user record:
 
 ```
-customer
-  id              uuid pk
-  cognito_sub     text unique not null
-  phone_e164      text unique not null
-  email           citext unique not null
-  first_name      text not null
-  last_name       text not null
-  status          text not null            -- 'active' | 'suspended'
-  locale          text not null default 'he-IL'   -- auto-set by geo at first touch; user-overridable
-  created_at      timestamptz not null default now()
-
-referral
-  id              uuid pk
-  referred_customer_id  uuid not null references customer(id)
-  referrer_customer_id  uuid not null references customer(id)
-  created_at      timestamptz not null default now()
-  unique (referred_customer_id)
+Cognito customer pool — system of record for customer PII
+  sub                  -- canonical customer id (ADR-0020); keys all money rows in Aurora
+  phone_number         -- E.164; username / sign-in alias; verified via OTP
+  given_name           -- first name (F1-R9; shown to consumers)
+  family_name          -- last name (internal)
+  email                -- verified via VerifyUserAttribute on change
+  locale               -- default from geo at first touch (F1-R10); user-overridable
+  custom:otpChannel    -- 'whatsapp' | 'sms' — sticky OTP channel preference (ADR-0019)
 ```
+
+Schema bounds (accepted, ADR-0006): 25 standard + max 50 custom attributes; custom attributes
+are add-only (never removable/renamable), 2048 chars, strings in the ID token.
 
 ### 7.4 API contracts
 
-| Method | Path | Description | Auth | Body | Success | Errors |
-| :-- | :-- | :-- | :-- | :-- | :-- | :-- |
-| POST | `/auth/register` | Start sign-up for a new customer; triggers the OTP challenge | none | `{phone,email,firstName,lastName,ref?}` | `200 {session,challenge}` | `400`; `409` exists |
-| POST | `/auth/login` | Start sign-in for an existing customer; triggers the OTP challenge | none | `{phone}` | `200 {session,challenge}` | `400` |
-| POST | `/auth/verify` | Verify the OTP code and issue access/refresh tokens | none | `{phone,code,session}` | `200 {accessToken,expiresIn,customer}` | `400`; `401` |
-| POST | `/auth/refresh` | Exchange the refresh cookie for a fresh access token | refresh cookie | — | `200 {accessToken,expiresIn}` | `401` |
-| GET | `/me` | Return the current customer profile + wallet balance | jwt | — | `200 {customer, walletBalance}` | `401` |
+There are **no app auth endpoints** — the former `POST /auth/register`, `/auth/login`,
+`/auth/verify`, `/auth/refresh`, and `GET /me` are deleted (ADR-0006). The SPA calls the Cognito
+public API directly:
+
+| Cognito operation (public `cognito-idp` endpoint) | Purpose |
+| :-- | :-- |
+| `SignUp` / `ConfirmSignUp` / `ResendConfirmationCode` | Registration + phone verification (attributes ride `SignUp`) |
+| `InitiateAuth` (`USER_AUTH`, `SMS_OTP`) + `RespondToAuthChallenge` | OTP sign-in |
+| `InitiateAuth` (`USER_AUTH`, `WEB_AUTHN`) + `RespondToAuthChallenge` | Passkey sign-in (remembered phone) |
+| `StartWebAuthnRegistration` / `CompleteWebAuthnRegistration` | Passkey enrolment (access token) |
+| `InitiateAuth` (`REFRESH_TOKEN_AUTH`) | Token refresh |
+| `GetUser` / `UpdateUserAttributes` / `VerifyUserAttribute` | Profile read (post-edit) / profile edit |
+| `RevokeToken` | Sign-out |
 
 ### 7.5 Security & compliance
 
-- **OTP abuse:** Cognito limits + per-phone/per-IP rate limits at API Gateway/WAF to blunt SMS-pumping toll fraud.
-- **Enumeration (account-existence leak).** A phone-first app must not let anyone probe *which phone numbers have Wanthat accounts* — in a viral WhatsApp market numbers are widely shared, so membership is sensitive and useful for targeted phishing/social engineering. **Decision:** `/auth/login` returns a **uniform** `{session, challenge}` response whether or not the number is registered, so the response can't distinguish members from non-members. Importantly, we **do not dispatch an OTP to an unrecognised number** — this leaks nothing *and* avoids paying for SMS to non-accounts (the same SMS-pumping/toll-fraud surface noted above); a subsequent `/auth/verify` simply fails the challenge. Per-phone and per-IP rate limits cap probing regardless.
-  - *Registration-path decision (option a):* `/auth/register` must either create an account or detect a duplicate, so the `409 exists` response is a **deliberate, accepted** enumeration vector on that endpoint only — common and simplest, as most consumer apps do — mitigated by per-phone/per-IP rate limiting. If enumeration abuse appears we can harden later (option b: register returns a uniform "check your phone" and we instead notify the *real* owner, "you already have an account — sign in"). Recorded in §18 #5.
-- **PII minimisation (PRD §9.3):** phone, email, and name only; no government ID/address. Preferred language is inferred from coarse country geo (no precise location stored). Consent (Terms/Privacy version + timestamp) recorded at sign-up — pre-launch requirement.
-- **Right to deletion:** `cognito_sub` + single `customer` row keep deletion bounded.
+- **OTP abuse:** protection sits at the pool boundary (ADR-0006) — a WAF web ACL on the user
+  pool (rate-based rules on the unauthenticated operations) + Cognito's own request quotas + the
+  SNS `MonthlySpendLimit` hard cap. No app-side velocity table.
+- **Enumeration — superseded decision.** The old uniform-response design (§18 #5) assumed an app
+  proxy; Cognito-native sign-in needs the **user-not-found signal** so the SPA can branch
+  sign-in vs sign-up. The pool's "prevent user existence errors" setting must stay compatible
+  with that UX; the phone-enumeration risk is accepted for MVP and blunted by the WAF rate
+  rules.
+- **PII minimisation (PRD §9.3):** phone, email, names, locale only — held solely in Cognito
+  attributes; no government ID/address; logs stay PII-free (§13).
+- **Right to deletion:** one `AdminDeleteUser` / self-service `DeleteUser` call; the ledger stays
+  pseudonymous under the orphaned `sub`. A returning user gets a **new** `sub` (a new identity),
+  so **disable** (`AdminDisableUser`, reversible) is the moderation tool and delete is for true
+  erasure.
+- **Revocation caveat:** the API Gateway JWT authorizer validates statelessly against the JWKS,
+  so an already-issued access token passes until expiry (1 h) after a disable/sign-out; Cognito's
+  own endpoints reject immediately. Accepted for MVP (wallet reads are the only customer money
+  surface).
 
 ### 7.6 Edge cases
 
-- Existing verified phone → `409`, route to sign-in. Unverified registration expires in Cognito (no `customer` row). Email reuse across phones → `409` (default: disallowed; review).
+- `SignUp` on an already-registered phone → Cognito duplicate-user error → route to sign-in.
+  Unconfirmed sign-ups expire in Cognito (`UNCONFIRMED`) leaving no residue anywhere else.
+- ID-token claims are stale after a profile edit until the next token refresh — the SPA
+  re-fetches via `GetUser` after an edit.
+- A deleted user who returns is a brand-new identity (new `sub`), unlinkable from prior wallet
+  history — expected GDPR shape; use disable for anything temporary.
 
 ---
 
@@ -367,7 +438,7 @@ product                    -- shared across all referrers who link to it
 link                       -- one referrer's tracked link to a product
   id              uuid pk
   recommendation_id        text unique not null
-  customer_id     uuid not null references customer(id)
+  customer_id     uuid not null   -- = Cognito sub, the canonical id (ADR-0020); no FK — customer table deleted (ADR-0006)
   product_id      uuid not null references product(id)
   affiliate_url   text not null            -- carries SubID = recommendation_id
   status          text not null default 'active'
@@ -380,7 +451,7 @@ link                       -- one referrer's tracked link to a product
 review                     -- belongs to a PRODUCT, authored by a customer (F2-R11); created separately
   id              uuid pk
   product_id      uuid not null references product(id)
-  author_customer_id uuid not null references customer(id)
+  author_customer_id uuid not null    -- = Cognito sub (ADR-0020); no FK — customer table deleted (ADR-0006)
   rating          int null                 -- 1..5, optional
   body            text not null
   status          text not null default 'pending'   -- moderation; UGC (§17)
@@ -460,8 +531,8 @@ conversion                  -- one row per confirmed/pending network conversion
   id              uuid pk
   link_id         uuid not null references link(id)
   click_id        uuid null
-  referrer_customer_id  uuid not null references customer(id)
-  consumer_customer_id  uuid null references customer(id)   -- set only when attribution='member'
+  referrer_customer_id  uuid not null    -- = Cognito sub (ADR-0020); no FK — customer table deleted (ADR-0006)
+  consumer_customer_id  uuid null        -- = Cognito sub; set only when attribution='member'
   attribution     text not null            -- 'member' | 'guest' | 'untracked'
   order_ref       text not null            -- network order id
   gross_commission_minor   bigint not null  -- integer minor units of...
@@ -530,7 +601,7 @@ Entries are written with `status='pending'` on a pending conversion and advanced
 ```
 wallet_entry            -- append-only event log
   id              uuid pk
-  customer_id     uuid not null references customer(id)
+  customer_id     uuid not null   -- = Cognito sub, the canonical id (ADR-0020); no FK — customer table deleted (ADR-0006)
   kind            text not null   -- 'referrer_cashback' | 'consumer_reward' | 'adjustment' | 'withdrawal'
   status          text not null   -- 'pending' | 'confirmed' | 'clawback'  (reward lifecycle; advances as new rows)
   amount_minor    bigint not null -- signed integer, smallest unit of `currency` (ISO-4217 exponent)
@@ -561,7 +632,7 @@ Wallet endpoints are scoped to the caller's `customer_id`. The ledger table gran
 *(Requirements: §4.5)*
 
 ### 11.1 Design
-A small, internal, **read-only** dashboard (MVP) for an `admin`-group operator. It is a thin SPA route plus a few aggregate endpoints; the same auth (Cognito JWT) gated on `cognito:groups` containing `admin`. Stats are computed from Postgres (transactional truth) and the click/conversion stream via scheduled rollups (so the dashboard reads cheap pre-aggregates, not heavy live scans).
+A small, internal, **read-only** dashboard (MVP) for an `admin`-group operator. It is a thin SPA route plus a few aggregate endpoints; admins authenticate against the separate **employee pool** (email + password + mandatory TOTP, Managed Login + PKCE — ADR-0006), not a customer-pool group. Customer profile lookups use Cognito `ListUsers` (PII lives in the pool, not Postgres). Stats are computed from Postgres (transactional truth) and the click/conversion stream via scheduled rollups (so the dashboard reads cheap pre-aggregates, not heavy live scans).
 
 **Stats (F5-R2/R3/R4):** total & new customers (referrers/consumers), links generated, impressions, clicks, **click-through rate** (clicks/impressions, PRD §3.2), conversions, conversion rate, GMV, gross commission, **wallet liabilities** (Σ pending + Σ confirmed owed), simple time trends, top links / top referrers. **Health (F5-R5):** redirect p95, AliExpress error rate, conversion-poller lag / reconciliation gap (surfaced from §13 metrics). This is the deliberately-simple seed of the Phase-2 brand analytics product — internal only.
 
@@ -597,7 +668,7 @@ Every flow emits structured JSON logs with a propagated **correlation/trace id**
 
 | Flow | Log (with corr-id) | Key metrics | SLO / alert |
 | :-- | :-- | :-- | :-- |
-| Auth (register/login/verify) | attempt, outcome, OTP channel; **no codes/PII** | verify success rate, OTP send count/cost, lockouts | alert on OTP send spike (toll-fraud), verify success drop |
+| Auth (Cognito-native: SignUp / OTP / passkey) | custom-sender + Post-Confirmation trigger logs: outcome, OTP channel; **no codes/PII** (browser↔Cognito calls are not app-logged) | verify success rate, OTP send count/cost, lockouts | alert on OTP send spike (toll-fraud), verify success drop |
 | Link generation | retailer, latency, upstream status | p95 latency, AliExpress error rate, gen volume | **p95 < 1.5s**; alert on error rate > X% |
 | Consumer redirect | recommendation_id, guest/registered, impression vs click, 301 target | **p95 < 500ms**, impressions, clicks, CTR, 4xx rate, event-ingest lag | **p95 < 500ms**; alert on 5xx or Firehose backlog |
 | Conversion poller | order_id, match result, amount, attribution (member/guest/untracked) | poll lag / reconciliation gap, referrer-match rate, **attribution mix: member / guest / `untracked`%**, duplicate rate | alert on poll lag > N min, unmatched-conversion rate; **track `untracked`% as a product metric** |
@@ -655,8 +726,8 @@ audit_log               -- append-only, hash-chained
 
 ## 16. Build sequence
 
-1. Postgres schema + migrations (`customer`, `referral`, `link`, `retailer_demand`, `conversion`, `wallet_entry`, `audit_log`); ledger append-only grants.
-2. Cognito pool (+ `admin` group) + Post-Confirmation provisioning → Feature 1.
+1. Postgres schema + migrations (`link`, `retailer_demand`, `conversion`, `wallet_entry`, `audit_log` — money only, keyed by Cognito `sub`; no `customer`/`referral` tables, ADR-0006); ledger append-only grants.
+2. Cognito customer pool (self-signup, `USER_AUTH`, native passkeys, profile attributes) + Post-Confirmation welcome trigger → Feature 1 (ADR-0006).
 3. AliExpress signed client + `AliExpressAdapter` (SubID) → Feature 2.
 4. Landing service + Firehose click stream + interstitial → Feature 3 (guest path first, then register path).
 5. Conversion poller (EventBridge → listOrders → in-VPC writer) → ledger crediting + two-sided split + audit log → Feature 4 + §14.
@@ -688,7 +759,7 @@ audit_log               -- append-only, hash-chained
 2. **OTP channel — decided: WhatsApp-first, SMS fallback.** WhatsApp Business API is the primary OTP channel (cheaper than SMS and avoids SMS-pumping toll fraud — both the top cost and top abuse surface); SMS is the fallback when WhatsApp delivery isn't available.
 3. **Two-sided split (D9) — decided:** cashback = the retailer's reported commission × **our split** (`referrerBps` / `consumerBps`). Our split is **admin policy living in CONFIG** (`cashback.referrerBps` / `cashback.consumerBps`), **snapshotted onto the Recommendation at creation** so a link's economics are **locked** — a later CONFIG change affects **new links only**, never existing/pending conversions (no retroactive recompute). The consumer share is funded from margin, which stays ≥ 0 by construction.
 4. **Guest→register window — decided:** Wanthat's **first-party attribution cookie = 30 days, configurable** (remembers the click for linking + re-engagement). Separately, the **network commission window is per-platform** (the adapter's `attributionWindowDays` — AliExpress = 3 days) and governs whether a purchase actually earns commission. (Cookie-consent handling still required.)
-5. **Enumeration (§7.5) — decided:** uniform login response + no-OTP-send for unknown numbers; register-path `409` accepted for MVP (option a) with rate limiting. Revisit (option b: owner-notification) only if enumeration abuse appears.
+5. **Enumeration (§7.5) — superseded by ADR-0006:** the Cognito-native SPA branches sign-in vs sign-up on the user-not-found signal, so the uniform-response design is retired; enumeration risk is accepted for MVP, blunted by WAF rate rules on the user pool.
 6. **Datastore (D4) & event store (D7) — decided:** managed **PostgreSQL** for transactional data; **Kinesis Firehose → S3** for the high-volume impression/click/conversion stream (with async rollups to the `link` counters).
 7. **Audit store (D8) — decided:** append-only, write-once, **hash-chained Postgres table** (cheap, no extra infra, no lock-in). QLDB is not pursued for MVP; revisit only if cryptographic verifiability becomes a hard requirement.
 8. **Admin access — decided:** Cognito **`admin` group** (no separate SSO for MVP); enforced at the API Gateway authorizer and re-checked in the admin module (§11.3). Second-person approval for large manual adjustments is **deferred** (maybe later) — MVP requires admin role + mandatory reason + audit (§14).

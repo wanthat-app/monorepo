@@ -30,7 +30,7 @@ export interface DispatchDeps {
 }
 
 /**
- * The flow controller of the async notification flow (ADR-0023) — the only place a
+ * The flow controller of the async notification flow (ADR-0019) — the only place a
  * skip-when-disabled legitimately lives (no user is present to decide). Per INSERT record:
  * pending items get sent + markSent; kill-switched items stay `pending` and age out via TTL
  * (intended pre-launch); a send-submission failure is markFailed WITHOUT rethrow (best-effort

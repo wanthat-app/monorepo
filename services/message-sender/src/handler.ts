@@ -4,6 +4,7 @@ import { PublishCommand, SNSClient } from "@aws-sdk/client-sns";
 import { SocialMessagingClient } from "@aws-sdk/client-socialmessaging";
 import { DevOtpSinkRepo, getDocClient, RuntimeConfigRepo } from "@wanthat/dynamo";
 import { WhatsAppSender } from "@wanthat/whatsapp";
+import { cachedConfigReader } from "./config-cache";
 import { type CustomSmsSenderEvent, deliverOtp, type SendDeps } from "./send";
 
 const logger = new Logger({ serviceName: "message-sender" });
@@ -32,7 +33,13 @@ function getDeps(): SendDeps {
   const sinkTable = process.env.DEV_OTP_SINK_TABLE;
   const sink = sinkTable ? new DevOtpSinkRepo(getDocClient(region), sinkTable) : undefined;
   deps = {
-    config: new RuntimeConfigRepo(getDocClient(region), requireEnv("RUNTIME_CONFIG_TABLE")),
+    // 30s per-container cache: channel resolution reads four config keys per OTP (ADR-0006
+    // decision 5). A kill-switch flip still lands within the TTL on warm containers; app-auth
+    // read fresh per request, but that served interactive API calls — a trigger tolerates this.
+    config: cachedConfigReader(
+      new RuntimeConfigRepo(getDocClient(region), requireEnv("RUNTIME_CONFIG_TABLE")),
+      30_000,
+    ),
     decryptCode: async (encryptedB64) => {
       const { plaintext } = await decrypt(keyring, Buffer.from(encryptedB64, "base64"));
       return plaintext.toString("utf8");
@@ -74,11 +81,12 @@ export const handler = async (event: CustomSmsSenderEvent): Promise<void> => {
   try {
     await deliverOtp(getDeps(), event);
   } catch (err) {
-    // Log with routing context, then rethrow: the initiating Cognito call MUST fail loudly
-    // (spec rev 2) so app-auth can return `send_failed`. Never log the code itself.
+    // Log with routing context, then rethrow: the initiating Cognito call (SignUp / InitiateAuth
+    // / ResendConfirmationCode — the SPA talks to Cognito directly, ADR-0006) MUST fail loudly.
+    // `preferredChannel` is the user's raw attribute, not the resolved channel; never log the code.
     logger.error("otp_delivery_failed", {
       triggerSource: event.triggerSource,
-      channel: event.request.userAttributes["custom:otpChannel"],
+      preferredChannel: event.request.userAttributes["custom:otpChannel"],
       sub: event.request.userAttributes.sub,
       error: err instanceof Error ? err.message : String(err),
     });

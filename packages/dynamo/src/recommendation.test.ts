@@ -117,6 +117,111 @@ describe("RecommendationRepo.updateReview", () => {
   });
 });
 
+describe("RecommendationRepo.deleteByOwner", () => {
+  it("deletes each item in a Delete+counter-decrement transaction (mirror of create)", async () => {
+    const { doc, calls } = stub((name) =>
+      name === "QueryCommand"
+        ? { Items: [{ recommendationId: "rec-a" }, { recommendationId: "rec-b" }] }
+        : {},
+    );
+    const repo = new RecommendationRepo(doc, "recommendation");
+    expect(await repo.deleteByOwner("sub-1234")).toBe(2);
+
+    expect(calls.map((c) => c.name)).toEqual([
+      "QueryCommand",
+      "TransactWriteCommand",
+      "TransactWriteCommand",
+    ]);
+    expect(calls[0]?.input).toMatchObject({
+      IndexName: "byOwner",
+      KeyConditionExpression: "ownerId = :ownerId",
+      ExpressionAttributeValues: { ":ownerId": "sub-1234" },
+      ProjectionExpression: "recommendationId",
+    });
+    const tx = calls[1]?.input.TransactItems as Array<Record<string, never>>;
+    expect(tx).toHaveLength(2);
+    expect(tx[0]?.Delete).toMatchObject({
+      Key: { recommendationId: "rec-a" },
+      ConditionExpression: "attribute_exists(recommendationId)",
+    });
+    expect(tx[1]?.Update).toMatchObject({
+      Key: { recommendationId: RECOMMENDATION_COUNTER_PK },
+      UpdateExpression: "ADD itemCount :minusOne",
+      ExpressionAttributeValues: { ":minusOne": -1 },
+    });
+    const tx2 = calls[2]?.input.TransactItems as Array<Record<string, never>>;
+    expect(tx2[0]?.Delete).toMatchObject({ Key: { recommendationId: "rec-b" } });
+  });
+
+  it("pages through the GSI until LastEvaluatedKey is exhausted", async () => {
+    let queries = 0;
+    const { doc, calls } = stub((name) => {
+      if (name !== "QueryCommand") return {};
+      queries += 1;
+      return queries === 1
+        ? {
+            Items: [{ recommendationId: "rec-1" }],
+            LastEvaluatedKey: { recommendationId: "rec-1", ownerId: "sub-1234", createdAt: NOW },
+          }
+        : { Items: [{ recommendationId: "rec-2" }] };
+    });
+    const repo = new RecommendationRepo(doc, "recommendation");
+    expect(await repo.deleteByOwner("sub-1234")).toBe(2);
+
+    const queryCalls = calls.filter((c) => c.name === "QueryCommand");
+    expect(queryCalls).toHaveLength(2);
+    expect(queryCalls[0]?.input.ExclusiveStartKey).toBeUndefined();
+    expect(queryCalls[1]?.input.ExclusiveStartKey).toEqual({
+      recommendationId: "rec-1",
+      ownerId: "sub-1234",
+      createdAt: NOW,
+    });
+    expect(calls.filter((c) => c.name === "TransactWriteCommand")).toHaveLength(2);
+  });
+
+  it("returns 0 and writes nothing for an owner with no recommendations", async () => {
+    const { doc, calls } = stub(() => ({ Items: [] }));
+    const repo = new RecommendationRepo(doc, "recommendation");
+    expect(await repo.deleteByOwner("sub-nobody")).toBe(0);
+    expect(calls.map((c) => c.name)).toEqual(["QueryCommand"]);
+  });
+
+  it("does not count an item that vanished concurrently (transaction cancelled, counter exact)", async () => {
+    const { doc, calls } = stub((name, input) => {
+      if (name === "QueryCommand") {
+        return { Items: [{ recommendationId: "rec-gone" }, { recommendationId: "rec-there" }] };
+      }
+      const tx = input.TransactItems as Array<{ Delete?: { Key: { recommendationId: string } } }>;
+      if (tx[0]?.Delete?.Key.recommendationId === "rec-gone") {
+        throw new TransactionCanceledException({
+          message: "cancelled",
+          $metadata: {},
+          CancellationReasons: [{ Code: "ConditionalCheckFailed" }, { Code: "None" }],
+        });
+      }
+      return {};
+    });
+    const repo = new RecommendationRepo(doc, "recommendation");
+    expect(await repo.deleteByOwner("sub-1234")).toBe(1);
+    expect(calls.filter((c) => c.name === "TransactWriteCommand")).toHaveLength(2);
+  });
+
+  it("rethrows a transaction failure that is NOT a conditional cancellation", async () => {
+    const { doc } = stub((name) => {
+      if (name === "QueryCommand") return { Items: [{ recommendationId: "rec-a" }] };
+      throw new TransactionCanceledException({
+        message: "cancelled",
+        $metadata: {},
+        CancellationReasons: [{ Code: "TransactionConflict" }, { Code: "None" }],
+      });
+    });
+    const repo = new RecommendationRepo(doc, "recommendation");
+    await expect(repo.deleteByOwner("sub-1234")).rejects.toBeInstanceOf(
+      TransactionCanceledException,
+    );
+  });
+});
+
 describe("RecommendationRepo.listByOwner", () => {
   it("queries the byOwner GSI newest-first and passes the cursor through", async () => {
     const { doc, calls } = stub(() => ({

@@ -13,9 +13,26 @@ const deps = {
   log: vi.fn(),
 } satisfies SendDeps;
 
-function event(attrs: Record<string, string | undefined>): CustomSmsSenderEvent {
+/** Pin the runtime config to `values` (missing keys read as undefined, like an unset mock). */
+function config(values: Record<string, unknown>): void {
+  deps.config.get.mockImplementation((key: string) => Promise.resolve(values[key]));
+}
+
+/** Both channels live, default whatsapp — the post-onboarding steady state. */
+const BOTH_ENABLED = {
+  "auth.smsEnabled": true,
+  "auth.whatsappEnabled": true,
+  "whatsapp.phoneNumberId": "phone-number-id-test",
+  "auth.defaultOtpChannel": "whatsapp",
+  "auth.otpSink": "delivery",
+};
+
+function event(
+  attrs: Record<string, string | undefined>,
+  triggerSource = "CustomSMSSender_Authentication",
+): CustomSmsSenderEvent {
   return {
-    triggerSource: "CustomSMSSender_Authentication",
+    triggerSource,
     request: { type: "customSMSSenderRequestV1", code: "ZW5jcnlwdGVk", userAttributes: attrs },
   };
 }
@@ -23,15 +40,16 @@ function event(attrs: Record<string, string | undefined>): CustomSmsSenderEvent 
 beforeEach(() => {
   vi.clearAllMocks();
   deps.decryptCode.mockResolvedValue("12345678");
-  deps.config.get.mockResolvedValue("phone-number-id-test");
+  config(BOTH_ENABLED);
   // clearAllMocks() does not reset a mock's implementation (only .mock.calls/.results), so a
   // rejection set by an earlier test (e.g. "propagates an SNS error") would otherwise leak into
-  // every later test that hits the sms fast path — re-pin the happy-path implementation here.
+  // every later test that hits the sms path — re-pin the happy-path implementation here.
   deps.sms.publish.mockResolvedValue(undefined);
+  deps.whatsapp.sendTemplate.mockResolvedValue({ messageId: "wamid.X" });
 });
 
-describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)", () => {
-  it("delivers via WhatsApp with the profile language", async () => {
+describe("deliverOtp — channel decision point (ADR-0006 decision 5)", () => {
+  it("honours the whatsapp preference with the profile language", async () => {
     await deliverOtp(
       deps,
       event({ "custom:otpChannel": "whatsapp", phone_number: "+97254", locale: "he" }),
@@ -44,7 +62,6 @@ describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)"
       to: "+97254",
     });
     expect(deps.sms.publish).not.toHaveBeenCalled();
-    // The success line is the chain link app-auth's `sub` correlates on (log-chain PR).
     expect(deps.log).toHaveBeenCalledWith("otp_delivered", {
       channel: "whatsapp",
       triggerSource: "CustomSMSSender_Authentication",
@@ -52,26 +69,104 @@ describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)"
     });
   });
 
-  it("defaults the template language to en when the profile has none", async () => {
-    await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
-    expect(deps.whatsapp.sendTemplate).toHaveBeenCalledWith(
-      expect.objectContaining({ language: "en" }),
-    );
-  });
-
-  it("delivers via SNS SMS with Cognito's native wording", async () => {
+  it("honours the sms preference even when the default is whatsapp", async () => {
     await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
     expect(deps.sms.publish).toHaveBeenCalledWith(
       "+97254",
       "Your authentication code is 12345678.",
     );
     expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
-    expect(deps.config.get).not.toHaveBeenCalled(); // sms needs no config at all
     expect(deps.log).toHaveBeenCalledWith("otp_delivered", {
       channel: "sms",
       triggerSource: "CustomSMSSender_Authentication",
       sub: undefined,
     });
+  });
+
+  it("falls back when the preferred channel is kill-switched off (whatsapp -> sms)", async () => {
+    config({ ...BOTH_ENABLED, "auth.whatsappEnabled": false });
+    await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
+    expect(deps.sms.publish).toHaveBeenCalled();
+    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it("treats whatsapp-on-but-unonboarded (empty phoneNumberId) as disabled — falls back to sms", async () => {
+    config({ ...BOTH_ENABLED, "whatsapp.phoneNumberId": "" });
+    await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
+    expect(deps.sms.publish).toHaveBeenCalled();
+    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it("falls back when the preferred channel is kill-switched off (sms -> whatsapp)", async () => {
+    config({ ...BOTH_ENABLED, "auth.smsEnabled": false });
+    await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
+    expect(deps.whatsapp.sendTemplate).toHaveBeenCalled();
+    expect(deps.sms.publish).not.toHaveBeenCalled();
+  });
+
+  it("THROWS when no channel is enabled — the initiating Cognito call must fail", async () => {
+    config({ ...BOTH_ENABLED, "auth.smsEnabled": false, "auth.whatsappEnabled": false });
+    await expect(
+      deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" })),
+    ).rejects.toThrow(/no OTP channel is enabled/);
+    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
+    expect(deps.sms.publish).not.toHaveBeenCalled();
+    expect(deps.decryptCode).not.toHaveBeenCalled(); // no channel -> the code is never decrypted
+    expect(deps.log).not.toHaveBeenCalled();
+  });
+
+  it("uses the configured default on a MISSING custom:otpChannel (SignUp may race the write)", async () => {
+    await deliverOtp(deps, event({ phone_number: "+97254" }, "CustomSMSSender_SignUp"));
+    expect(deps.whatsapp.sendTemplate).toHaveBeenCalled(); // default = whatsapp
+    expect(deps.sms.publish).not.toHaveBeenCalled();
+  });
+
+  it("uses the configured default on an INVALID custom:otpChannel — no throw", async () => {
+    await deliverOtp(deps, event({ "custom:otpChannel": "email", phone_number: "+97254" }));
+    expect(deps.whatsapp.sendTemplate).toHaveBeenCalled();
+    expect(deps.sms.publish).not.toHaveBeenCalled();
+  });
+
+  it("no preference + default channel disabled -> any enabled channel", async () => {
+    config({ ...BOTH_ENABLED, "auth.whatsappEnabled": false }); // default whatsapp is dead
+    await deliverOtp(deps, event({ phone_number: "+97254" }));
+    expect(deps.sms.publish).toHaveBeenCalled();
+    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    "CustomSMSSender_SignUp",
+    "CustomSMSSender_Authentication",
+    "CustomSMSSender_ResendCode",
+    "CustomSMSSender_VerifyUserAttribute",
+  ])("delivers for trigger source %s through the same path", async (triggerSource) => {
+    await deliverOtp(
+      deps,
+      event({ "custom:otpChannel": "sms", phone_number: "+97254" }, triggerSource),
+    );
+    expect(deps.sms.publish).toHaveBeenCalledWith(
+      "+97254",
+      "Your authentication code is 12345678.",
+    );
+    expect(deps.log).toHaveBeenCalledWith("otp_delivered", {
+      channel: "sms",
+      triggerSource,
+      sub: undefined,
+    });
+  });
+
+  it("defaults the WhatsApp template language to en when the profile has none", async () => {
+    await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
+    expect(deps.whatsapp.sendTemplate).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "en" }),
+    );
+  });
+
+  it("throws when the event carries no phone_number", async () => {
+    await expect(deliverOtp(deps, event({ "custom:otpChannel": "sms" }))).rejects.toThrow(
+      /phone_number/,
+    );
+    expect(deps.config.get).not.toHaveBeenCalled();
   });
 
   it("logs NO success line when the send throws (failure logging lives in the handler)", async () => {
@@ -82,24 +177,7 @@ describe("deliverOtp — pure executor (spec rev 2: requested channel or throw)"
     expect(deps.log).not.toHaveBeenCalled();
   });
 
-  it("THROWS on a missing/invalid channel attribute — never assumes a default", async () => {
-    await expect(deliverOtp(deps, event({ phone_number: "+97254" }))).rejects.toThrow(/otpChannel/);
-    await expect(
-      deliverOtp(deps, event({ "custom:otpChannel": "email", phone_number: "+97254" })),
-    ).rejects.toThrow(/otpChannel/);
-    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
-    expect(deps.sms.publish).not.toHaveBeenCalled();
-  });
-
-  it("THROWS when whatsapp.phoneNumberId is unset — never degrades to sms", async () => {
-    deps.config.get.mockResolvedValue("");
-    await expect(
-      deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" })),
-    ).rejects.toThrow(/phoneNumberId/);
-    expect(deps.sms.publish).not.toHaveBeenCalled();
-  });
-
-  it("propagates a WhatsApp submission error — NO in-Lambda SMS fallback", async () => {
+  it("propagates a WhatsApp submission error — NO in-Lambda SMS fallback (only a DISABLED channel falls back, a FAILED send does not)", async () => {
     deps.whatsapp.sendTemplate.mockRejectedValue(new Error("template not approved"));
     await expect(
       deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" })),
@@ -123,9 +201,7 @@ describe("dev OTP sink (auth.otpSink = devSink, never in prod)", () => {
 
   it("parks the code instead of delivering when allowed AND configured", async () => {
     deps.devSink.allowed = true;
-    deps.config.get.mockImplementation((key: string) =>
-      Promise.resolve(key === "auth.otpSink" ? "devSink" : "phone-number-id-test"),
-    );
+    config({ ...BOTH_ENABLED, "auth.otpSink": "devSink" });
     await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
     expect(deps.devSink.put).toHaveBeenCalledWith({
       phone: "+97254",
@@ -138,11 +214,20 @@ describe("dev OTP sink (auth.otpSink = devSink, never in prod)", () => {
     expect(deps.log).toHaveBeenCalledWith("otp_sunk_dev", { channel: "sms", sub: undefined });
   });
 
-  it("sinks the whatsapp channel too, before any phoneNumberId read", async () => {
+  it("parks the RESOLVED channel, not the raw preference (disabled whatsapp sinks as sms)", async () => {
     deps.devSink.allowed = true;
-    deps.config.get.mockImplementation((key: string) =>
-      Promise.resolve(key === "auth.otpSink" ? "devSink" : ""),
+    config({ ...BOTH_ENABLED, "auth.whatsappEnabled": false, "auth.otpSink": "devSink" });
+    await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
+    expect(deps.devSink.put).toHaveBeenCalledWith(
+      expect.objectContaining({ channel: "sms", code: "12345678" }),
     );
+    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
+    expect(deps.sms.publish).not.toHaveBeenCalled();
+  });
+
+  it("sinks the whatsapp channel too — no real send is attempted", async () => {
+    deps.devSink.allowed = true;
+    config({ ...BOTH_ENABLED, "auth.otpSink": "devSink" });
     await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
     expect(deps.devSink.put).toHaveBeenCalledWith(
       expect.objectContaining({ channel: "whatsapp", code: "12345678" }),
@@ -150,15 +235,29 @@ describe("dev OTP sink (auth.otpSink = devSink, never in prod)", () => {
     expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
   });
 
-  it("ignores the config entirely when not allowed (the prod guard)", async () => {
+  it("still throws when NOTHING is enabled — the sink parks a would-be delivery, not a dead one", async () => {
+    deps.devSink.allowed = true;
+    config({
+      ...BOTH_ENABLED,
+      "auth.smsEnabled": false,
+      "auth.whatsappEnabled": false,
+      "auth.otpSink": "devSink",
+    });
+    await expect(
+      deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" })),
+    ).rejects.toThrow(/no OTP channel is enabled/);
+    expect(deps.devSink.put).not.toHaveBeenCalled();
+  });
+
+  it("never reads auth.otpSink when not allowed (the prod guard)", async () => {
     // allowed stays false; even a poisoned config value cannot activate the sink.
-    deps.config.get.mockResolvedValue("devSink");
+    config({ ...BOTH_ENABLED, "auth.otpSink": "devSink" });
     await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
     expect(deps.devSink.put).not.toHaveBeenCalled();
     expect(deps.sms.publish).toHaveBeenCalledWith(
       "+97254",
       "Your authentication code is 12345678.",
     );
-    expect(deps.config.get).not.toHaveBeenCalled(); // guard short-circuits before any read
+    expect(deps.config.get).not.toHaveBeenCalledWith("auth.otpSink"); // guard short-circuits the read
   });
 });

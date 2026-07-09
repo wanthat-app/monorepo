@@ -5,6 +5,7 @@ import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import {
@@ -18,11 +19,21 @@ import {
 
 export interface IdentityStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
-  /** From DataStack — message-sender reads whatsapp.phoneNumberId at send time (ADR-0023). */
+  /** From DataStack — message-sender reads whatsapp.phoneNumberId at send time (ADR-0019). */
   readonly runtimeConfigTable: dynamodb.ITable;
   /** From DataStack — message-sender's dev-only OTP park (docs/dev-otp-sink.md), write-only grant. */
   /** Dev OTP sink table — absent in prod by design (fail-closed; docs/dev-otp-sink.md). */
   readonly devOtpSinkTable?: dynamodb.ITable;
+  /** From DataStack — the post-confirmation trigger queues the optin_welcome item here (ADR-0019). */
+  readonly notificationOutboxTable: dynamodb.ITable;
+  /** From DataStack — guestId -> sub mapping, claimed best-effort at confirmation (ADR-0008). */
+  readonly guestAttributionTable: dynamodb.ITable;
+}
+
+/** The deployed SPA origin for links in outbound messages (ADR-0019). Fails loudly without a domain. */
+function appUrl(wanthatEnv: WanthatEnv): string {
+  if (!wanthatEnv.domainName) throw new Error(`appUrl: env ${wanthatEnv.name} has no domainName`);
+  return `https://${wanthatEnv.domainName}`;
 }
 
 /** Per-env SNS monthly SMS spend hard cap (USD), the kill-switch fail-safe (ADR-0006 layer 4). */
@@ -34,18 +45,20 @@ export const SMS_MONTHLY_SPEND_LIMIT_USD: Record<WanthatEnv["name"], number> = {
 };
 
 /**
- * IdentityStack — Cognito (ADR-0006, ADR-0020).
+ * IdentityStack — Cognito (ADR-0006, ADR-0006).
  *
  * A passwordless user pool: phone-first sign-in with native SMS OTP **and** passkeys as first-auth
  * factors (the choice-based `USER_AUTH` flow), Essentials feature plan. The public SPA app client
- * carries the JWT as a Bearer header (no secret, ADR-0007). Managed Login (hosted UI) is provisioned
- * for the userless/discoverable passkey path (PR4 reconciles it with the API-driven contract).
+ * carries the JWT as a Bearer header (no secret, ADR-0007). Self-signup is ON: the browser calls
+ * the public `SignUp` API directly and registration IS SignUp (ADR-0006 decision 1) - the console
+ * "anyone can sign up" warning is the product, not a misconfiguration.
  *
- * No Post-Confirmation trigger (ADR-0020): the `customer` row is provisioned by `/auth/register`,
- * since `first_name`/`last_name` are only known then. The SMS kill switch is the DynamoDB
- * `auth.smsEnabled` config key (read by app-api), backstopped here by the SNS monthly spend cap.
+ * All customer PII lives in Cognito user attributes (ADR-0006 decision 3): `phone_number`,
+ * `given_name`, `family_name`, `email`, `locale`, plus `custom:otpChannel`. The kill switches
+ * (`auth.smsEnabled`, `auth.whatsappEnabled`, ...) are DynamoDB runtime-config keys enforced by
+ * the message-sender trigger, backstopped here by the SNS monthly spend cap.
  *
- * **Two pools, by population (ADR-0020 §two-pool).** Customers and employees are different
+ * **Two pools, by population (ADR-0006 §two-pool).** Customers and employees are different
  * populations with different trust levels and lifecycles, so they get separate user pools rather than
  * one pool split by group. The `employeePool` below is for company staff: **no self-signup**
  * (provisioned only), email + **mandatory TOTP MFA** (no SMS), its own Managed Login hosted UI. The
@@ -56,36 +69,48 @@ export const SMS_MONTHLY_SPEND_LIMIT_USD: Record<WanthatEnv["name"], number> = {
 export class IdentityStack extends Stack {
   readonly userPool: cognito.UserPool;
   readonly userPoolClient: cognito.UserPoolClient;
-  readonly userPoolDomain: cognito.UserPoolDomain;
-  // Separate employee/admin pool (ADR-0020 §two-pool): company staff, not customers.
+  // Separate employee/admin pool (ADR-0006 §two-pool): company staff, not customers.
   readonly employeePool: cognito.UserPool;
   readonly employeePoolClient: cognito.UserPoolClient;
   readonly employeePoolDomain: cognito.UserPoolDomain;
-  /** ADR-0023: the Cognito custom-SMS-sender executor — observed by ObservabilityStack. */
+  /** ADR-0019: the Cognito custom-SMS-sender executor — observed by ObservabilityStack. */
   readonly messageSenderFn: lambda.Function;
+  /** ADR-0006 decision 7: the Post-Confirmation welcome/attribution trigger — observed by ObservabilityStack. */
+  readonly postConfirmationFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: IdentityStackProps) {
     super(scope, id, props);
     const { wanthatEnv } = props;
     const isProd = wanthatEnv.name === "prod";
 
-    // ADR-0023: Cognito encrypts the OTP code for the custom sender trigger with this key (via
+    // ADR-0019: Cognito encrypts the OTP code for the custom sender trigger with this key (via
     // the AWS Encryption SDK); message-sender holds the decrypt grant. Fixed cost ~1 USD/month.
     const customSenderKey = new kms.Key(this, "CustomSenderKey", {
       enableKeyRotation: true,
-      description: `wanthat-${wanthatEnv.name} Cognito custom-sender OTP code encryption (ADR-0023)`,
+      description: `wanthat-${wanthatEnv.name} Cognito custom-sender OTP code encryption (ADR-0019)`,
     });
 
     this.userPool = new cognito.UserPool(this, "UserPool", {
       userPoolName: `wanthat-${wanthatEnv.name}`,
       featurePlan: cognito.FeaturePlan.ESSENTIALS,
+      // ADR-0006 decision 1: registration is the public SignUp call from the SPA - no admin-created
+      // customers, no backend registration endpoint. Abuse control sits at the pool boundary (WAF
+      // rate rules + Cognito quotas + the SMS spend cap below), not behind a signup gate.
+      selfSignUpEnabled: true,
       signInAliases: { phone: true, email: true },
+      // Profile attributes ride SignUp.UserAttributes and are edited via UpdateUserAttributes
+      // (ADR-0006 decision 3). All optional (NOT required): flipping an attribute to required
+      // REPLACES the pool - never do that here.
       standardAttributes: {
         phoneNumber: { required: true, mutable: true },
         email: { required: false, mutable: true },
+        givenName: { required: false, mutable: true },
+        familyName: { required: false, mutable: true },
+        locale: { required: false, mutable: true },
       },
-      // ADR-0023: the OTP delivery channel for the message-sender trigger. Written by app-auth on
-      // every /auth/start + /auth/resend; the sender FAILS if it is missing (never defaults).
+      // ADR-0006 decision 5: the OTP delivery channel preference. Set at SignUp (rides
+      // UserAttributes), edited post-auth from the profile; the message-sender trigger is the
+      // enforcement point (honours it when that channel is enabled, else falls back).
       customAttributes: {
         otpChannel: new cognito.StringAttribute({ mutable: true, minLen: 3, maxLen: 8 }),
       },
@@ -121,11 +146,11 @@ export class IdentityStack extends Stack {
       precedence: 10,
     });
 
-    // ADR-0023: pure OTP executor. IMPORTANT: once this trigger is attached, Cognito sends NO SMS
-    // natively - this function owns ALL OTP delivery (WhatsApp via End User Messaging Social, SMS
-    // via SNS Publish), routed ONLY by the custom:otpChannel attribute. It reads no kill switches
-    // and never falls back across channels; a throw fails the callers AdminInitiateAuth, which
-    // app-auth maps to send_failed (spec rev 2).
+    // ADR-0006 decision 5 (+ ADR-0019 pipeline): the OTP channel decision point. IMPORTANT: once
+    // this trigger is attached, Cognito sends NO SMS natively - this function owns ALL OTP delivery
+    // (WhatsApp via End User Messaging Social, SMS via SNS Publish). It reads the runtime-config
+    // kill switches (auth.whatsappEnabled, auth.smsEnabled, ...), honours custom:otpChannel when
+    // that channel is enabled, and falls back to the other enabled channel otherwise.
     const messageSenderFn = new NodejsFunction(this, "MessageSender", {
       functionName: `wanthat-${wanthatEnv.name}-message-sender`,
       entry: serviceEntry("message-sender"),
@@ -172,47 +197,152 @@ export class IdentityStack extends Stack {
     );
     this.userPool.addTrigger(cognito.UserPoolOperation.CUSTOM_SMS_SENDER, messageSenderFn);
 
-    // Browser origins allowed to complete the hosted-UI OAuth redirect — the same list the app/admin
-    // HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).
+    // ADR-0006 decision 7: the welcome notification_outbox write (formerly /auth/register) plus the
+    // best-effort guest_attribution claim move to the Post-Confirmation trigger. DynamoDB only, no
+    // Aurora — which is exactly what makes a trigger acceptable here (no VPC, no cold DB resume).
+    // The handler NEVER throws (it logs and returns the event), so an outbox or attribution failure
+    // structurally cannot block a user's ConfirmSignUp.
+    const postConfirmationFn = new NodejsFunction(this, "PostConfirmation", {
+      functionName: `wanthat-${wanthatEnv.name}-post-confirmation`,
+      entry: serviceEntry("post-confirmation"),
+      handler: "handler",
+      runtime: LAMBDA_RUNTIME,
+      architecture: LAMBDA_ARCHITECTURE,
+      memorySize: 256,
+      timeout: Duration.seconds(10),
+      tracing: lambda.Tracing.ACTIVE,
+      logGroup: serviceLogGroup(this, "PostConfirmationLogs", wanthatEnv),
+      // Non-VPC: Cognito-invoked; reaches DynamoDB over public AWS endpoints (ADR-0004 NAT-free).
+      environment: {
+        NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
+        GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
+        APP_URL: appUrl(wanthatEnv),
+      },
+      bundling: { minify: true, sourceMap: true },
+    });
+    this.postConfirmationFn = postConfirmationFn;
+    props.notificationOutboxTable.grantWriteData(postConfirmationFn);
+    props.guestAttributionTable.grantWriteData(postConfirmationFn);
+    this.userPool.addTrigger(cognito.UserPoolOperation.POST_CONFIRMATION, postConfirmationFn);
+
+    // Browser origins allowed to complete the ADMIN hosted-UI OAuth redirect — the same list the
+    // app/admin HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).
+    // The CUSTOMER flow has no redirect at all: the SPA calls Cognito's public API directly
+    // (ADR-0006), so the customer client carries no OAuth configuration.
     const origins = webOrigins(wanthatEnv);
 
+    // Attribute permissions for the SPA client (ADR-0006 decision 3): the profile the SPA shows is
+    // the ID-token claims, and edits go through UpdateUserAttributes with the user's access token -
+    // so the client needs explicit read AND write on the profile attributes + custom:otpChannel.
+    // phone_number is in the WRITE set too (not only read) because it is a required attribute that
+    // rides SignUp.UserAttributes (username = phone): an explicit write list that omits it would
+    // reject the SignUp call itself. Post-signup phone changes still verify via VerifyUserAttribute.
+    const spaProfileAttributes = { givenName: true, familyName: true, email: true, locale: true };
+    const spaReadAttributes = new cognito.ClientAttributes()
+      .withStandardAttributes({
+        ...spaProfileAttributes,
+        phoneNumber: true,
+        phoneNumberVerified: true,
+        emailVerified: true,
+      })
+      .withCustomAttributes("otpChannel");
+    const spaWriteAttributes = new cognito.ClientAttributes()
+      .withStandardAttributes({ ...spaProfileAttributes, phoneNumber: true })
+      .withCustomAttributes("otpChannel");
+
     // Public SPA client: no secret; only the choice-based USER_AUTH flow (ADR-0006) — never
-    // userSrp/userPassword/custom. Token revocation on so /auth/signout can revoke refresh tokens.
-    const callbackUrls = origins.map((o) => `${o}/auth/callback`);
+    // userSrp/userPassword/custom, and NO OAuth/hosted-UI: the browser drives SignUp/InitiateAuth/
+    // native WEB_AUTHN against the public cognito-idp endpoint directly, so there is no redirect,
+    // no callback URL, and no customer Managed Login domain. `adminUserPassword` (the former
+    // passkey->token bridge) is gone with the app-owned ceremony. Token revocation on so the SPA
+    // can revoke refresh tokens via RevokeToken at signout.
     this.userPoolClient = this.userPool.addClient("Spa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-spa`,
       generateSecret: false,
-      // `user` = the choice-based USER_AUTH OTP flow. `adminUserPassword` enables the ADR-0022
-      // passkey->token bridge (Cognito.passkeyAdminAuth): app-auth sets an ephemeral password and
-      // exchanges it for tokens after verifying the assertion. This is an ADMIN-only flow — it is not
-      // reachable from the browser (the SPA never sees a password) — the admin token exchange (ADR-0022
-      // decision 3), our ESSENTIALS pool doesn't support the custom-challenge trigger bridge it replaced.
-      authFlows: { user: true, adminUserPassword: true },
+      authFlows: { user: true },
+      // No hosted UI for customers -> no OAuth at all. Without this, CDK silently defaults to
+      // implicit+code grants with an example.com callback (the L2's legacy default).
+      disableOAuth: true,
+      // "Prevent user existence errors" deliberately OFF (LEGACY): the SPA branches sign-in vs
+      // sign-up on Cognito's real user-not-found signal (ADR-0006 - unified "enter phone" flow via
+      // InitiateAuth, fall back to SignUp on unknown phone). Phone enumeration is accepted for MVP;
+      // WAF rate rules on the pool + Cognito quotas + the SMS spend cap mitigate abuse.
+      preventUserExistenceErrors: false,
+      readAttributes: spaReadAttributes,
+      writeAttributes: spaWriteAttributes,
       enableTokenRevocation: true,
       accessTokenValidity: Duration.hours(1),
       idTokenValidity: Duration.hours(1),
       refreshTokenValidity: Duration.days(30),
-      // OAuth is only for the Managed Login passkey redirect path (PR4); the SPA's primary flow is the
-      // API-driven /auth/* JSON contract. Callback URLs are finalised in PR4 once the origin is fixed.
-      oAuth: {
-        flows: { authorizationCodeGrant: true },
-        scopes: [cognito.OAuthScope.OPENID, cognito.OAuthScope.PHONE, cognito.OAuthScope.PROFILE],
-        callbackUrls,
-        logoutUrls: callbackUrls,
-      },
     });
 
-    // Managed Login (hosted UI) for userless/discoverable passkey login (ADR-0020 decision 3). Domain
-    // prefix is unique per env within the account; prod can move to a custom domain in PR4.
-    this.userPoolDomain = this.userPool.addDomain("ManagedLoginDomain", {
-      cognitoDomain: { domainPrefix: `wanthat-${wanthatEnv.name}` },
-      managedLoginVersion: cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
+    // ADR-0006 decision 6: abuse control at the pool boundary. A REGIONAL web ACL (same region as
+    // the pool) rate-limits the UNAUTHENTICATED Cognito operations the browser calls directly —
+    // the requests carry an `x-amz-target` header naming the operation — with a looser all-request
+    // backstop. Thresholds are MVP guesses erring loose (IL mobile CGNAT stacks users behind one
+    // IP); tune from CloudWatch sampled requests (T0 spike, 2026-07-09). CAPTCHA deferred: it
+    // would require the WAF JS integration SDK in the SPA. ASCII-only names/descriptions.
+    const unauthOps = [
+      "SignUp",
+      "ConfirmSignUp",
+      "ResendConfirmationCode",
+      "InitiateAuth",
+      "RespondToAuthChallenge",
+    ];
+    const unauthOpMatch = (op: string): wafv2.CfnWebACL.StatementProperty => ({
+      byteMatchStatement: {
+        fieldToMatch: { singleHeader: { Name: "x-amz-target" } },
+        positionalConstraint: "EXACTLY",
+        searchString: `AWSCognitoIdentityProviderService.${op}`,
+        textTransformations: [{ priority: 0, type: "NONE" }],
+      },
     });
-    // Use Cognito's default branding for the new managed login UI (no custom assets in MVP).
-    new cognito.CfnManagedLoginBranding(this, "ManagedLoginBranding", {
-      userPoolId: this.userPool.userPoolId,
-      clientId: this.userPoolClient.userPoolClientId,
-      useCognitoProvidedValues: true,
+    const poolWebAcl = new wafv2.CfnWebACL(this, "CustomerPoolWebAcl", {
+      name: `wanthat-${wanthatEnv.name}-customer-pool`,
+      description: "Rate limits on the customer user pool unauthenticated operations (ADR-0006)",
+      scope: "REGIONAL",
+      defaultAction: { allow: {} },
+      visibilityConfig: {
+        cloudWatchMetricsEnabled: true,
+        metricName: `wanthat-${wanthatEnv.name}-customer-pool`,
+        sampledRequestsEnabled: true,
+      },
+      rules: [
+        {
+          name: "rate-limit-unauth-ops",
+          priority: 1,
+          action: { block: {} },
+          statement: {
+            rateBasedStatement: {
+              limit: 100, // per 5 minutes (the default evaluation window), per IP
+              aggregateKeyType: "IP",
+              scopeDownStatement: { orStatement: { statements: unauthOps.map(unauthOpMatch) } },
+            },
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `wanthat-${wanthatEnv.name}-customer-pool-unauth`,
+            sampledRequestsEnabled: true,
+          },
+        },
+        {
+          name: "rate-limit-all",
+          priority: 2,
+          action: { block: {} },
+          statement: {
+            rateBasedStatement: { limit: 500, aggregateKeyType: "IP" }, // per 5 min backstop
+          },
+          visibilityConfig: {
+            cloudWatchMetricsEnabled: true,
+            metricName: `wanthat-${wanthatEnv.name}-customer-pool-all`,
+            sampledRequestsEnabled: true,
+          },
+        },
+      ],
+    });
+    new wafv2.CfnWebACLAssociation(this, "CustomerPoolWebAclAssociation", {
+      resourceArn: this.userPool.userPoolArn,
+      webAclArn: poolWebAcl.attrArn,
     });
 
     // SNS monthly SMS spend hard cap (ADR-0006 layer 4) — account/region-level, so set via an SDK
@@ -280,11 +410,9 @@ export class IdentityStack extends Stack {
       });
     }
 
-    // The SPA needs these to build the Managed Login authorize URL for discoverable passkey login.
-    new CfnOutput(this, "ManagedLoginBaseUrl", { value: this.userPoolDomain.baseUrl() });
     new CfnOutput(this, "UserPoolClientIdOut", { value: this.userPoolClient.userPoolClientId });
 
-    // --- Employee/admin pool (ADR-0020 §two-pool) — staff identities, isolated from customers ---
+    // --- Employee/admin pool (ADR-0006 §two-pool) — staff identities, isolated from customers ---
     this.employeePool = new cognito.UserPool(this, "EmployeePool", {
       userPoolName: `wanthat-${wanthatEnv.name}-employees`,
       featurePlan: cognito.FeaturePlan.ESSENTIALS,

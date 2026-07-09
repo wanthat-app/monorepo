@@ -21,7 +21,7 @@ export interface WhatsAppStackProps extends StackProps {
 }
 
 /**
- * WhatsAppStack (ADR-0023) - the notification side of the WhatsApp capability: the NON-VPC
+ * WhatsAppStack (ADR-0019) - the notification side of the WhatsApp capability: the NON-VPC
  * whatsapp-dispatcher consuming the notification_outbox Stream, plus its on-failure DLQ. The OTP
  * side (message-sender) lives in IdentityStack with the pool trigger. Depends only on DataStack.
  */
@@ -49,7 +49,7 @@ export class WhatsAppStack extends Stack {
       timeout: Duration.seconds(30),
       tracing: lambda.Tracing.ACTIVE,
       logGroup: serviceLogGroup(this, "DispatcherLogs", wanthatEnv),
-      // Non-VPC by design: this is ADR-0023's NAT-free bridge to the public End User Messaging
+      // Non-VPC by design: this is ADR-0019's NAT-free bridge to the public End User Messaging
       // Social endpoint. It must NOT be placed in the VPC.
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
