@@ -128,6 +128,9 @@ jobs:
           V: ${{ steps.ver.outputs.version }}
         run: |
           set -euo pipefail
+          # Annotated tags need a committer identity; runners have none by default.
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git tag -a "$V" -m "prod deploy $V (${GITHUB_SHA:0:7})"
           git push origin "$V"
           echo "Tagged prod deploy: $V" >> "$GITHUB_STEP_SUMMARY"
