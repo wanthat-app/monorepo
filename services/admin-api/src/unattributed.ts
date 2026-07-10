@@ -7,6 +7,7 @@
  */
 import {
   ClaimUnattributedOrderBody,
+  GetUnattributedOrderResponse,
   ListUnattributedOrdersQuery,
   ListUnattributedOrdersResponse,
   UnattributedOrderActionResponse,
@@ -37,6 +38,22 @@ const toView = (item: UnattributedOrderItem): UnattributedOrderView => ({
     item.commissionMinor !== null
       ? { amountMinor: item.commissionMinor, currency: item.currency ?? "USD" }
       : null,
+  product:
+    item.productId !== null || item.productTitle !== null
+      ? {
+          productId: item.productId,
+          title: item.productTitle,
+          imageUrl: item.productImageUrl,
+          detailUrl: item.productDetailUrl,
+          count: item.productCount,
+        }
+      : null,
+  paidAmount:
+    item.paidAmountMinor !== null
+      ? { amountMinor: item.paidAmountMinor, currency: item.currency ?? "USD" }
+      : null,
+  commissionRate: item.commissionRate,
+  subOrderId: item.subOrderId,
   occurredAt: item.occurredAt,
   firstSeenAt: item.firstSeenAt,
   lastSeenAt: item.lastSeenAt,
@@ -82,6 +99,13 @@ export function unattributedRouter(): Hono<{ Bindings: Bindings }> {
         nextCursor: cursorOf(page.lastKey),
       }),
     );
+  });
+
+  // GET /:orderId — the admin order detail page (portal cross-reference).
+  router.get("/:orderId", async (c) => {
+    const item = await getContext().unattributedOrders.get(c.req.param("orderId"));
+    if (!item) return c.json({ error: "not_found" }, 404);
+    return c.json(GetUnattributedOrderResponse.parse({ item: toView(item) }));
   });
 
   // POST /:orderId/claim — bind the order to a recommendation (the proxy heartbeat settles it).

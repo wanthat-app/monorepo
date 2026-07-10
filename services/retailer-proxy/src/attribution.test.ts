@@ -33,6 +33,14 @@ const order = (over: Partial<AliExpressOrder> = {}): AliExpressOrder => ({
   commissionMinor: "124",
   commissionCurrency: "USD",
   orderTimeGmt8: "2026-07-10 18:00:00",
+  productId: null,
+  productTitle: null,
+  productImageUrl: null,
+  productDetailUrl: null,
+  productCount: null,
+  paidAmountMinor: null,
+  commissionRate: null,
+  subOrderId: null,
   ...over,
 });
 

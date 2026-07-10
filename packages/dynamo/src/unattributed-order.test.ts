@@ -4,6 +4,17 @@ import { describe, expect, it } from "vitest";
 import { type UnattributedOrderItem, UnattributedOrderRepo } from "./unattributed-order";
 
 const NOW = "2026-07-10T15:00:00.000Z";
+const PRODUCT_FIELDS = {
+  productId: "1005004280800180",
+  productTitle: "8K HDMI Cable",
+  productImageUrl: "https://ae-pic-a1.aliexpress-media.com/kf/img.jpg",
+  productDetailUrl: "https://www.aliexpress.com/item/1005004280800180.html",
+  productCount: 1,
+  paidAmountMinor: "535",
+  commissionRate: "7.00%",
+  subOrderId: "1121635427136421",
+};
+
 const ITEM: UnattributedOrderItem = {
   orderId: "1121635427126421",
   reason: "no_ref",
@@ -11,6 +22,7 @@ const ITEM: UnattributedOrderItem = {
   commissionMinor: "37",
   currency: "USD",
   occurredAt: "2026-07-09T05:17:21.000Z",
+  ...PRODUCT_FIELDS,
   firstSeenAt: NOW,
   lastSeenAt: NOW,
   state: "open",
@@ -40,6 +52,7 @@ describe("UnattributedOrderRepo.recordSighting", () => {
         commissionMinor: "37",
         currency: "USD",
         occurredAt: ITEM.occurredAt,
+        ...PRODUCT_FIELDS,
       },
       NOW,
     );
@@ -74,11 +87,25 @@ describe("UnattributedOrderRepo.listByState", () => {
   });
 
   it("parses a pre-claim item to defaults (claim/settledAt absent)", async () => {
-    const { claim: _c, settledAt: _s, ...bare } = ITEM;
+    const {
+      claim: _c,
+      settledAt: _s,
+      productId: _p1,
+      productTitle: _p2,
+      productImageUrl: _p3,
+      productDetailUrl: _p4,
+      productCount: _p5,
+      paidAmountMinor: _p6,
+      commissionRate: _p7,
+      subOrderId: _p8,
+      ...bare
+    } = ITEM;
     const { doc } = stub(() => ({ Items: [bare] }));
     const page = await new UnattributedOrderRepo(doc, "unattributed").listByState("open", 10);
     expect(page.items[0]?.claim).toBeNull();
     expect(page.items[0]?.settledAt).toBeNull();
+    expect(page.items[0]?.productTitle).toBeNull();
+    expect(page.items[0]?.paidAmountMinor).toBeNull();
   });
 });
 

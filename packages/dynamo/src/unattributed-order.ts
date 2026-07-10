@@ -1,6 +1,6 @@
 import { ConditionalCheckFailedException } from "@aws-sdk/client-dynamodb";
 import type { DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import { QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
+import { GetCommand, QueryCommand, UpdateCommand } from "@aws-sdk/lib-dynamodb";
 import { z } from "zod";
 
 /**
@@ -20,6 +20,16 @@ export const UnattributedOrderItem = z.object({
   commissionMinor: z.string().regex(/^\d+$/).nullable(),
   currency: z.string().nullable(),
   occurredAt: z.string().nullable(),
+  // Product + payment context for the admin's portal cross-reference. Defaults keep rows
+  // written before these fields parsing; a later re-sighting fills them in.
+  productId: z.string().nullable().default(null),
+  productTitle: z.string().nullable().default(null),
+  productImageUrl: z.string().nullable().default(null),
+  productDetailUrl: z.string().nullable().default(null),
+  productCount: z.number().int().nullable().default(null),
+  paidAmountMinor: z.string().nullable().default(null),
+  commissionRate: z.string().nullable().default(null),
+  subOrderId: z.string().nullable().default(null),
   firstSeenAt: z.string(),
   lastSeenAt: z.string(),
   state: z.enum(["open", "claimed", "settled", "dismissed"]),
@@ -42,6 +52,14 @@ export interface UnattributedOrderSighting {
   commissionMinor: string | null;
   currency: string | null;
   occurredAt: string | null;
+  productId: string | null;
+  productTitle: string | null;
+  productImageUrl: string | null;
+  productDetailUrl: string | null;
+  productCount: number | null;
+  paidAmountMinor: string | null;
+  commissionRate: string | null;
+  subOrderId: string | null;
 }
 
 export interface UnattributedOrderPage {
@@ -69,7 +87,11 @@ export class UnattributedOrderRepo {
         Key: { orderId: sighting.orderId },
         UpdateExpression:
           "SET reason = :reason, orderStatus = :orderStatus, commissionMinor = :commissionMinor, " +
-          "currency = :currency, occurredAt = :occurredAt, lastSeenAt = :now, " +
+          "currency = :currency, occurredAt = :occurredAt, productId = :productId, " +
+          "productTitle = :productTitle, productImageUrl = :productImageUrl, " +
+          "productDetailUrl = :productDetailUrl, productCount = :productCount, " +
+          "paidAmountMinor = :paidAmountMinor, commissionRate = :commissionRate, " +
+          "subOrderId = :subOrderId, lastSeenAt = :now, " +
           "firstSeenAt = if_not_exists(firstSeenAt, :now), #st = if_not_exists(#st, :open)",
         ExpressionAttributeNames: { "#st": "state" },
         ExpressionAttributeValues: {
@@ -78,11 +100,27 @@ export class UnattributedOrderRepo {
           ":commissionMinor": sighting.commissionMinor,
           ":currency": sighting.currency,
           ":occurredAt": sighting.occurredAt,
+          ":productId": sighting.productId,
+          ":productTitle": sighting.productTitle,
+          ":productImageUrl": sighting.productImageUrl,
+          ":productDetailUrl": sighting.productDetailUrl,
+          ":productCount": sighting.productCount,
+          ":paidAmountMinor": sighting.paidAmountMinor,
+          ":commissionRate": sighting.commissionRate,
+          ":subOrderId": sighting.subOrderId,
           ":now": nowIso,
           ":open": "open",
         },
       }),
     );
+  }
+
+  /** One order for the admin detail page. */
+  async get(orderId: string): Promise<UnattributedOrderItem | undefined> {
+    const res = await this.doc.send(
+      new GetCommand({ TableName: this.tableName, Key: { orderId } }),
+    );
+    return res.Item ? UnattributedOrderItem.parse(res.Item) : undefined;
   }
 
   /** The admin list + the proxy's claimed-queue sweep: `byState`, newest first. */

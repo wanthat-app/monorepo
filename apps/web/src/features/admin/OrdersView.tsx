@@ -1,6 +1,7 @@
 import type { UnattributedOrderState, UnattributedOrderView } from "@wanthat/contracts";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { adminApi } from "../../lib/admin-api";
 import { formatMoneyMinor } from "../../lib/money";
 import { Segmented, Skeleton } from "../../ui/components";
@@ -16,6 +17,7 @@ const STATES: UnattributedOrderState[] = ["open", "claimed", "settled", "dismiss
  */
 export function OrdersView({ token }: { token: string | null }) {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const [state, setState] = useState<UnattributedOrderState>("open");
   const [items, setItems] = useState<UnattributedOrderView[] | null>(null);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -155,7 +157,13 @@ export function OrdersView({ token }: { token: string | null }) {
             {(items ?? []).map((o) => (
               <tr key={o.orderId} className="border-b border-line last:border-0">
                 <td className="px-4 py-3 font-mono text-[12.5px]" dir="ltr">
-                  {o.orderId}
+                  <button
+                    type="button"
+                    onClick={() => navigate(`/admin/orders/${encodeURIComponent(o.orderId)}`)}
+                    className="font-mono text-accent underline-offset-2 hover:underline"
+                  >
+                    {o.orderId}
+                  </button>
                 </td>
                 <td className="px-4 py-3 font-semibold" dir="ltr">
                   {o.amount ? formatMoneyMinor(o.amount.amountMinor, o.amount.currency) : "—"}

@@ -27,6 +27,21 @@ export const UnattributedOrderView = z.object({
   orderStatus: z.string(),
   /** Gross commission; null when the platform omitted it (such an order cannot be claimed). */
   amount: AmountWire.nullable(),
+  /** Product + payment context for the portal cross-reference (best-effort, latest sighting). */
+  product: z
+    .object({
+      productId: z.string().nullable(),
+      title: z.string().nullable(),
+      imageUrl: z.string().nullable(),
+      detailUrl: z.string().nullable(),
+      count: z.number().int().nullable(),
+    })
+    .nullable(),
+  paidAmount: AmountWire.nullable(),
+  /** Raw platform commission rate string (e.g. "7.00%"), display-only. */
+  commissionRate: z.string().nullable(),
+  /** The platform's sub-order id — the portal's order report keys some rows by it. */
+  subOrderId: z.string().nullable(),
   /** The order's own timestamp; null when the platform's value was unparseable. */
   occurredAt: IsoDateTime.nullable(),
   firstSeenAt: IsoDateTime,
@@ -66,3 +81,8 @@ export const UnattributedOrderActionResponse = z.object({
   item: UnattributedOrderView,
 });
 export type UnattributedOrderActionResponse = z.infer<typeof UnattributedOrderActionResponse>;
+
+export const GetUnattributedOrderResponse = z.object({
+  item: UnattributedOrderView,
+});
+export type GetUnattributedOrderResponse = z.infer<typeof GetUnattributedOrderResponse>;

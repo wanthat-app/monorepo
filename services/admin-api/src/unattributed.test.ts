@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 // Hoisted fakes so the vi.mock factory can close over them (vitest hoists vi.mock above imports).
 const { fake } = vi.hoisted(() => ({
   fake: {
-    unattributedOrders: { listByState: vi.fn(), claim: vi.fn(), dismiss: vi.fn() },
+    unattributedOrders: { listByState: vi.fn(), claim: vi.fn(), dismiss: vi.fn(), get: vi.fn() },
     recommendations: { get: vi.fn() },
   },
 }));
@@ -24,6 +24,37 @@ const ITEM = {
   commissionMinor: "37",
   currency: "USD",
   occurredAt: "2026-07-09T05:17:21.000Z",
+  productId: "1005004280800180",
+  productTitle: "8K HDMI Cable",
+  productImageUrl: "https://ae-pic-a1.aliexpress-media.com/kf/img.jpg",
+  productDetailUrl: "https://www.aliexpress.com/item/1005004280800180.html",
+  productCount: 1,
+  paidAmountMinor: "535",
+  commissionRate: "7.00%",
+  subOrderId: "1121635427136421",
+  firstSeenAt: NOW,
+  lastSeenAt: NOW,
+  state: "open",
+  claim: null,
+  settledAt: null,
+};
+
+const VIEW = {
+  orderId: ITEM.orderId,
+  reason: "no_ref",
+  orderStatus: "Payment Completed",
+  amount: { amountMinor: "37", currency: "USD" },
+  product: {
+    productId: ITEM.productId,
+    title: ITEM.productTitle,
+    imageUrl: ITEM.productImageUrl,
+    detailUrl: ITEM.productDetailUrl,
+    count: 1,
+  },
+  paidAmount: { amountMinor: "535", currency: "USD" },
+  commissionRate: "7.00%",
+  subOrderId: ITEM.subOrderId,
+  occurredAt: ITEM.occurredAt,
   firstSeenAt: NOW,
   lastSeenAt: NOW,
   state: "open",
@@ -49,23 +80,7 @@ describe("GET /admin/orders/unattributed", () => {
     const res = await app.request("/admin/orders/unattributed?state=open", {}, adminEnv);
     expect(res.status).toBe(200);
     expect(fake.unattributedOrders.listByState).toHaveBeenCalledWith("open", 50, undefined);
-    expect(await res.json()).toEqual({
-      items: [
-        {
-          orderId: ITEM.orderId,
-          reason: "no_ref",
-          orderStatus: "Payment Completed",
-          amount: { amountMinor: "37", currency: "USD" },
-          occurredAt: ITEM.occurredAt,
-          firstSeenAt: NOW,
-          lastSeenAt: NOW,
-          state: "open",
-          claim: null,
-          settledAt: null,
-        },
-      ],
-      nextCursor: null,
-    });
+    expect(await res.json()).toEqual({ items: [VIEW], nextCursor: null });
   });
 
   it("defaults to open, round-trips the cursor, 400s an invalid state", async () => {
@@ -88,6 +103,19 @@ describe("GET /admin/orders/unattributed", () => {
     expect((await app.request("/admin/orders/unattributed?state=nope", {}, adminEnv)).status).toBe(
       400,
     );
+  });
+});
+
+describe("GET /admin/orders/unattributed/:orderId", () => {
+  it("answers the full detail view; 404 when unknown", async () => {
+    fake.unattributedOrders.get.mockResolvedValueOnce(ITEM);
+    const res = await app.request(`/admin/orders/unattributed/${ITEM.orderId}`, {}, adminEnv);
+    expect(res.status).toBe(200);
+    expect(fake.unattributedOrders.get).toHaveBeenCalledWith(ITEM.orderId);
+    expect(await res.json()).toEqual({ item: VIEW });
+
+    fake.unattributedOrders.get.mockResolvedValueOnce(undefined);
+    expect((await app.request("/admin/orders/unattributed/nope", {}, adminEnv)).status).toBe(404);
   });
 });
 
