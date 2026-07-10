@@ -12,6 +12,8 @@ import { Logger } from "@aws-lambda-powertools/logger";
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
 import { AliExpressClient } from "@wanthat/aliexpress";
 import {
+  CashbackConsumerBps,
+  CashbackReferrerBps,
   GenerateLinkRequest,
   type PollOrdersResponse,
   RetailerAliexpressTrackingId,
@@ -102,6 +104,18 @@ function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps } {
       attribution: {
         recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
         guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
+        env: requireEnv("WANTHAT_ENV"),
+        // Deleted-recommendation fallback economics: the config split as of the conversion.
+        fallbackSplit: async () => {
+          const [referrerBps, consumerBps] = await Promise.all([
+            config.get("cashback.referrerBps"),
+            config.get("cashback.consumerBps"),
+          ]);
+          return {
+            referrerBps: CashbackReferrerBps.parse(referrerBps),
+            consumerBps: CashbackConsumerBps.parse(consumerBps),
+          };
+        },
         now: () => new Date(),
       },
       invokeWriter,

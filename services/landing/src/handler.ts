@@ -98,6 +98,7 @@ export const handler = async (event: LandingEvent): Promise<LandingResult> => {
     return resolve(event, decodeURIComponent(resolveMatch[1]), {
       recommendations: getContext().recommendations,
       verifyBearer,
+      env: getContext().env,
     });
   }
 
