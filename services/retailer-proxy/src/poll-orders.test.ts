@@ -25,7 +25,7 @@ const REC = {
 const anOrder = (id: string): AliExpressOrder => ({
   orderId: id,
   status: "Payment Completed",
-  customParameters: JSON.stringify({ ref: "abc123DEF45" }),
+  customParameters: JSON.stringify({ af: "abc123DEF45" }),
   commissionMinor: "124",
   commissionCurrency: "USD",
   orderTimeGmt8: null,

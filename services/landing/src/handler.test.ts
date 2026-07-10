@@ -165,8 +165,8 @@ describe("handler", () => {
     const parsed = JSON.parse(res.body) as { outcome: string; url: string };
     expect(parsed.outcome).toBe("redirect");
     const u = new URL(parsed.url);
-    expect(u.searchParams.get("ref")).toBe("abc123DEF45");
-    expect(u.searchParams.get("g")).toBe("g-route");
+    expect(u.searchParams.get("af")).toBe("abc123DEF45");
+    expect(u.searchParams.get("cv")).toBe("g-route");
   });
 
   it("405s a GET on the resolve path instead of rendering a page", async () => {

@@ -16,7 +16,7 @@ import {
   Uuid,
   type WalletEntryStatus,
 } from "@wanthat/contracts";
-import { splitCommission } from "@wanthat/domain";
+import { decodeAttribution, splitCommission } from "@wanthat/domain";
 import type { GuestAttributionRepo, RecommendationRepo } from "@wanthat/dynamo";
 
 export interface AttributionDeps {
@@ -53,25 +53,12 @@ function mapStatus(raw: string): WalletEntryStatus | null {
   return null;
 }
 
-/** The click's custom_parameters, tolerantly decoded; every field optional and untrusted. */
-function parseCustomParams(raw: string | null): { ref?: string; c?: string; g?: string } {
-  if (!raw) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return {};
-    const rec = parsed as Record<string, unknown>;
-    const str = (v: unknown) => (typeof v === "string" && v.length > 0 ? v : undefined);
-    return { ref: str(rec.ref), c: str(rec.c), g: str(rec.g) };
-  } catch {
-    return {};
-  }
-}
-
 export async function resolveOrder(
   order: AliExpressOrder,
   deps: AttributionDeps,
 ): Promise<AttributionOutcome> {
-  const params = parseCustomParams(order.customParameters);
+  // Decoded by the domain's CLICK_KEYS mapping — the exact mirror of withAttribution's encode.
+  const params = decodeAttribution(order.customParameters);
   if (!params.ref) return { outcome: "untracked", reason: "no_ref" };
 
   const rec = await deps.recommendations.get(params.ref);

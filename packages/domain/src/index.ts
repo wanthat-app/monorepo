@@ -109,12 +109,22 @@ export function convertMinor(amountMinor: bigint, rate: string, commissionBps: n
 export type ResolvedConsumer = { kind: "member"; sub: string } | { kind: "guest"; guestId: string };
 
 /**
- * Attribution at click-through (ADR-0008): append `custom_parameters` onto the PRODUCT-level
- * affiliate URL — `ref` always, plus the consumer key (`c` member sub / `g` guest id). Opaque
- * ids only — nothing internal leaks. The input URL comes ONLY from the stored recommendation
- * projection (open-redirect safety, ADR-0007); `new URL` throws on malformed storage rather
- * than emitting a broken redirect. Integration caveat (ADR-0008): the retailer must round-trip
- * redirect-appended params — confirmed on the first real dev conversion.
+ * The click→report wire keys. AliExpress round-trips ONLY its fixed tracking keys (`af`, `cn`,
+ * `cv`, `dp` — portals help: the names cannot be changed); anything else is silently dropped
+ * (proven on dev 2026-07-10: `ref`/`c`/`g` clicks came back as `custom_parameters: "{}"`). So
+ * our logical keys ride the platform's names: `af` = ref (recommendationId), `cn` = member sub,
+ * `cv` = guest id. Encode (withAttribution) and decode (decodeAttribution) MUST stay symmetric —
+ * both live here so the wire format has one home.
+ */
+const CLICK_KEYS = { ref: "af", member: "cn", guest: "cv" } as const;
+
+/**
+ * Attribution at click-through (ADR-0008): append the click's `custom_parameters` onto the
+ * PRODUCT-level affiliate URL — the ref always, plus the consumer key (member sub / guest id),
+ * under the platform's fixed tracking keys (CLICK_KEYS). Opaque ids only — nothing internal
+ * leaks. The input URL comes ONLY from the stored recommendation projection (open-redirect
+ * safety, ADR-0007); `new URL` throws on malformed storage rather than emitting a broken
+ * redirect.
  */
 export function withAttribution(
   affiliateUrl: string,
@@ -122,8 +132,36 @@ export function withAttribution(
   consumer: ResolvedConsumer,
 ): string {
   const url = new URL(affiliateUrl);
-  url.searchParams.set("ref", recommendationId);
-  if (consumer.kind === "member") url.searchParams.set("c", consumer.sub);
-  else url.searchParams.set("g", consumer.guestId);
+  url.searchParams.set(CLICK_KEYS.ref, recommendationId);
+  if (consumer.kind === "member") url.searchParams.set(CLICK_KEYS.member, consumer.sub);
+  else url.searchParams.set(CLICK_KEYS.guest, consumer.guestId);
   return url.toString();
+}
+
+/**
+ * The report side of CLICK_KEYS: an order's raw `custom_parameters` JSON → our logical keys.
+ * Tolerant by design — the field is platform-echoed, attacker-influencable click input: bad
+ * JSON or shapes decode to {}. Values may echo back as JSON numbers (the platform's own doc
+ * example is `{"af":0,"dp":1111}`), so finite numbers are stringified; our ids are never
+ * leading-zero numerics, so the round-trip is lossless.
+ */
+export function decodeAttribution(raw: string | null): { ref?: string; c?: string; g?: string } {
+  if (!raw) return {};
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return {};
+    const rec = parsed as Record<string, unknown>;
+    const str = (v: unknown) => {
+      if (typeof v === "string" && v.length > 0) return v;
+      if (typeof v === "number" && Number.isFinite(v)) return String(v);
+      return undefined;
+    };
+    return {
+      ref: str(rec[CLICK_KEYS.ref]),
+      c: str(rec[CLICK_KEYS.member]),
+      g: str(rec[CLICK_KEYS.guest]),
+    };
+  } catch {
+    return {};
+  }
 }

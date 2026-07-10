@@ -28,8 +28,14 @@ import { type AttributionDeps, resolveOrder } from "./attribution";
 export const POLLER_STATE_KEY = "aliexpress#orders";
 /** Re-read overlap behind the watermark — absorbs late-arriving orders + clock skew. */
 const OVERLAP_MS = 60 * 60 * 1000;
-/** One sweep per status filter, sequentially. The full platform enum is integration-pending. */
-export const POLL_STATUSES = ["Payment Completed", "Completed", "Invalid"] as const;
+/**
+ * One sweep per status filter, sequentially. The platform's documented request enum is EXACTLY
+ * these two (probed live 2026-07-10: "Completed" answers resp_code 407 param-pattern-invalid,
+ * "Invalid" 405 empty — both silently sweep nothing). Clawback therefore has NO request-side
+ * source on this endpoint yet; the response-side mapStatus keeps its clawback branch for
+ * whatever statuses fetched orders later carry.
+ */
+export const POLL_STATUSES = ["Payment Completed", "Buyer Confirmed Receipt"] as const;
 const PAGE_SIZE = 50;
 const API_LIMIT_RETRY_MS = 1200;
 /** Writer invoke batch bound — keeps one invoke payload small and one failure blast-radius low. */

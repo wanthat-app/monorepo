@@ -22,7 +22,7 @@ const deps = (over: Partial<AttributionDeps> = {}): AttributionDeps => ({
 const order = (over: Partial<AliExpressOrder> = {}): AliExpressOrder => ({
   orderId: "8123456789",
   status: "Payment Completed",
-  customParameters: JSON.stringify({ ref: "abc123DEF45", c: SUB_MEMBER }),
+  customParameters: JSON.stringify({ af: "abc123DEF45", cn: SUB_MEMBER }),
   commissionMinor: "124",
   commissionCurrency: "USD",
   orderTimeGmt8: "2026-07-10 18:00:00",
@@ -53,7 +53,7 @@ describe("resolveOrder", () => {
 
   it("maps a claimed guest to its sub, an unclaimed guest to a null party (still kind guest)", async () => {
     const claimed = await resolveOrder(
-      order({ customParameters: JSON.stringify({ ref: "abc123DEF45", g: "g-1" }) }),
+      order({ customParameters: JSON.stringify({ af: "abc123DEF45", cv: "g-1" }) }),
       deps({ guests: { get: vi.fn(async () => ({ guestId: "g-1", sub: SUB_GUEST }) as never) } }),
     );
     if (claimed.outcome !== "resolved") throw new Error("expected resolved");
@@ -61,7 +61,7 @@ describe("resolveOrder", () => {
     expect(claimed.write.consumer).toBe("guest");
 
     const unclaimed = await resolveOrder(
-      order({ customParameters: JSON.stringify({ ref: "abc123DEF45", g: "g-2" }) }),
+      order({ customParameters: JSON.stringify({ af: "abc123DEF45", cv: "g-2" }) }),
       deps(),
     );
     if (unclaimed.outcome !== "resolved") throw new Error("expected resolved");
@@ -71,7 +71,7 @@ describe("resolveOrder", () => {
 
   it("ref-only and malformed member sub degrade to consumer none", async () => {
     const refOnly = await resolveOrder(
-      order({ customParameters: JSON.stringify({ ref: "abc123DEF45" }) }),
+      order({ customParameters: JSON.stringify({ af: "abc123DEF45" }) }),
       deps(),
     );
     if (refOnly.outcome !== "resolved") throw new Error("expected resolved");
@@ -79,7 +79,7 @@ describe("resolveOrder", () => {
     expect(refOnly.write.consumer).toBe("none");
 
     const badSub = await resolveOrder(
-      order({ customParameters: JSON.stringify({ ref: "abc123DEF45", c: "not-a-uuid" }) }),
+      order({ customParameters: JSON.stringify({ af: "abc123DEF45", cn: "not-a-uuid" }) }),
       deps(),
     );
     if (badSub.outcome !== "resolved") throw new Error("expected resolved");

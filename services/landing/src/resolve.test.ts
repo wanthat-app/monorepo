@@ -54,26 +54,26 @@ const clickEvents = () =>
     .map((l) => JSON.parse(l) as { type: string; consumer: string; recommendationId: string });
 
 describe("resolve", () => {
-  it("redirects a verified member with ref + c and emits a member click", async () => {
+  it("redirects a verified member with af + cn and emits a member click", async () => {
     const res = await call(makeDeps(), { auth: "Bearer good", body: {} });
     expect(res.statusCode).toBe(200);
     const parsed = ResolveResponse.parse(JSON.parse(res.body));
     if (parsed.outcome !== "redirect") throw new Error("expected redirect");
     const u = new URL(parsed.url);
     expect(u.searchParams.get("aff")).toBe("1"); // stored params preserved
-    expect(u.searchParams.get("ref")).toBe("abc123DEF45");
-    expect(u.searchParams.get("c")).toBe(SUB);
-    expect(u.searchParams.get("g")).toBeNull();
+    expect(u.searchParams.get("af")).toBe("abc123DEF45");
+    expect(u.searchParams.get("cn")).toBe(SUB);
+    expect(u.searchParams.get("cv")).toBeNull();
     expect(clickEvents()).toEqual([expect.objectContaining({ type: "click", consumer: "member" })]);
   });
 
-  it("redirects a guest with ref + g and emits a guest click", async () => {
+  it("redirects a guest with af + cv and emits a guest click", async () => {
     const res = await call(makeDeps(), { body: { guestId: "g-123" } });
     const parsed = ResolveResponse.parse(JSON.parse(res.body));
     if (parsed.outcome !== "redirect") throw new Error("expected redirect");
     const u = new URL(parsed.url);
-    expect(u.searchParams.get("g")).toBe("g-123");
-    expect(u.searchParams.get("c")).toBeNull();
+    expect(u.searchParams.get("cv")).toBe("g-123");
+    expect(u.searchParams.get("cn")).toBeNull();
     expect(clickEvents()).toEqual([expect.objectContaining({ consumer: "guest" })]);
   });
 
@@ -93,7 +93,7 @@ describe("resolve", () => {
     const res = await call(makeDeps(), { auth: "Bearer expired", body: { guestId: "g-9" } });
     const parsed = JSON.parse(res.body) as { outcome: string; url: string };
     expect(parsed.outcome).toBe("redirect");
-    expect(new URL(parsed.url).searchParams.get("g")).toBe("g-9");
+    expect(new URL(parsed.url).searchParams.get("cv")).toBe("g-9");
   });
 
   it("400s malformed JSON and a guestId failing the contract, without a click", async () => {
@@ -122,6 +122,6 @@ describe("resolve", () => {
       makeDeps(),
     );
     const parsed = JSON.parse(res.body) as { url: string };
-    expect(new URL(parsed.url).searchParams.get("g")).toBe("g-64");
+    expect(new URL(parsed.url).searchParams.get("cv")).toBe("g-64");
   });
 });
