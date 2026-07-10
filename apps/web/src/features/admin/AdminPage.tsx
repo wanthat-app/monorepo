@@ -24,6 +24,7 @@ import { identityFromIdToken } from "../../lib/jwt";
 import { Button, RangeSlider, Segmented, Skeleton, Spinner, Switch } from "../../ui/components";
 import { ActivityView } from "./ActivityView";
 import { AdminLayout, type AdminView } from "./AdminLayout";
+import { OrdersView } from "./OrdersView";
 import { UsersView } from "./UsersView";
 
 /**
@@ -42,6 +43,7 @@ import { UsersView } from "./UsersView";
 const VIEW_PATHS: Record<AdminView, string> = {
   dashboard: "/admin",
   users: "/admin/users",
+  orders: "/admin/orders",
   activity: "/admin/activity",
   config: "/admin/settings",
 };
@@ -92,6 +94,7 @@ export function AdminPage() {
   const heading: Record<AdminView, { title: string; subtitle: string }> = {
     dashboard: { title: t("admin.dashboard"), subtitle: t("admin.dashboardSub") },
     users: { title: t("admin.usersNav"), subtitle: t("admin.usersSub") },
+    orders: { title: t("admin.ordersNav"), subtitle: t("admin.ordersSub") },
     activity: { title: t("admin.activityNav"), subtitle: t("admin.activitySub") },
     config: { title: t("admin.configuration"), subtitle: t("admin.configSub") },
   };
@@ -112,6 +115,8 @@ export function AdminPage() {
         <DashboardView token={tokens.idToken} />
       ) : view === "users" ? (
         <UsersView token={tokens.idToken} />
+      ) : view === "orders" ? (
+        <OrdersView token={tokens.idToken} />
       ) : view === "activity" ? (
         <ActivityView token={tokens.idToken} />
       ) : (

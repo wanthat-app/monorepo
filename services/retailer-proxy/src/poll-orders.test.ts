@@ -45,6 +45,7 @@ function makeDeps(over: Partial<PollOrdersDeps> = {}, pages?: (call: number) => 
   );
   const fakeClient: FakeClient = { listOrdersByIndex };
   const state = { get: vi.fn(async () => undefined as never), put: vi.fn(async () => {}) };
+  const unattributed = { recordSighting: vi.fn(async () => {}) };
   const deps: PollOrdersDeps = {
     client: vi.fn(async () => fakeClient as never),
     state: state as never,
@@ -60,13 +61,14 @@ function makeDeps(over: Partial<PollOrdersDeps> = {}, pages?: (call: number) => 
       fallbackSplit: vi.fn(async () => ({ referrerBps: 5000, consumerBps: 0 })),
       now: () => NOW,
     },
+    unattributed,
     invokeWriter: null,
     now: () => NOW,
     sleep: async () => {},
     logger: new Logger({ serviceName: "test" }),
     ...over,
   };
-  return { deps, listOrdersByIndex, state };
+  return { deps, listOrdersByIndex, state, unattributed };
 }
 
 describe("toGmt8", () => {
@@ -186,7 +188,7 @@ describe("pollOrders", () => {
   it("counts untracked orders without failing the run and emits the typed funnel event", async () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     try {
-      const { deps } = makeDeps({}, (call) =>
+      const { deps, unattributed } = makeDeps({}, (call) =>
         call === 1
           ? {
               orders: [anOrder("good"), { ...anOrder("bad"), customParameters: null }],
@@ -198,6 +200,19 @@ describe("pollOrders", () => {
       if (res.status !== "ok") throw new Error("expected ok");
       expect(res.resolved).toBe(1);
       expect(res.untracked).toBe(1);
+
+      // The claim-queue projection saw the same sighting.
+      expect(unattributed.recordSighting).toHaveBeenCalledWith(
+        {
+          orderId: "bad",
+          reason: "no_ref",
+          orderStatus: "Payment Completed",
+          commissionMinor: "124",
+          currency: "USD",
+          occurredAt: null,
+        },
+        NOW.toISOString(),
+      );
 
       const events = logSpy.mock.calls
         .map((c) => String(c[0]))
@@ -227,7 +242,7 @@ describe("pollOrders", () => {
           af: `prod:user:${SUB_REFERRER}:rec:abc123DEF45`,
         }),
       };
-      const { deps } = makeDeps({}, (call) =>
+      const { deps, unattributed } = makeDeps({}, (call) =>
         call === 1
           ? { orders: [foreign], nextQueryIndexId: null }
           : { orders: [], nextQueryIndexId: null },
@@ -238,6 +253,7 @@ describe("pollOrders", () => {
       expect(
         logSpy.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('"order_untracked"')),
       ).toEqual([]);
+      expect(unattributed.recordSighting).not.toHaveBeenCalled();
     } finally {
       logSpy.mockRestore();
     }

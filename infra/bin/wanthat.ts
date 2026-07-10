@@ -93,6 +93,8 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   opsCountersTable: data.opsCountersTable,
   productTable: data.productTable,
   recommendationTable: data.recommendationTable,
+  // The unattributed-order claim queue (list + claim/dismiss; the retailer-proxy settles).
+  unattributedOrderTable: data.unattributedOrderTable,
   // Dev OTP sink: activity page lists parked codes (undefined in prod - fail-closed).
   devOtpSinkTable: data.devOtpSinkTable,
   // Write-only credential drop (PutSecretValue + DescribeSecret; never read) — see AdminStack.
@@ -112,6 +114,7 @@ const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-serv
   fxRateTable: data.fxRateTable,
   retailerSecret: data.retailerSecret,
   pollerStateTable: data.pollerStateTable,
+  unattributedOrderTable: data.unattributedOrderTable,
   // Offline JWT verification on the landing resolve path (ADR-0007: JWKS, never a Cognito call).
   userPoolId: identity.userPool.userPoolId,
   userPoolClientId: identity.userPoolClient.userPoolClientId,

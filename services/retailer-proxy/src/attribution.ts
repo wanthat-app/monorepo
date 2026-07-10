@@ -54,7 +54,7 @@ export function parseGmt8(raw: string | null): string | null {
  * anything unrecognized is null → the order is untracked and logged, never guessed at.
  * "payment completed" must be tested BEFORE the generic "completed".
  */
-function mapStatus(raw: string): WalletEntryStatus | null {
+export function mapStatus(raw: string): WalletEntryStatus | null {
   const s = raw.toLowerCase();
   if (s.includes("payment completed")) return "pending";
   if (s.includes("invalid") || s.includes("reject")) return "clawback";

@@ -23,8 +23,12 @@ import {
   type WriteConversionsRequest,
   type WriteConversionsResponse,
 } from "@wanthat/contracts";
-import type { PollerStateRepo, RuntimeConfigBatchReader } from "@wanthat/dynamo";
-import { type AttributionDeps, resolveOrder } from "./attribution";
+import type {
+  PollerStateRepo,
+  RuntimeConfigBatchReader,
+  UnattributedOrderRepo,
+} from "@wanthat/dynamo";
+import { type AttributionDeps, parseGmt8, resolveOrder } from "./attribution";
 
 const bigintReplacer = (_k: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v);
 
@@ -49,6 +53,8 @@ export interface PollOrdersDeps {
   state: PollerStateRepo;
   config: RuntimeConfigBatchReader;
   attribution: AttributionDeps;
+  /** The admin claim queue: every same-env untracked order is projected here (best-effort). */
+  unattributed: Pick<UnattributedOrderRepo, "recordSighting">;
   /** Null = dry mode (CONVERSION_WRITER_FUNCTION unset): log resolved conversions, write nothing. */
   invokeWriter: ((req: WriteConversionsRequest) => Promise<WriteConversionsResponse>) | null;
   now: () => Date;
@@ -160,6 +166,25 @@ export async function pollOrders(deps: PollOrdersDeps): Promise<PollOrdersRespon
               bigintReplacer,
             ),
           );
+          // The admin claim queue — best-effort: a projection miss never fails the poll.
+          try {
+            await deps.unattributed.recordSighting(
+              {
+                orderId: order.orderId,
+                reason: outcome.reason,
+                orderStatus: order.status,
+                commissionMinor: order.commissionMinor,
+                currency: order.commissionMinor ? (order.commissionCurrency ?? "USD") : null,
+                occurredAt: parseGmt8(order.orderTimeGmt8),
+              },
+              now.toISOString(),
+            );
+          } catch (err) {
+            deps.logger.error("unattributed sighting failed", {
+              orderId: order.orderId,
+              error: String(err),
+            });
+          }
         }
       }
     }

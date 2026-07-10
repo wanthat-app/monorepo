@@ -1,5 +1,6 @@
 import type {
   CatalogStats,
+  ClaimUnattributedOrderBody,
   CognitoDeleteUserResponse,
   ConfigKey,
   ConfigValue,
@@ -9,10 +10,13 @@ import type {
   GlobalSignOutUserResponse,
   ListActivityResponse,
   ListConfigResponse,
+  ListUnattributedOrdersResponse,
   ListUsersResponse,
   PutConfigResponse,
   PutRetailerCredentialsBody,
   RetailerCredentialsStatus,
+  UnattributedOrderActionResponse,
+  UnattributedOrderState,
   UsersStats,
 } from "@wanthat/contracts";
 import { beginAdminLogin, clearAdminTokens, refreshAdminTokens } from "./admin-login";
@@ -65,6 +69,23 @@ async function adminRequest<T>(
 
 export const adminApi = {
   listConfig: (token: string) => adminRequest<ListConfigResponse>("/admin/config", token),
+  listUnattributedOrders: (token: string, state: UnattributedOrderState, cursor?: string) =>
+    adminRequest<ListUnattributedOrdersResponse>(
+      `/admin/orders/unattributed?state=${state}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,
+      token,
+    ),
+  claimUnattributedOrder: (token: string, orderId: string, body: ClaimUnattributedOrderBody) =>
+    adminRequest<UnattributedOrderActionResponse>(
+      `/admin/orders/unattributed/${encodeURIComponent(orderId)}/claim`,
+      token,
+      { method: "POST", body },
+    ),
+  dismissUnattributedOrder: (token: string, orderId: string) =>
+    adminRequest<UnattributedOrderActionResponse>(
+      `/admin/orders/unattributed/${encodeURIComponent(orderId)}/dismiss`,
+      token,
+      { method: "POST" },
+    ),
   getConfig: (token: string, key: ConfigKey) =>
     adminRequest<GetConfigResponse>(`/admin/config/${key}`, token),
   putConfig: (token: string, key: ConfigKey, value: ConfigValue) =>

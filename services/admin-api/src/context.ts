@@ -6,6 +6,7 @@ import {
   ProductRepo,
   RecommendationRepo,
   RuntimeConfigRepo,
+  UnattributedOrderRepo,
 } from "@wanthat/dynamo";
 
 function requireEnv(name: string): string {
@@ -24,6 +25,8 @@ export interface AdminContext {
   recommendations: RecommendationRepo;
   /** Read-only (stats): the exact customer counter (`customerCounter` in OpsCounters). */
   customerCounter: CustomerCounterRepo;
+  /** The unattributed-order claim queue (list + claim/dismiss intents; the proxy settles). */
+  unattributedOrders: UnattributedOrderRepo;
   /** Dev only — undefined in prod (no table, no env var; fail-closed). */
   devOtpSink?: DevOtpSinkRepo;
 }
@@ -57,6 +60,10 @@ export function getContext(): AdminContext {
     recommendations: new RecommendationRepo(
       getDocClient(region),
       requireEnv("RECOMMENDATION_TABLE"),
+    ),
+    unattributedOrders: new UnattributedOrderRepo(
+      getDocClient(region),
+      requireEnv("UNATTRIBUTED_ORDER_TABLE"),
     ),
     // Dev only: DEV_OTP_SINK_TABLE is set solely where the sink table exists (never prod).
     ...(devOtpSinkTable

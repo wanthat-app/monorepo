@@ -3,7 +3,7 @@ import { useTranslation } from "react-i18next";
 import { BrandMark } from "../../ui/brand";
 import { Segmented } from "../../ui/components";
 
-export type AdminView = "dashboard" | "users" | "config" | "activity";
+export type AdminView = "dashboard" | "users" | "orders" | "config" | "activity";
 
 /**
  * Admin console chrome (Wanthat Admin): a fixed light sidebar + a topbar, with the active view rendered
@@ -95,6 +95,25 @@ export function AdminLayout({
             <path d="M16 3.13a4 4 0 0 1 0 7.75" />
           </svg>
           {t("admin.usersNav")}
+        </NavItem>
+        <NavItem active={view === "orders"} onClick={() => onNavigate("orders")}>
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            aria-hidden="true"
+          >
+            <title>{t("admin.ordersNav")}</title>
+            <path d="M21 8v13H3V8" />
+            <path d="M1 3h22v5H1z" />
+            <path d="M10 12h4" />
+          </svg>
+          {t("admin.ordersNav")}
         </NavItem>
         <NavItem active={view === "activity"} onClick={() => onNavigate("activity")}>
           <svg

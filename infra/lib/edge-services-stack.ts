@@ -32,6 +32,7 @@ export interface EdgeServicesStackProps extends StackProps {
   readonly fxRateTable: dynamodb.ITable;
   readonly retailerSecret: secretsmanager.ISecret;
   readonly pollerStateTable: dynamodb.ITable;
+  readonly unattributedOrderTable: dynamodb.ITable;
   /** Customer pool + SPA client ids: the landing resolve verifies Bearer tokens OFFLINE (JWKS). */
   readonly userPoolId: string;
   readonly userPoolClientId: string;
@@ -127,6 +128,8 @@ export class EdgeServicesStack extends Stack {
     props.recommendationTable.grantReadData(retailerProxy);
     props.guestAttributionTable.grantReadData(retailerProxy);
     props.pollerStateTable.grantReadWriteData(retailerProxy);
+    // The claim queue: the poll upserts sightings, the heartbeat settles claimed items.
+    props.unattributedOrderTable.grantReadWriteData(retailerProxy);
     // The AliExpress tracking id is runtime config (`retailer.aliexpressTrackingId`, admin-set
     // next to the credentials) - the proxy reads it per invoke, so changing it needs no redeploy.
     props.runtimeConfigTable.grantReadData(retailerProxy);
@@ -136,6 +139,10 @@ export class EdgeServicesStack extends Stack {
     retailerProxy.addEnvironment("RECOMMENDATION_TABLE", props.recommendationTable.tableName);
     retailerProxy.addEnvironment("GUEST_ATTRIBUTION_TABLE", props.guestAttributionTable.tableName);
     retailerProxy.addEnvironment("POLLER_STATE_TABLE", props.pollerStateTable.tableName);
+    retailerProxy.addEnvironment(
+      "UNATTRIBUTED_ORDER_TABLE",
+      props.unattributedOrderTable.tableName,
+    );
 
     // --- conversion-poller-writer: IN-VPC, the sole money mutator (ADR-0002/0009) ---
     const poller = new NodejsFunction(this, "ConversionPoller", {

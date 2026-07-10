@@ -27,10 +27,12 @@ import {
   ProductRepo,
   RecommendationRepo,
   RuntimeConfigRepo,
+  UnattributedOrderRepo,
 } from "@wanthat/dynamo";
 import { RetailerCredentialsReader } from "./credentials";
 import { type GenerateLinkDeps, type GenerateLinkWire, generateLink } from "./generate-link";
 import { type PollOrdersDeps, pollOrders } from "./poll-orders";
+import { type SettleClaimsDeps, settleClaims } from "./settle-claims";
 
 const SERVICE = "retailer-proxy";
 const logger = new Logger({ serviceName: SERVICE });
@@ -46,10 +48,10 @@ function requireEnv(name: string): string {
   return value;
 }
 
-let cached: { link: GenerateLinkDeps; poll: PollOrdersDeps } | undefined;
+let cached: { link: GenerateLinkDeps; poll: PollOrdersDeps; claims: SettleClaimsDeps } | undefined;
 
 /** Per-container dependency graph; the credential fetch is memoized inside the reader. */
-function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps } {
+function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps; claims: SettleClaimsDeps } {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
   const doc = getDocClient(region);
@@ -91,6 +93,9 @@ function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps } {
         }
       : null;
 
+  const unattributed = new UnattributedOrderRepo(doc, requireEnv("UNATTRIBUTED_ORDER_TABLE"));
+  const recommendations = new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE"));
+
   cached = {
     link: {
       products: new ProductRepo(doc, requireEnv("PRODUCT_TABLE")),
@@ -102,7 +107,7 @@ function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps } {
       state: new PollerStateRepo(doc, requireEnv("POLLER_STATE_TABLE")),
       config,
       attribution: {
-        recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
+        recommendations,
         guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
         env: requireEnv("WANTHAT_ENV"),
         // Deleted-recommendation fallback economics: the config split as of the conversion.
@@ -118,6 +123,14 @@ function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps } {
         },
         now: () => new Date(),
       },
+      unattributed,
+      invokeWriter,
+      now: () => new Date(),
+      logger,
+    },
+    claims: {
+      unattributed,
+      recommendations,
       invokeWriter,
       now: () => new Date(),
       logger,
@@ -139,6 +152,10 @@ export const handler = async (
     case "listOrders": {
       const summary = await pollOrders(getDeps().poll);
       logger.info("poll_summary", { summary: JSON.stringify(summary) });
+      // Claim settlement rides EVERY heartbeat (retailer API untouched), so an admin claim
+      // lands in the ledger within ~15 minutes regardless of the poll gate.
+      const claims = await settleClaims(getDeps().claims);
+      if (claims.processed > 0) logger.info("claims_summary", { ...claims });
       return summary;
     }
     default: {
