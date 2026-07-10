@@ -183,6 +183,20 @@ export function decimalToMinor(price: string | undefined): string | null {
   return (BigInt(match[1]) * 100n + BigInt(frac.padEnd(2, "0"))).toString();
 }
 
+/**
+ * Order-list money fields arrive ALREADY in integer minor units (cents) — verified live
+ * 2026-07-10: `paid_amount: 535` / `estimated_paid_commission: 37` on a $5.35, 7% order.
+ * (Product-detail prices like `target_sale_price: "3.27"` are decimal dollars — decimalToMinor
+ * above.) Money never guesses: a non-integer value here is a semantics change on the platform
+ * side and answers null, so the order untracks as `no_commission` and queues for human eyes
+ * instead of being credited 100x off in either direction.
+ */
+export function integerMinor(value: string | number | undefined): string | null {
+  if (value === undefined) return null;
+  const raw = String(value).trim();
+  return /^\d+$/.test(raw) ? raw : null;
+}
+
 export class AliExpressClient {
   private readonly gateway: string;
   private readonly fetchFn: typeof fetch;
@@ -305,9 +319,7 @@ export class AliExpressClient {
           orderId: String(id),
           status: o.order_status ?? "",
           customParameters: o.custom_parameters ?? null,
-          commissionMinor: decimalToMinor(
-            commission === undefined ? undefined : String(commission),
-          ),
+          commissionMinor: integerMinor(commission),
           commissionCurrency:
             commission !== undefined ? (o.order_commission_currency ?? "USD") : null,
           orderTimeGmt8: o.paid_time ?? o.order_time ?? null,
