@@ -104,6 +104,25 @@ describe("CognitoUserAdmin", () => {
     });
   });
 
+  it("getBySub filters on the exact sub and maps the single hit (undefined on miss)", async () => {
+    const send = vi.fn(async (cmd: object) => {
+      if (cmd instanceof ListUsersCommand) return { Users: [poolUser()] };
+      throw new Error("unexpected command");
+    });
+    const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
+    const user = await admin.getBySub('7f1f9705-9101-5e64-a6f8-6c1f0a15b8be"\\');
+    expect(user?.id).toBeTruthy();
+    const listCmd = send.mock.calls.map((c) => c[0]).find((c) => c instanceof ListUsersCommand);
+    expect((listCmd as ListUsersCommand).input).toMatchObject({
+      UserPoolId: "pool-1",
+      Limit: 1,
+      Filter: 'sub = "7f1f9705-9101-5e64-a6f8-6c1f0a15b8be"',
+    });
+
+    const miss = new CognitoUserAdmin(fakeClient(vi.fn(async () => ({ Users: [] }))), "pool-1");
+    expect(await miss.getBySub("7f1f9705-9101-5e64-a6f8-6c1f0a15b8be")).toBeUndefined();
+  });
+
   it("lifecycle actions resolve not-found for an unknown phone (contract: 404)", async () => {
     const send = vi.fn().mockRejectedValue(notFound());
     const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");

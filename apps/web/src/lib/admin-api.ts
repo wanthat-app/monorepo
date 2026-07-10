@@ -6,10 +6,12 @@ import type {
   ConfigValue,
   DisableUserResponse,
   EnableUserResponse,
+  GetAdminUserResponse,
   GetConfigResponse,
   GetUnattributedOrderResponse,
   GlobalSignOutUserResponse,
   ListActivityResponse,
+  ListAdminUserRecommendationsResponse,
   ListConfigResponse,
   ListUnattributedOrdersResponse,
   ListUsersResponse,
@@ -21,7 +23,7 @@ import type {
   UsersStats,
 } from "@wanthat/contracts";
 import { beginAdminLogin, clearAdminTokens, refreshAdminTokens } from "./admin-login";
-import { ApiError } from "./api";
+import { ApiError, type WalletBalanceWire, type WalletEntryWire } from "./api";
 import { getConfig } from "./config";
 
 /**
@@ -37,6 +39,12 @@ export interface StatsOverview {
   pendingApprovals: number | null;
   totalCashbackMinor: number | null;
   conversions30d: number | null;
+}
+
+/** The wallet wire (Money travels as decimal strings — the contract types are the bigint code side). */
+export interface AdminUserWalletWire {
+  balances: WalletBalanceWire[];
+  entries: { items: WalletEntryWire[]; nextCursor: string | null };
 }
 
 async function adminRequest<T>(
@@ -70,6 +78,15 @@ async function adminRequest<T>(
 
 export const adminApi = {
   listConfig: (token: string) => adminRequest<ListConfigResponse>("/admin/config", token),
+  getUser: (token: string, sub: string) =>
+    adminRequest<GetAdminUserResponse>(`/admin/users/${encodeURIComponent(sub)}`, token),
+  listUserRecommendations: (token: string, sub: string, cursor?: string) =>
+    adminRequest<ListAdminUserRecommendationsResponse>(
+      `/admin/users/${encodeURIComponent(sub)}/recommendations${cursor ? `?cursor=${encodeURIComponent(cursor)}` : ""}`,
+      token,
+    ),
+  getUserWallet: (token: string, sub: string) =>
+    adminRequest<AdminUserWalletWire>(`/admin/users/${encodeURIComponent(sub)}/wallet`, token),
   getUnattributedOrder: (token: string, orderId: string) =>
     adminRequest<GetUnattributedOrderResponse>(
       `/admin/orders/unattributed/${encodeURIComponent(orderId)}`,

@@ -13,6 +13,7 @@
     "@wanthat/config": "workspace:*",
     "@wanthat/contracts": "workspace:*",
     "@wanthat/db": "workspace:*",
+    "@wanthat/domain": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
     "hono": "^4.6.0",
     "kysely": "^0.28.17"

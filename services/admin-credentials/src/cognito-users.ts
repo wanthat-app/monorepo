@@ -94,6 +94,23 @@ export class CognitoUserAdmin {
     };
   }
 
+  /**
+   * One member by canonical id (Cognito sub). `ListUsers` with the exact-match `sub =` filter -
+   * sub is a filterable standard attribute; there is no direct get-by-sub (usernames are phones).
+   */
+  async getBySub(sub: string): Promise<AdminUserItem | undefined> {
+    const cleaned = sub.replace(/["\\]/g, "");
+    const page = await this.client.send(
+      new ListUsersCommand({
+        UserPoolId: this.userPoolId,
+        Limit: 1,
+        Filter: `sub = "${cleaned}"`,
+      }),
+    );
+    const user = page.Users?.[0];
+    return user ? toAdminUserItem(user) : undefined;
+  }
+
   /** `AdminDisableUser` - reversible suspension, with `AdminGetUser` FIRST so the caller learns
    * whether the user was actually enabled before this call. Re-disabling stays idempotent success
    * in Cognito, but reports `wasEnabled: false` - the customer counter must count each suspension
