@@ -30,6 +30,7 @@ import { auditEntryToItem, mergeByAtDesc, otpSinkToItems } from "./activity";
 import { getContext } from "./context";
 import { type Bindings, requireAdmin } from "./guard";
 import { unattributedRouter } from "./unattributed";
+import { userDetailRouter } from "./user-detail";
 
 const SERVICE = "admin-api";
 const EPOCH0 = new Date(0).toISOString(); // shown as "never set" for keys still on their default
@@ -44,6 +45,10 @@ app.use("/admin/*", requireAdmin);
 
 // The unattributed-order claim queue (Phase 2) — list / claim / dismiss.
 app.route("/admin/orders/unattributed", unattributedRouter());
+
+// The user detail sub-resources (recommendations + wallet). The identity route
+// (GET /admin/users/{sub}) is served by the non-VPC admin-credentials function.
+app.route("/admin/users", userDetailRouter());
 
 // GET /admin/config — every key with its effective value (stored, or its default).
 app.get("/admin/config", async (c) => {

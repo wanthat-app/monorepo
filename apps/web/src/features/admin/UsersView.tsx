@@ -1,6 +1,7 @@
 import type { AdminUserItem } from "@wanthat/contracts";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { adminApi, normalizePhonePrefix } from "../../lib/admin-api";
 import { ApiError } from "../../lib/api";
 import { SearchField } from "../../ui/admin";
@@ -25,6 +26,7 @@ type RowAction = "delete" | "disable" | "enable" | "signout";
  */
 export function UsersView({ token }: { token: string | null }) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<AdminUserItem[]>([]);
   const [total, setTotal] = useState<number | null>(null);
@@ -264,9 +266,13 @@ export function UsersView({ token }: { token: string | null }) {
               <div key={user.id} className="border-t border-hairrow px-4 py-3">
                 <div className="flex items-center">
                   <span className="flex-[1.2] pe-3">
-                    <span className="block truncate text-[13.5px] font-semibold text-ink">
-                      {name || "—"}
-                    </span>
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/admin/users/${encodeURIComponent(user.id)}`)}
+                      className="block max-w-full truncate text-start text-[13.5px] font-semibold text-accent underline-offset-2 hover:underline"
+                    >
+                      {name || user.phone}
+                    </button>
                   </span>
                   {/* dir="ltr" keeps phone/email/date glyph order; rtl:text-right re-aligns the cell
                       with its column header when the page direction is RTL. */}

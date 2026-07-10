@@ -245,6 +245,15 @@ export class AdminStack extends Stack {
         authorizer,
       });
     }
+    // One member by sub (the user detail page's identity) — Cognito, so the non-VPC function.
+    // Single-segment param: /admin/users/{sub}/recommendations|wallet still fall to the
+    // catch-all below (admin-api), which serves the detail page's data tabs.
+    this.httpApi.addRoutes({
+      path: "/admin/users/{sub}",
+      methods: [HttpMethod.GET],
+      integration: credentialsIntegration,
+      authorizer,
+    });
     // Explicit methods (NOT ANY) so `OPTIONS` has no matching route and falls through to API
     // Gateway's built-in CORS preflight handler instead of being 401'd by the authorizer.
     this.httpApi.addRoutes({

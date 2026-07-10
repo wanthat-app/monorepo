@@ -26,6 +26,7 @@ import { ActivityView } from "./ActivityView";
 import { AdminLayout, type AdminView } from "./AdminLayout";
 import { OrderDetailView } from "./OrderDetailView";
 import { OrdersView } from "./OrdersView";
+import { UserDetailView } from "./UserDetailView";
 import { UsersView } from "./UsersView";
 
 /**
@@ -51,14 +52,21 @@ const VIEW_PATHS: Record<AdminView, string> = {
 
 function viewFromPath(pathname: string): AdminView {
   const match = (Object.keys(VIEW_PATHS) as AdminView[]).find((v) => VIEW_PATHS[v] === pathname);
-  // /admin/orders/{orderId} is the detail page of the orders view (nav highlights Orders).
+  // /admin/orders/{orderId} and /admin/users/{sub} are detail pages of their list views.
   if (!match && pathname.startsWith("/admin/orders/")) return "orders";
+  if (!match && pathname.startsWith("/admin/users/")) return "users";
   return match ?? "dashboard";
 }
 
 /** The order id when the path is the /admin/orders/{orderId} detail page; null on the list. */
 function orderIdFromPath(pathname: string): string | null {
   const m = /^\/admin\/orders\/([^/]+)$/.exec(pathname);
+  return m?.[1] ? decodeURIComponent(m[1]) : null;
+}
+
+/** The member sub when the path is the /admin/users/{sub} detail page; null on the list. */
+function userSubFromPath(pathname: string): string | null {
+  const m = /^\/admin\/users\/([^/]+)$/.exec(pathname);
   return m?.[1] ? decodeURIComponent(m[1]) : null;
 }
 
@@ -69,6 +77,7 @@ export function AdminPage() {
   const navigate = useNavigate();
   const view = viewFromPath(location.pathname);
   const orderId = orderIdFromPath(location.pathname);
+  const userSub = userSubFromPath(location.pathname);
 
   // Load the stored session, refreshing an expired access token first (a tab left open past the
   // 1h token lifetime otherwise 401s on every call). No session and no refresh → bounce to the
@@ -124,7 +133,11 @@ export function AdminPage() {
       {view === "dashboard" ? (
         <DashboardView token={tokens.idToken} />
       ) : view === "users" ? (
-        <UsersView token={tokens.idToken} />
+        userSub ? (
+          <UserDetailView token={tokens.idToken} sub={userSub} />
+        ) : (
+          <UsersView token={tokens.idToken} />
+        )
       ) : view === "orders" ? (
         orderId ? (
           <OrderDetailView token={tokens.idToken} orderId={orderId} />

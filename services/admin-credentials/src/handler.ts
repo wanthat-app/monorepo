@@ -15,11 +15,13 @@ import {
   CognitoDeleteUserResponse,
   DisableUserBody,
   EnableUserBody,
+  GetAdminUserResponse,
   GlobalSignOutUserBody,
   ListUsersQuery,
   ListUsersResponse,
   PutRetailerCredentialsBody,
   RetailerCredentialsStatus,
+  Uuid,
 } from "@wanthat/contracts";
 import { type Context, Hono } from "hono";
 import { handle } from "hono/aws-lambda";
@@ -123,6 +125,17 @@ app.get("/admin/users", async (c) => {
     nextToken,
   });
   return c.json(ListUsersResponse.parse(page));
+});
+
+// GET /admin/users/:sub — one member by canonical id, for the admin user detail page. Served
+// HERE (non-VPC) because only this function can reach Cognito; the detail page's other tabs
+// (recommendations/wallet) are admin-api routes. An unknown or malformed sub is a plain 404.
+app.get("/admin/users/:sub", async (c) => {
+  const sub = Uuid.safeParse(c.req.param("sub"));
+  if (!sub.success) return c.json({ error: "not_found" }, 404);
+  const user = await getContext().cognitoUsers.getBySub(sub.data);
+  if (!user) return c.json({ error: "not_found" }, 404);
+  return c.json(GetAdminUserResponse.parse({ user }));
 });
 
 // POST /admin/users/disable | enable | global-signout — ban tooling (ADR-0006 decision 8):

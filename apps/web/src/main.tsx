@@ -28,6 +28,7 @@ const router = createBrowserRouter([
   // Each admin view has its own URL so deep links, reloads and browser history work.
   { path: "/admin", element: <AdminPage /> },
   { path: "/admin/users", element: <AdminPage /> },
+  { path: "/admin/users/:sub", element: <AdminPage /> },
   { path: "/admin/orders", element: <AdminPage /> },
   { path: "/admin/orders/:orderId", element: <AdminPage /> },
   { path: "/admin/activity", element: <AdminPage /> },

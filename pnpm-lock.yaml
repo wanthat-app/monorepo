@@ -227,6 +227,9 @@ importers:
       '@wanthat/db':
         specifier: workspace:*
         version: link:../../packages/db
+      '@wanthat/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@wanthat/dynamo':
         specifier: workspace:*
         version: link:../../packages/dynamo
