@@ -21,3 +21,29 @@ export const ConversionEvent = z.object({
   at: IsoDateTime,
 });
 export type ConversionEvent = z.infer<typeof ConversionEvent>;
+
+/**
+ * Why an order fell out of attribution (the poller's untracked outcomes, minus foreign_env —
+ * another env's orders are that env's conversions, not this env's analytics).
+ */
+export const UntrackedReason = z.enum(["no_ref", "unknown_ref", "no_commission", "unknown_status"]);
+export type UntrackedReason = z.infer<typeof UntrackedReason>;
+
+/**
+ * Untracked-order event — emitted by the retailer-proxy poll for every fetched order that fell
+ * out of attribution (same off-band Logs → Firehose → S3 path as ConversionEvent). This is the
+ * UNATTRIBUTED revenue stream: commission the account earned with no member to credit — house
+ * margin by default, and the `no_ref` rate doubles as the attribution-health metric (params
+ * lost in transit). `amount` is the gross commission (null when the platform omitted it).
+ * Overlap re-reads re-emit: analytics dedupe on `(orderId, status)`.
+ */
+export const UntrackedOrderEvent = z.object({
+  type: z.literal("order_untracked"),
+  orderId: z.string().min(1),
+  reason: UntrackedReason,
+  /** The platform's raw order status string — NOT our ledger enum. */
+  orderStatus: z.string(),
+  amount: Money.nullable(),
+  at: IsoDateTime,
+});
+export type UntrackedOrderEvent = z.infer<typeof UntrackedOrderEvent>;
