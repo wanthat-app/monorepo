@@ -114,7 +114,7 @@ describe("GET /wallet", () => {
     expect(body.balances).toHaveLength(1);
   });
 
-  it("returns estimated null when no USD balance is held (rate never consulted)", async () => {
+  it("estimates a hard zero when no USD balance is held (rate never consulted)", async () => {
     dbReads.listEntriesForSub.mockResolvedValue([
       {
         kind: "adjustment",
@@ -130,16 +130,23 @@ describe("GET /wallet", () => {
     expect(body.balances).toEqual([
       expect.objectContaining({ available: { amountMinor: "100", currency: "ILS" } }),
     ]);
-    expect(body.estimated).toBeNull();
+    expect(body.estimated).toEqual({
+      available: { amountMinor: "0", currency: "ILS" },
+      pending: { amountMinor: "0", currency: "ILS" },
+    });
     expect(fake.fx.get).not.toHaveBeenCalled();
   });
 
-  it("serves an empty ledger as empty balances with no estimate", async () => {
+  it("serves an empty ledger as empty balances with a zero estimate", async () => {
     dbReads.listEntriesForSub.mockResolvedValue([]);
     expect(await (await get("/wallet", authed)).json()).toEqual({
       balances: [],
-      estimated: null,
+      estimated: {
+        available: { amountMinor: "0", currency: "ILS" },
+        pending: { amountMinor: "0", currency: "ILS" },
+      },
     });
+    expect(fake.fx.get).not.toHaveBeenCalled();
   });
 
   it("401s without authorizer claims", async () => {
