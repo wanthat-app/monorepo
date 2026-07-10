@@ -81,10 +81,13 @@ export function OrderDetailView({ token, orderId }: { token: string | null; orde
         })
       : "—";
 
+  // The detail URL is external API data flowing into an href: only http(s) may render — a
+  // javascript: value would execute in the admin's session.
+  const safeHttp = (u: string | null | undefined) => (u && /^https?:\/\//i.test(u) ? u : null);
   const productUrl =
-    item?.product?.detailUrl ??
+    safeHttp(item?.product?.detailUrl) ??
     (item?.product?.productId
-      ? `https://www.aliexpress.com/item/${item.product.productId}.html`
+      ? `https://www.aliexpress.com/item/${encodeURIComponent(item.product.productId)}.html`
       : null);
 
   return (
