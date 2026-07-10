@@ -24,6 +24,7 @@ import { identityFromIdToken } from "../../lib/jwt";
 import { Button, RangeSlider, Segmented, Skeleton, Spinner, Switch } from "../../ui/components";
 import { ActivityView } from "./ActivityView";
 import { AdminLayout, type AdminView } from "./AdminLayout";
+import { OrderDetailView } from "./OrderDetailView";
 import { OrdersView } from "./OrdersView";
 import { UsersView } from "./UsersView";
 
@@ -50,7 +51,15 @@ const VIEW_PATHS: Record<AdminView, string> = {
 
 function viewFromPath(pathname: string): AdminView {
   const match = (Object.keys(VIEW_PATHS) as AdminView[]).find((v) => VIEW_PATHS[v] === pathname);
+  // /admin/orders/{orderId} is the detail page of the orders view (nav highlights Orders).
+  if (!match && pathname.startsWith("/admin/orders/")) return "orders";
   return match ?? "dashboard";
+}
+
+/** The order id when the path is the /admin/orders/{orderId} detail page; null on the list. */
+function orderIdFromPath(pathname: string): string | null {
+  const m = /^\/admin\/orders\/([^/]+)$/.exec(pathname);
+  return m?.[1] ? decodeURIComponent(m[1]) : null;
 }
 
 export function AdminPage() {
@@ -59,6 +68,7 @@ export function AdminPage() {
   const location = useLocation();
   const navigate = useNavigate();
   const view = viewFromPath(location.pathname);
+  const orderId = orderIdFromPath(location.pathname);
 
   // Load the stored session, refreshing an expired access token first (a tab left open past the
   // 1h token lifetime otherwise 401s on every call). No session and no refresh → bounce to the
@@ -116,7 +126,11 @@ export function AdminPage() {
       ) : view === "users" ? (
         <UsersView token={tokens.idToken} />
       ) : view === "orders" ? (
-        <OrdersView token={tokens.idToken} />
+        orderId ? (
+          <OrderDetailView token={tokens.idToken} orderId={orderId} />
+        ) : (
+          <OrdersView token={tokens.idToken} />
+        )
       ) : view === "activity" ? (
         <ActivityView token={tokens.idToken} />
       ) : (

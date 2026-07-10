@@ -113,6 +113,18 @@ export interface AliExpressOrder {
   commissionCurrency: string | null;
   /** Raw platform timestamp (GMT+8), informational. */
   orderTimeGmt8: string | null;
+  /** Product + payment context for the admin's portal cross-reference. All best-effort nulls. */
+  productId: string | null;
+  productTitle: string | null;
+  productImageUrl: string | null;
+  productDetailUrl: string | null;
+  productCount: number | null;
+  /** What the buyer paid, integer minor units (same platform cents convention as commission). */
+  paidAmountMinor: string | null;
+  /** Raw platform commission rate string (e.g. "7.00%"), display-only. */
+  commissionRate: string | null;
+  /** The platform's sub-order id — the portal's order report keys some rows by it. */
+  subOrderId: string | null;
 }
 
 export interface OrderListPage {
@@ -143,6 +155,16 @@ const OrderListResponse = z.object({
                     order_commission_currency: z.string().optional(),
                     paid_time: z.string().optional(),
                     order_time: z.string().optional(),
+                    // Product context for the admin's portal cross-reference (all optional).
+                    product_id: z.union([z.string(), z.number()]).optional(),
+                    product_title: z.string().optional(),
+                    product_main_image_url: z.string().optional(),
+                    product_detail_url: z.string().optional(),
+                    product_count: z.union([z.string(), z.number()]).optional(),
+                    paid_amount: z.union([z.string(), z.number()]).optional(),
+                    settled_currency: z.string().optional(),
+                    commission_rate: z.union([z.string(), z.number()]).optional(),
+                    sub_order_id: z.union([z.string(), z.number()]).optional(),
                   })
                   .passthrough(),
               ),
@@ -321,8 +343,21 @@ export class AliExpressClient {
           customParameters: o.custom_parameters ?? null,
           commissionMinor: integerMinor(commission),
           commissionCurrency:
-            commission !== undefined ? (o.order_commission_currency ?? "USD") : null,
+            commission !== undefined
+              ? (o.order_commission_currency ?? o.settled_currency ?? "USD")
+              : null,
           orderTimeGmt8: o.paid_time ?? o.order_time ?? null,
+          productId: o.product_id === undefined ? null : String(o.product_id),
+          productTitle: o.product_title ?? null,
+          productImageUrl: o.product_main_image_url ?? null,
+          productDetailUrl: o.product_detail_url ?? null,
+          productCount:
+            o.product_count === undefined || !Number.isFinite(Number(o.product_count))
+              ? null
+              : Number(o.product_count),
+          paidAmountMinor: integerMinor(o.paid_amount),
+          commissionRate: o.commission_rate === undefined ? null : String(o.commission_rate),
+          subOrderId: o.sub_order_id === undefined ? null : String(o.sub_order_id),
         },
       ];
     });

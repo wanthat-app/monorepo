@@ -29,6 +29,14 @@ const anOrder = (id: string): AliExpressOrder => ({
   commissionMinor: "124",
   commissionCurrency: "USD",
   orderTimeGmt8: null,
+  productId: null,
+  productTitle: null,
+  productImageUrl: null,
+  productDetailUrl: null,
+  productCount: null,
+  paidAmountMinor: null,
+  commissionRate: null,
+  subOrderId: null,
 });
 
 interface FakeClient {
@@ -210,6 +218,14 @@ describe("pollOrders", () => {
           commissionMinor: "124",
           currency: "USD",
           occurredAt: null,
+          productId: null,
+          productTitle: null,
+          productImageUrl: null,
+          productDetailUrl: null,
+          productCount: null,
+          paidAmountMinor: null,
+          commissionRate: null,
+          subOrderId: null,
         },
         NOW.toISOString(),
       );

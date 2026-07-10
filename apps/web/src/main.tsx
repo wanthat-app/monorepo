@@ -29,6 +29,7 @@ const router = createBrowserRouter([
   { path: "/admin", element: <AdminPage /> },
   { path: "/admin/users", element: <AdminPage /> },
   { path: "/admin/orders", element: <AdminPage /> },
+  { path: "/admin/orders/:orderId", element: <AdminPage /> },
   { path: "/admin/activity", element: <AdminPage /> },
   { path: "/admin/settings", element: <AdminPage /> },
   { path: "/admin/callback", element: <AdminCallbackPage /> },

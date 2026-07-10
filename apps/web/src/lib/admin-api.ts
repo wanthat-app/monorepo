@@ -7,6 +7,7 @@ import type {
   DisableUserResponse,
   EnableUserResponse,
   GetConfigResponse,
+  GetUnattributedOrderResponse,
   GlobalSignOutUserResponse,
   ListActivityResponse,
   ListConfigResponse,
@@ -69,6 +70,11 @@ async function adminRequest<T>(
 
 export const adminApi = {
   listConfig: (token: string) => adminRequest<ListConfigResponse>("/admin/config", token),
+  getUnattributedOrder: (token: string, orderId: string) =>
+    adminRequest<GetUnattributedOrderResponse>(
+      `/admin/orders/unattributed/${encodeURIComponent(orderId)}`,
+      token,
+    ),
   listUnattributedOrders: (token: string, state: UnattributedOrderState, cursor?: string) =>
     adminRequest<ListUnattributedOrdersResponse>(
       `/admin/orders/unattributed?state=${state}${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""}`,

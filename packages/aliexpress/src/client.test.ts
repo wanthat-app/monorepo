@@ -221,6 +221,17 @@ describe("listOrdersByIndex", () => {
     unknown_extra_field: true,
     ...over,
   });
+  const productOrder = () =>
+    order({
+      product_id: 1005004280800180,
+      product_title: "8K HDMI Cable",
+      product_main_image_url: "https://ae-pic-a1.aliexpress-media.com/kf/img.jpg",
+      product_detail_url: "https://www.aliexpress.com/item/1005004280800180.html",
+      product_count: 1,
+      paid_amount: 535,
+      commission_rate: "7.00%",
+      sub_order_id: 1121635427136421,
+    });
   const okBody = (orders: unknown[], nextId?: string) => ({
     aliexpress_affiliate_order_listbyindex_response: {
       resp_result: {
@@ -268,6 +279,14 @@ describe("listOrdersByIndex", () => {
         commissionMinor: "124",
         commissionCurrency: "USD",
         orderTimeGmt8: "2026-07-10 12:00:00",
+        productId: null,
+        productTitle: null,
+        productImageUrl: null,
+        productDetailUrl: null,
+        productCount: null,
+        paidAmountMinor: null,
+        commissionRate: null,
+        subOrderId: null,
       },
     ]);
     expect(page.nextQueryIndexId).toBe("cursor-2");
@@ -291,6 +310,24 @@ describe("listOrdersByIndex", () => {
       customParameters: null,
       commissionMinor: "50",
       orderTimeGmt8: null,
+    });
+  });
+
+  it("carries the product context for the admin cross-reference (paid amount = integer cents)", async () => {
+    const page = await client(okBody([productOrder()])).listOrdersByIndex({
+      startTime: "a",
+      endTime: "b",
+      status: "x",
+    });
+    expect(page.orders[0]).toMatchObject({
+      productId: "1005004280800180",
+      productTitle: "8K HDMI Cable",
+      productImageUrl: "https://ae-pic-a1.aliexpress-media.com/kf/img.jpg",
+      productDetailUrl: "https://www.aliexpress.com/item/1005004280800180.html",
+      productCount: 1,
+      paidAmountMinor: "535",
+      commissionRate: "7.00%",
+      subOrderId: "1121635427136421",
     });
   });
 
