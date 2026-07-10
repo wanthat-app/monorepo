@@ -25,14 +25,19 @@ import { moneyJson } from "../http";
 const SETTLEMENT_CURRENCY = "USD";
 const DISPLAY_CURRENCY = "ILS";
 
+/** A held amount of exactly nothing, in the display currency. */
+const ZERO_ILS = { amountMinor: 0n, currency: DISPLAY_CURRENCY };
+
 /**
  * The display estimate for the USD balance: available and total-pending (both roles) converted
- * with `convertMinor` (cached rate minus the CONFIG conversion commission). Null when no USD is
- * held or no rate is cached — the SPA then shows per-currency figures only.
+ * with `convertMinor` (cached rate minus the CONFIG conversion commission). No USD held (the
+ * empty ledger included) estimates to a hard zero — nothing converts to nothing at any rate —
+ * so the SPA hero always has a number to render. Null ONLY when USD is held but no rate is
+ * cached yet: the amount is genuinely unknowable and the SPA falls back to per-currency figures.
  */
 async function ilsEstimate(balances: WalletBalance[]): Promise<WalletEstimate | null> {
   const usd = balances.find((b) => b.available.currency === SETTLEMENT_CURRENCY);
-  if (!usd) return null;
+  if (!usd) return { available: ZERO_ILS, pending: ZERO_ILS };
   const ctx = getContext();
   const [rate, commissionBps] = await Promise.all([
     ctx.fx.get(SETTLEMENT_CURRENCY, DISPLAY_CURRENCY),
