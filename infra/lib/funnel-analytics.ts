@@ -112,7 +112,8 @@ export class FunnelAnalytics extends Construct {
       const filter = new logs.CfnSubscriptionFilter(this, `Subscription${i}`, {
         logGroupName: logGroup.logGroupName,
         // Only the structured funnel events — plain-text service logs never leave CloudWatch.
-        filterPattern: '{ $.type = "impression" || $.type = "click" || $.type = "conversion" }',
+        filterPattern:
+          '{ $.type = "impression" || $.type = "click" || $.type = "conversion" || $.type = "order_untracked" }',
         destinationArn: stream.attrArn,
         roleArn: subscriptionRole.roleArn,
       });
@@ -150,7 +151,8 @@ export class FunnelAnalytics extends Construct {
           outputFormat: "org.apache.hadoop.hive.ql.io.HiveIgnoreKeyTextOutputFormat",
           serdeInfo: { serializationLibrary: "org.openx.data.jsonserde.JsonSerDe" },
           // The FunnelEvent union's superset (contracts/landing/events.ts + contracts/conversion/
-          // event.ts) — JsonSerDe matches JSON keys case-insensitively, absent fields read as NULL.
+          // event.ts, incl. UntrackedOrderEvent) — JsonSerDe matches JSON keys case-insensitively,
+          // absent fields read as NULL.
           columns: [
             { name: "type", type: "string" },
             { name: "recommendationid", type: "string" },
@@ -158,6 +160,8 @@ export class FunnelAnalytics extends Construct {
             { name: "orderid", type: "string" },
             { name: "amount", type: "struct<amountminor:string,currency:string>" },
             { name: "status", type: "string" },
+            { name: "reason", type: "string" },
+            { name: "orderstatus", type: "string" },
             { name: "at", type: "string" },
           ],
         },

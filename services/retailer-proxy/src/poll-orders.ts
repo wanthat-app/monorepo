@@ -16,14 +16,17 @@
 import type { Logger } from "@aws-lambda-powertools/logger";
 import type { AliExpressClient, AliExpressOrder } from "@wanthat/aliexpress";
 import { AliExpressApiError } from "@wanthat/aliexpress";
-import type {
-  ConversionWrite,
-  PollOrdersResponse,
-  WriteConversionsRequest,
-  WriteConversionsResponse,
+import {
+  type ConversionWrite,
+  type PollOrdersResponse,
+  UntrackedOrderEvent,
+  type WriteConversionsRequest,
+  type WriteConversionsResponse,
 } from "@wanthat/contracts";
 import type { PollerStateRepo, RuntimeConfigBatchReader } from "@wanthat/dynamo";
 import { type AttributionDeps, resolveOrder } from "./attribution";
+
+const bigintReplacer = (_k: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v);
 
 export const POLLER_STATE_KEY = "aliexpress#orders";
 /** Re-read overlap behind the watermark — absorbs late-arriving orders + clock skew. */
@@ -132,7 +135,32 @@ export async function pollOrders(deps: PollOrdersDeps): Promise<PollOrdersRespon
         writes.push(outcome.write);
       } else {
         untracked += 1;
-        deps.logger.info("order_untracked", { orderId: order.orderId, reason: outcome.reason });
+        if (outcome.reason === "foreign_env") {
+          // Another env's conversion on the shared retailer account — its poller credits it;
+          // not this env's analytics.
+          deps.logger.info("order_untracked", { orderId: order.orderId, reason: outcome.reason });
+        } else {
+          // Unattributed revenue: a typed funnel event (this log group's subscription ships it
+          // to Firehose → S3/Athena). Dedupe downstream on (orderId, status) — overlap re-reads.
+          console.log(
+            JSON.stringify(
+              UntrackedOrderEvent.parse({
+                type: "order_untracked",
+                orderId: order.orderId,
+                reason: outcome.reason,
+                orderStatus: order.status,
+                amount: order.commissionMinor
+                  ? {
+                      amountMinor: BigInt(order.commissionMinor),
+                      currency: order.commissionCurrency ?? "USD",
+                    }
+                  : null,
+                at: now.toISOString(),
+              }),
+              bigintReplacer,
+            ),
+          );
+        }
       }
     }
 

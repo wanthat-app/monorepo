@@ -174,8 +174,13 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
   ],
   cluster: data.cluster,
   smsSpendLimitUsd: SMS_MONTHLY_SPEND_LIMIT_USD[wanthatEnv.name],
-  // Funnel events are emitted by landing (impression/click) and the conversion poller (conversion).
-  funnelLogGroups: [edgeServices.landingFn.logGroup, edgeServices.conversionPollerFn.logGroup],
+  // Funnel events are emitted by landing (impression/click), the conversion poller (conversion)
+  // and the retailer proxy (order_untracked — the unattributed-revenue stream).
+  funnelLogGroups: [
+    edgeServices.landingFn.logGroup,
+    edgeServices.conversionPollerFn.logGroup,
+    edgeServices.retailerProxyFn.logGroup,
+  ],
 });
 
 // DnsStack — apex mail records (Zoho MX/SPF/DKIM/DMARC) for wanthat.app. Prod only: these belong to

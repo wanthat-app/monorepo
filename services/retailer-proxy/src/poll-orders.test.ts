@@ -183,18 +183,63 @@ describe("pollOrders", () => {
     expect(res.written).toEqual({ appended: 30, failed: 0 });
   });
 
-  it("counts untracked orders without failing the run", async () => {
-    const { deps } = makeDeps({}, (call) =>
-      call === 1
-        ? {
-            orders: [anOrder("good"), { ...anOrder("bad"), customParameters: null }],
-            nextQueryIndexId: null,
-          }
-        : { orders: [], nextQueryIndexId: null },
-    );
-    const res = await pollOrders(deps);
-    if (res.status !== "ok") throw new Error("expected ok");
-    expect(res.resolved).toBe(1);
-    expect(res.untracked).toBe(1);
+  it("counts untracked orders without failing the run and emits the typed funnel event", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const { deps } = makeDeps({}, (call) =>
+        call === 1
+          ? {
+              orders: [anOrder("good"), { ...anOrder("bad"), customParameters: null }],
+              nextQueryIndexId: null,
+            }
+          : { orders: [], nextQueryIndexId: null },
+      );
+      const res = await pollOrders(deps);
+      if (res.status !== "ok") throw new Error("expected ok");
+      expect(res.resolved).toBe(1);
+      expect(res.untracked).toBe(1);
+
+      const events = logSpy.mock.calls
+        .map((c) => String(c[0]))
+        .filter((l) => l.includes('"order_untracked"'))
+        .map((l) => JSON.parse(l) as Record<string, unknown>);
+      expect(events).toEqual([
+        {
+          type: "order_untracked",
+          orderId: "bad",
+          reason: "no_ref",
+          orderStatus: "Payment Completed",
+          amount: { amountMinor: "124", currency: "USD" },
+          at: NOW.toISOString(),
+        },
+      ]);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it("a foreign-env order counts as untracked but emits NO funnel event (not ours)", async () => {
+    const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
+    try {
+      const foreign = {
+        ...anOrder("other-env"),
+        customParameters: JSON.stringify({
+          af: `prod:user:${SUB_REFERRER}:rec:abc123DEF45`,
+        }),
+      };
+      const { deps } = makeDeps({}, (call) =>
+        call === 1
+          ? { orders: [foreign], nextQueryIndexId: null }
+          : { orders: [], nextQueryIndexId: null },
+      );
+      const res = await pollOrders(deps);
+      if (res.status !== "ok") throw new Error("expected ok");
+      expect(res.untracked).toBe(1);
+      expect(
+        logSpy.mock.calls.map((c) => String(c[0])).filter((l) => l.includes('"order_untracked"')),
+      ).toEqual([]);
+    } finally {
+      logSpy.mockRestore();
+    }
   });
 });
