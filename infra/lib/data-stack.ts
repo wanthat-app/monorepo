@@ -45,6 +45,7 @@ export class DataStack extends Stack {
   readonly recommendationTable: dynamodb.Table;
   readonly guestAttributionTable: dynamodb.Table;
   readonly pollerStateTable: dynamodb.Table;
+  readonly unattributedOrderTable: dynamodb.Table;
   readonly runtimeConfigTable: dynamodb.Table;
   /** Operational counters (exact entity totals), disjoint from config - see OpsCounters below. */
   readonly opsCountersTable: dynamodb.Table;
@@ -99,6 +100,20 @@ export class DataStack extends Stack {
     this.pollerStateTable = new dynamodb.Table(this, "PollerState", {
       partitionKey: { name: "stateKey", type: dynamodb.AttributeType.STRING },
       ...common,
+    });
+
+    // Same-env orders the poller could not attribute (unattributed-cashback Phase 2): the admin
+    // claim queue. The poller upserts sightings, admin-api claims/dismisses, retailer-proxy
+    // settles claims through the conversion writer.
+    this.unattributedOrderTable = new dynamodb.Table(this, "UnattributedOrder", {
+      partitionKey: { name: "orderId", type: dynamodb.AttributeType.STRING },
+      ...common,
+    });
+    // The admin list + the proxy's claimed-queue sweep, newest first.
+    this.unattributedOrderTable.addGlobalSecondaryIndex({
+      indexName: "byState",
+      partitionKey: { name: "state", type: dynamodb.AttributeType.STRING },
+      sortKey: { name: "firstSeenAt", type: dynamodb.AttributeType.STRING },
     });
 
     // Admin-tunable runtime config (key-value), e.g. `landing.countdownSeconds` (ADR-0003).

@@ -29,6 +29,7 @@ import { handle } from "hono/aws-lambda";
 import { auditEntryToItem, mergeByAtDesc, otpSinkToItems } from "./activity";
 import { getContext } from "./context";
 import { type Bindings, requireAdmin } from "./guard";
+import { unattributedRouter } from "./unattributed";
 
 const SERVICE = "admin-api";
 const EPOCH0 = new Date(0).toISOString(); // shown as "never set" for keys still on their default
@@ -40,6 +41,9 @@ app.get("/healthz", (c) => c.json({ ok: true, service: SERVICE }));
 
 // Everything under /admin requires a valid token AND the admin group.
 app.use("/admin/*", requireAdmin);
+
+// The unattributed-order claim queue (Phase 2) — list / claim / dismiss.
+app.route("/admin/orders/unattributed", unattributedRouter());
 
 // GET /admin/config — every key with its effective value (stored, or its default).
 app.get("/admin/config", async (c) => {
