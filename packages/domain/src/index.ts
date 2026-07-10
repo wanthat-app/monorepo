@@ -109,21 +109,94 @@ export function convertMinor(amountMinor: bigint, rate: string, commissionBps: n
 export type ResolvedConsumer = { kind: "member"; sub: string } | { kind: "guest"; guestId: string };
 
 /**
- * Attribution at click-through (ADR-0008): append `custom_parameters` onto the PRODUCT-level
- * affiliate URL — `ref` always, plus the consumer key (`c` member sub / `g` guest id). Opaque
- * ids only — nothing internal leaks. The input URL comes ONLY from the stored recommendation
- * projection (open-redirect safety, ADR-0007); `new URL` throws on malformed storage rather
- * than emitting a broken redirect. Integration caveat (ADR-0008): the retailer must round-trip
- * redirect-appended params — confirmed on the first real dev conversion.
+ * The click→report wire format (agreed 2026-07-10). AliExpress round-trips ONLY its fixed
+ * tracking keys (`af`, `cn`, `cv`, `dp` — portals help: the names cannot be changed); anything
+ * else is silently dropped (proven on dev: `ref`/`c`/`g` clicks came back as
+ * `custom_parameters: "{}"`). Two of those keys carry colon-delimited, env-prefixed values:
+ *
+ *   af = `<env>:user:<referrerSub>:rec:<recommendationId>`   (the affiliator — never a guest)
+ *   dp = `<env>:user:<sub>` | `<env>:guest:<guestId>`        (the consumer)
+ *
+ * The rec id is the PRIMARY attribution datum (locked split snapshot, ADR-0008); the referrer
+ * sub rides along as the fallback credit target should the recommendation be deleted by
+ * conversion time. The env prefix isolates the shared retailer account across environments.
+ * Encode (withAttribution) and decode (decodeAttribution) MUST stay symmetric — both live here
+ * so the wire format has one home.
  */
-export function withAttribution(
-  affiliateUrl: string,
-  recommendationId: string,
-  consumer: ResolvedConsumer,
-): string {
+const KEY_REFERRER = "af";
+const KEY_CONSUMER = "dp";
+
+/** Everything a click knows, bound into the affiliate URL at redirect time. */
+export interface ClickAttribution {
+  /** The deploy environment of the link ("dev" / "prod") — cross-env isolation marker. */
+  env: string;
+  /** The recommendation's owner (a member's Cognito sub — an affiliator is never a guest). */
+  referrerSub: string;
+  recommendationId: string;
+  consumer: ResolvedConsumer;
+}
+
+/**
+ * Attribution at click-through (ADR-0008): bind the click's identity into `custom_parameters`
+ * on the PRODUCT-level affiliate URL, under the platform's fixed tracking keys (format above).
+ * Opaque ids only — nothing internal leaks. The input URL comes ONLY from the stored
+ * recommendation projection (open-redirect safety, ADR-0007); `new URL` throws on malformed
+ * storage rather than emitting a broken redirect.
+ */
+export function withAttribution(affiliateUrl: string, attr: ClickAttribution): string {
   const url = new URL(affiliateUrl);
-  url.searchParams.set("ref", recommendationId);
-  if (consumer.kind === "member") url.searchParams.set("c", consumer.sub);
-  else url.searchParams.set("g", consumer.guestId);
+  url.searchParams.set(
+    KEY_REFERRER,
+    `${attr.env}:user:${attr.referrerSub}:rec:${attr.recommendationId}`,
+  );
+  const c = attr.consumer;
+  url.searchParams.set(
+    KEY_CONSUMER,
+    c.kind === "member" ? `${attr.env}:user:${c.sub}` : `${attr.env}:guest:${c.guestId}`,
+  );
   return url.toString();
+}
+
+/** The two halves decode independently — a mangled consumer must not cost referrer credit. */
+export interface DecodedAttribution {
+  referrer?: { env: string; sub: string; recommendationId: string };
+  consumer?: { env: string; kind: "member" | "guest"; id: string };
+}
+
+const REFERRER_RE = /^([^:]+):user:([^:]+):rec:(.+)$/;
+const CONSUMER_RE = /^([^:]+):(user|guest):(.+)$/;
+
+/**
+ * The report side of the wire format: an order's raw `custom_parameters` JSON → the click's
+ * identity. Tolerant by design — the field is platform-echoed, attacker-influencable click
+ * input: bad JSON, wrong shapes or unparseable values decode to absent halves, never a throw.
+ * Values may echo back as JSON numbers (the platform's own doc example is `{"af":0,"dp":1111}`),
+ * so finite numbers are stringified before matching.
+ */
+export function decodeAttribution(raw: string | null): DecodedAttribution {
+  if (!raw) return {};
+  let rec: Record<string, unknown>;
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (typeof parsed !== "object" || parsed === null) return {};
+    rec = parsed as Record<string, unknown>;
+  } catch {
+    return {};
+  }
+  const str = (v: unknown) => {
+    if (typeof v === "string" && v.length > 0) return v;
+    if (typeof v === "number" && Number.isFinite(v)) return String(v);
+    return undefined;
+  };
+
+  const out: DecodedAttribution = {};
+  const af = str(rec[KEY_REFERRER])?.match(REFERRER_RE);
+  if (af?.[1] && af[2] && af[3]) {
+    out.referrer = { env: af[1], sub: af[2], recommendationId: af[3] };
+  }
+  const dp = str(rec[KEY_CONSUMER])?.match(CONSUMER_RE);
+  if (dp?.[1] && dp[3]) {
+    out.consumer = { env: dp[1], kind: dp[2] === "user" ? "member" : "guest", id: dp[3] };
+  }
+  return out;
 }

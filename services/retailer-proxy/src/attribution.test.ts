@@ -12,9 +12,16 @@ const REC = {
   cashback: { referrerBps: 5000, consumerBps: 2500 },
 };
 
+// The af/dp wire format (see @wanthat/domain): env-prefixed, colon-delimited.
+const AF = `dev:user:${SUB_REFERRER}:rec:abc123DEF45`;
+const params = (over: { af?: string | null; dp?: string } = {}): string =>
+  JSON.stringify({ af: over.af === undefined ? AF : over.af, ...(over.dp ? { dp: over.dp } : {}) });
+
 const deps = (over: Partial<AttributionDeps> = {}): AttributionDeps => ({
   recommendations: { get: vi.fn(async () => REC as never) },
   guests: { get: vi.fn(async () => undefined) },
+  env: "dev",
+  fallbackSplit: vi.fn(async () => ({ referrerBps: 4000, consumerBps: 1000 })),
   now: () => new Date("2026-07-10T10:00:00.000Z"),
   ...over,
 });
@@ -22,7 +29,7 @@ const deps = (over: Partial<AttributionDeps> = {}): AttributionDeps => ({
 const order = (over: Partial<AliExpressOrder> = {}): AliExpressOrder => ({
   orderId: "8123456789",
   status: "Payment Completed",
-  customParameters: JSON.stringify({ ref: "abc123DEF45", c: SUB_MEMBER }),
+  customParameters: params({ dp: `dev:user:${SUB_MEMBER}` }),
   commissionMinor: "124",
   commissionCurrency: "USD",
   orderTimeGmt8: "2026-07-10 18:00:00",
@@ -53,7 +60,7 @@ describe("resolveOrder", () => {
 
   it("maps a claimed guest to its sub, an unclaimed guest to a null party (still kind guest)", async () => {
     const claimed = await resolveOrder(
-      order({ customParameters: JSON.stringify({ ref: "abc123DEF45", g: "g-1" }) }),
+      order({ customParameters: params({ dp: "dev:guest:g-1" }) }),
       deps({ guests: { get: vi.fn(async () => ({ guestId: "g-1", sub: SUB_GUEST }) as never) } }),
     );
     if (claimed.outcome !== "resolved") throw new Error("expected resolved");
@@ -61,7 +68,7 @@ describe("resolveOrder", () => {
     expect(claimed.write.consumer).toBe("guest");
 
     const unclaimed = await resolveOrder(
-      order({ customParameters: JSON.stringify({ ref: "abc123DEF45", g: "g-2" }) }),
+      order({ customParameters: params({ dp: "dev:guest:g-2" }) }),
       deps(),
     );
     if (unclaimed.outcome !== "resolved") throw new Error("expected resolved");
@@ -69,22 +76,46 @@ describe("resolveOrder", () => {
     expect(unclaimed.write.consumer).toBe("guest");
   });
 
-  it("ref-only and malformed member sub degrade to consumer none", async () => {
-    const refOnly = await resolveOrder(
-      order({ customParameters: JSON.stringify({ ref: "abc123DEF45" }) }),
-      deps(),
-    );
+  it("referrer-only, malformed member sub and foreign-env consumer degrade to consumer none", async () => {
+    const refOnly = await resolveOrder(order({ customParameters: params() }), deps());
     if (refOnly.outcome !== "resolved") throw new Error("expected resolved");
     expect(refOnly.write.resolved.consumer).toBeNull();
     expect(refOnly.write.consumer).toBe("none");
 
     const badSub = await resolveOrder(
-      order({ customParameters: JSON.stringify({ ref: "abc123DEF45", c: "not-a-uuid" }) }),
+      order({ customParameters: params({ dp: "dev:user:not-a-uuid" }) }),
       deps(),
     );
     if (badSub.outcome !== "resolved") throw new Error("expected resolved");
     expect(badSub.write.resolved.consumer).toBeNull();
     expect(badSub.write.consumer).toBe("none");
+
+    // A prod consumer on a dev order: the click halves disagree — drop the consumer, not the order.
+    const foreign = await resolveOrder(
+      order({ customParameters: params({ dp: `prod:user:${SUB_MEMBER}` }) }),
+      deps(),
+    );
+    if (foreign.outcome !== "resolved") throw new Error("expected resolved");
+    expect(foreign.write.resolved.consumer).toBeNull();
+    expect(foreign.write.consumer).toBe("none");
+  });
+
+  it("credits the af referrer sub at the config split when the recommendation is gone", async () => {
+    const out = await resolveOrder(
+      order(),
+      deps({ recommendations: { get: vi.fn(async () => undefined) } }),
+    );
+    if (out.outcome !== "resolved") throw new Error("expected resolved");
+    // gross 124 at the FALLBACK split: x 40% -> 49 referrer; x 10% -> 12 consumer
+    expect(out.write.resolved.recommendationId).toBe("abc123DEF45"); // preserved from the click
+    expect(out.write.resolved.referrer).toEqual({
+      sub: SUB_REFERRER,
+      reward: { amountMinor: 49n, currency: "USD" },
+    });
+    expect(out.write.resolved.consumer).toEqual({
+      sub: SUB_MEMBER,
+      reward: { amountMinor: 12n, currency: "USD" },
+    });
   });
 
   it("a zero consumer share yields no consumer party", async () => {
@@ -123,7 +154,7 @@ describe("resolveOrder", () => {
     expect(weird).toEqual({ outcome: "untracked", reason: "unknown_status" });
   });
 
-  it("untracks: no params, no ref, foreign ref, no commission", async () => {
+  it("untracks: no params, bad JSON, foreign env, gone rec + bad sub, no commission", async () => {
     expect(await resolveOrder(order({ customParameters: null }), deps())).toEqual({
       outcome: "untracked",
       reason: "no_ref",
@@ -132,8 +163,19 @@ describe("resolveOrder", () => {
       outcome: "untracked",
       reason: "no_ref",
     });
+    // Another env's click on the shared retailer account — not ours to credit.
     expect(
-      await resolveOrder(order(), deps({ recommendations: { get: vi.fn(async () => undefined) } })),
+      await resolveOrder(
+        order({ customParameters: params({ af: `prod:user:${SUB_REFERRER}:rec:abc123DEF45` }) }),
+        deps(),
+      ),
+    ).toEqual({ outcome: "untracked", reason: "foreign_env" });
+    // Recommendation gone AND the fallback sub is not a well-formed uuid: nothing to credit.
+    expect(
+      await resolveOrder(
+        order({ customParameters: params({ af: "dev:user:mangled:rec:abc123DEF45" }) }),
+        deps({ recommendations: { get: vi.fn(async () => undefined) } }),
+      ),
     ).toEqual({ outcome: "untracked", reason: "unknown_ref" });
     expect(await resolveOrder(order({ commissionMinor: null }), deps())).toEqual({
       outcome: "untracked",

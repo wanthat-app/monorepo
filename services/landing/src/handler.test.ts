@@ -6,6 +6,7 @@ const { fake } = vi.hoisted(() => ({
     recommendations: { get: vi.fn() },
     config: { get: vi.fn() },
     fx: { get: vi.fn() },
+    env: "dev",
   },
 }));
 vi.mock("./context", () => ({ getContext: () => fake }));
@@ -165,8 +166,8 @@ describe("handler", () => {
     const parsed = JSON.parse(res.body) as { outcome: string; url: string };
     expect(parsed.outcome).toBe("redirect");
     const u = new URL(parsed.url);
-    expect(u.searchParams.get("ref")).toBe("abc123DEF45");
-    expect(u.searchParams.get("g")).toBe("g-route");
+    expect(u.searchParams.get("af")).toBe("dev:user:sub-1:rec:abc123DEF45");
+    expect(u.searchParams.get("dp")).toBe("dev:guest:g-route");
   });
 
   it("405s a GET on the resolve path instead of rendering a page", async () => {

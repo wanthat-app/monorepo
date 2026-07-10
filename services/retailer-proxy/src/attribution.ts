@@ -1,12 +1,16 @@
 /**
  * Conversion attribution (ADR-0008/0009): one raw retailer order → who gets paid what. Resolved
  * HERE, in the non-VPC proxy (ADR-0003 assigns the conversion-time guest_attribution read to
- * it), from the `custom_parameters` our resolve endpoint appended at click-through:
- *   ref → recommendation → referrer sub + the SNAPSHOTTED split (locked at creation, never live
- *         config); missing/foreign ref → untracked (also the natural cross-env isolation on the
- *         shared retailer account — another env's ref does not exist in this env's table);
- *   c   → member consumer sub; g → guest_attribution lookup (mapped → sub; unmapped → no party
- *         to credit YET, but the click was still a guest's — the event kind says so).
+ * it), from the `custom_parameters` our resolve endpoint bound at click-through (the env-prefixed
+ * af/dp wire format — see @wanthat/domain):
+ *   af → env gate first (the shared retailer account serves every env; another env's click is
+ *        untracked here), then the recommendation → the SNAPSHOTTED split (locked at creation,
+ *        never live config). A recommendation deleted by conversion time falls back to the af
+ *        referrer sub, rewarded at the CURRENT config split — the click's credit survives the
+ *        deletion, its economics degrade to policy-of-the-day.
+ *   dp → member consumer sub, or guest → guest_attribution lookup (mapped → sub; unmapped → no
+ *        party to credit YET, but the click was still a guest's — the event kind says so). A
+ *        foreign-env or malformed consumer half is dropped alone, never the whole order.
  * Money math is exact bigint via splitCommission; rewards stay in the settlement currency.
  */
 import type { AliExpressOrder } from "@wanthat/aliexpress";
@@ -16,18 +20,25 @@ import {
   Uuid,
   type WalletEntryStatus,
 } from "@wanthat/contracts";
-import { splitCommission } from "@wanthat/domain";
+import { decodeAttribution, splitCommission } from "@wanthat/domain";
 import type { GuestAttributionRepo, RecommendationRepo } from "@wanthat/dynamo";
 
 export interface AttributionDeps {
   recommendations: Pick<RecommendationRepo, "get">;
   guests: Pick<GuestAttributionRepo, "get">;
+  /** This deployment's env name (WANTHAT_ENV) — only same-env clicks are ours to credit. */
+  env: string;
+  /** The CURRENT config split — the fallback economics when the recommendation is gone. */
+  fallbackSplit: () => Promise<{ referrerBps: number; consumerBps: number }>;
   now: () => Date;
 }
 
 export type AttributionOutcome =
   | { outcome: "resolved"; write: ConversionWrite }
-  | { outcome: "untracked"; reason: "no_ref" | "unknown_ref" | "no_commission" | "unknown_status" };
+  | {
+      outcome: "untracked";
+      reason: "no_ref" | "foreign_env" | "unknown_ref" | "no_commission" | "unknown_status";
+    };
 
 /** "2026-07-10 18:00:00" (the platform's GMT+8 clock) → ISO UTC; null when unparseable. */
 export function parseGmt8(raw: string | null): string | null {
@@ -53,56 +64,63 @@ function mapStatus(raw: string): WalletEntryStatus | null {
   return null;
 }
 
-/** The click's custom_parameters, tolerantly decoded; every field optional and untrusted. */
-function parseCustomParams(raw: string | null): { ref?: string; c?: string; g?: string } {
-  if (!raw) return {};
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    if (typeof parsed !== "object" || parsed === null) return {};
-    const rec = parsed as Record<string, unknown>;
-    const str = (v: unknown) => (typeof v === "string" && v.length > 0 ? v : undefined);
-    return { ref: str(rec.ref), c: str(rec.c), g: str(rec.g) };
-  } catch {
-    return {};
-  }
-}
-
 export async function resolveOrder(
   order: AliExpressOrder,
   deps: AttributionDeps,
 ): Promise<AttributionOutcome> {
-  const params = parseCustomParams(order.customParameters);
-  if (!params.ref) return { outcome: "untracked", reason: "no_ref" };
+  // Decoded by the domain's wire format — the exact mirror of withAttribution's encode.
+  const params = decodeAttribution(order.customParameters);
+  const referrer = params.referrer;
+  if (!referrer) return { outcome: "untracked", reason: "no_ref" };
+  if (referrer.env !== deps.env) return { outcome: "untracked", reason: "foreign_env" };
 
-  const rec = await deps.recommendations.get(params.ref);
-  if (!rec) return { outcome: "untracked", reason: "unknown_ref" };
+  // Primary: the recommendation (its owner + LOCKED split). Fallback: the af referrer sub at
+  // the current config split — but only a well-formed sub; params are attacker-influencable.
+  const rec = await deps.recommendations.get(referrer.recommendationId);
+  let referrerSub: string;
+  let cashback: { referrerBps: number; consumerBps: number };
+  if (rec) {
+    referrerSub = rec.ownerId;
+    cashback = rec.cashback;
+  } else {
+    if (!Uuid.safeParse(referrer.sub).success) {
+      return { outcome: "untracked", reason: "unknown_ref" };
+    }
+    referrerSub = referrer.sub;
+    cashback = await deps.fallbackSplit();
+  }
 
   if (!order.commissionMinor) return { outcome: "untracked", reason: "no_commission" };
   const status = mapStatus(order.status);
   if (!status) return { outcome: "untracked", reason: "unknown_status" };
 
-  // Consumer identity: a member sub beats a guest key; a malformed sub is treated as absent
-  // (params are attacker-influencable query strings — validate, never trust).
-  const memberSub = params.c && Uuid.safeParse(params.c).success ? params.c : undefined;
-  let consumerSub: string | undefined = memberSub;
-  let consumerKind: ConsumerKind = memberSub ? "member" : "none";
-  if (!memberSub && params.g) {
-    consumerKind = "guest";
-    consumerSub = (await deps.guests.get(params.g))?.sub;
+  // Consumer identity, independently validated: foreign-env or malformed → treated as absent
+  // (the referrer's credit never rides on the consumer half surviving).
+  const c = params.consumer;
+  let consumerSub: string | undefined;
+  let consumerKind: ConsumerKind = "none";
+  if (c && c.env === deps.env) {
+    if (c.kind === "member" && Uuid.safeParse(c.id).success) {
+      consumerKind = "member";
+      consumerSub = c.id;
+    } else if (c.kind === "guest") {
+      consumerKind = "guest";
+      consumerSub = (await deps.guests.get(c.id))?.sub;
+    }
   }
 
   const gross = BigInt(order.commissionMinor);
   const currency = order.commissionCurrency ?? "USD";
-  const split = splitCommission(gross, rec.cashback.referrerBps, rec.cashback.consumerBps);
+  const split = splitCommission(gross, cashback.referrerBps, cashback.consumerBps);
 
   return {
     outcome: "resolved",
     write: {
       resolved: {
         orderId: order.orderId,
-        recommendationId: rec.recommendationId,
+        recommendationId: referrer.recommendationId,
         referrer: {
-          sub: rec.ownerId,
+          sub: referrerSub,
           reward: { amountMinor: split.referrerMinor, currency },
         },
         consumer:

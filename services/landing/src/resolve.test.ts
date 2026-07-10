@@ -26,6 +26,7 @@ const SUB = "11111111-1111-1111-1111-111111111111";
 const makeDeps = (overrides: Partial<ResolveDeps> = {}): ResolveDeps => ({
   recommendations: { get: vi.fn(async () => ITEM) } as never,
   verifyBearer: vi.fn(async (auth?: string) => (auth === "Bearer good" ? SUB : null)),
+  env: "dev",
   ...overrides,
 });
 
@@ -54,26 +55,25 @@ const clickEvents = () =>
     .map((l) => JSON.parse(l) as { type: string; consumer: string; recommendationId: string });
 
 describe("resolve", () => {
-  it("redirects a verified member with ref + c and emits a member click", async () => {
+  it("redirects a verified member with af + dp and emits a member click", async () => {
     const res = await call(makeDeps(), { auth: "Bearer good", body: {} });
     expect(res.statusCode).toBe(200);
     const parsed = ResolveResponse.parse(JSON.parse(res.body));
     if (parsed.outcome !== "redirect") throw new Error("expected redirect");
     const u = new URL(parsed.url);
     expect(u.searchParams.get("aff")).toBe("1"); // stored params preserved
-    expect(u.searchParams.get("ref")).toBe("abc123DEF45");
-    expect(u.searchParams.get("c")).toBe(SUB);
-    expect(u.searchParams.get("g")).toBeNull();
+    expect(u.searchParams.get("af")).toBe("dev:user:sub-1:rec:abc123DEF45");
+    expect(u.searchParams.get("dp")).toBe(`dev:user:${SUB}`);
     expect(clickEvents()).toEqual([expect.objectContaining({ type: "click", consumer: "member" })]);
   });
 
-  it("redirects a guest with ref + g and emits a guest click", async () => {
+  it("redirects a guest with af + dp and emits a guest click", async () => {
     const res = await call(makeDeps(), { body: { guestId: "g-123" } });
     const parsed = ResolveResponse.parse(JSON.parse(res.body));
     if (parsed.outcome !== "redirect") throw new Error("expected redirect");
     const u = new URL(parsed.url);
-    expect(u.searchParams.get("g")).toBe("g-123");
-    expect(u.searchParams.get("c")).toBeNull();
+    expect(u.searchParams.get("af")).toBe("dev:user:sub-1:rec:abc123DEF45");
+    expect(u.searchParams.get("dp")).toBe("dev:guest:g-123");
     expect(clickEvents()).toEqual([expect.objectContaining({ consumer: "guest" })]);
   });
 
@@ -93,7 +93,7 @@ describe("resolve", () => {
     const res = await call(makeDeps(), { auth: "Bearer expired", body: { guestId: "g-9" } });
     const parsed = JSON.parse(res.body) as { outcome: string; url: string };
     expect(parsed.outcome).toBe("redirect");
-    expect(new URL(parsed.url).searchParams.get("g")).toBe("g-9");
+    expect(new URL(parsed.url).searchParams.get("dp")).toBe("dev:guest:g-9");
   });
 
   it("400s malformed JSON and a guestId failing the contract, without a click", async () => {
@@ -122,6 +122,6 @@ describe("resolve", () => {
       makeDeps(),
     );
     const parsed = JSON.parse(res.body) as { url: string };
-    expect(new URL(parsed.url).searchParams.get("g")).toBe("g-64");
+    expect(new URL(parsed.url).searchParams.get("dp")).toBe("dev:guest:g-64");
   });
 });

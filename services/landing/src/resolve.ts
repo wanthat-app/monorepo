@@ -1,10 +1,11 @@
 /**
  * Client-driven resolve — POST /p/{recommendationId}/resolve (ADR-0007/0008). The SPA calls this
  * same-origin (CloudFront `/p/*`) once it knows the consumer's identity, and the endpoint
- * assembles `custom_parameters` onto the STORED product-level affiliate URL:
+ * assembles `custom_parameters` onto the STORED product-level affiliate URL (the env-prefixed
+ * af/dp wire format — see @wanthat/domain `withAttribution`):
  *   member → Bearer access token, verified OFFLINE against cached JWKS (never a Cognito call on
- *            the hot path) → `{ ref, c: sub }`;
- *   guest  → opaque `guestId` from consent-gated localStorage → `{ ref, g: guestId }`;
+ *            the hot path) → the consumer is the member's sub;
+ *   guest  → opaque `guestId` from consent-gated localStorage → the consumer is the guest id;
  *   neither / invalid token → `{ outcome: "authRequired" }` (the SPA re-auths and re-resolves —
  *            never a 401, per the `ResolveResponse` contract).
  * Open-redirect safe: the URL only ever comes from the recommendation projection. Always emits
@@ -25,6 +26,8 @@ export interface ResolveDeps {
   recommendations: Pick<RecommendationRepo, "get">;
   /** Returns the verified Cognito sub, or null for a missing/invalid/expired token. */
   verifyBearer: (authorization: string | undefined) => Promise<string | null>;
+  /** This deployment's env name (WANTHAT_ENV) — stamped into the click's attribution. */
+  env: string;
 }
 
 interface ResolveResult {
@@ -106,7 +109,12 @@ export async function resolve(
     return json(200, ResolveResponse.parse({ outcome: "authRequired" }));
   }
 
-  const url = withAttribution(rec.affiliateUrl, recommendationId, consumer);
+  const url = withAttribution(rec.affiliateUrl, {
+    env: deps.env,
+    referrerSub: rec.ownerId,
+    recommendationId,
+    consumer,
+  });
   emitClick(recommendationId, consumer.kind);
   return json(200, ResolveResponse.parse({ outcome: "redirect", url }));
 }

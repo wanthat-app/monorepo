@@ -19,6 +19,8 @@ export interface LandingContext {
   config: RuntimeConfigBatchReader;
   /** Settlement→ILS display rate (same convention as the create flow). */
   fx: FxRateRepo;
+  /** This deployment's env name — stamped into every click's attribution (wire format). */
+  env: string;
 }
 
 let cached: LandingContext | undefined;
@@ -36,6 +38,7 @@ export function getContext(): LandingContext {
     recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
     config: new RuntimeConfigRepo(doc, requireEnv("RUNTIME_CONFIG_TABLE")),
     fx: new FxRateRepo(doc, requireEnv("FX_RATE_TABLE")),
+    env: requireEnv("WANTHAT_ENV"),
   };
   return cached;
 }

@@ -25,7 +25,7 @@ const REC = {
 const anOrder = (id: string): AliExpressOrder => ({
   orderId: id,
   status: "Payment Completed",
-  customParameters: JSON.stringify({ ref: "abc123DEF45" }),
+  customParameters: JSON.stringify({ af: `dev:user:${SUB_REFERRER}:rec:abc123DEF45` }),
   commissionMinor: "124",
   commissionCurrency: "USD",
   orderTimeGmt8: null,
@@ -56,6 +56,8 @@ function makeDeps(over: Partial<PollOrdersDeps> = {}, pages?: (call: number) => 
     attribution: {
       recommendations: { get: vi.fn(async () => REC as never) },
       guests: { get: vi.fn(async () => undefined) },
+      env: "dev",
+      fallbackSplit: vi.fn(async () => ({ referrerBps: 5000, consumerBps: 0 })),
       now: () => NOW,
     },
     invokeWriter: null,
