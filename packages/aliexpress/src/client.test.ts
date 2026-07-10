@@ -4,6 +4,7 @@ import {
   AliExpressClient,
   commissionRateToBps,
   decimalToMinor,
+  integerMinor,
 } from "./client";
 import { signParams } from "./sign";
 
@@ -193,12 +194,28 @@ describe("decimalToMinor", () => {
   });
 });
 
+describe("integerMinor", () => {
+  it("passes integer cent values through (numbers and strings)", () => {
+    expect(integerMinor(37)).toBe("37");
+    expect(integerMinor("93")).toBe("93");
+    expect(integerMinor(0)).toBe("0");
+  });
+
+  it("nulls anything that is not a plain integer - money never guesses a scale", () => {
+    expect(integerMinor(undefined)).toBeNull();
+    expect(integerMinor("1.24")).toBeNull();
+    expect(integerMinor(1.24)).toBeNull();
+    expect(integerMinor("-5")).toBeNull();
+    expect(integerMinor("US $26")).toBeNull();
+  });
+});
+
 describe("listOrdersByIndex", () => {
   const order = (over: Record<string, unknown> = {}) => ({
     order_id: 8123456789,
     order_status: "Payment Completed",
     custom_parameters: '{"ref":"abc123DEF45","c":"11111111-1111-1111-1111-111111111111"}',
-    estimated_paid_commission: "1.24",
+    estimated_paid_commission: 124,
     order_commission_currency: "USD",
     paid_time: "2026-07-10 12:00:00",
     unknown_extra_field: true,
@@ -237,7 +254,7 @@ describe("listOrdersByIndex", () => {
     expect(params.get("sign")).toBeTruthy();
   });
 
-  it("parses orders tolerantly: commission to minor units, raw custom params, cursor", async () => {
+  it("parses orders: commission is ALREADY integer minor units, raw custom params, cursor", async () => {
     const page = await client(okBody([order()], "cursor-2")).listOrdersByIndex({
       startTime: "a",
       endTime: "b",
@@ -264,7 +281,7 @@ describe("listOrdersByIndex", () => {
           order_number: "9000000001",
           custom_parameters: undefined,
           estimated_paid_commission: undefined,
-          paid_commission: "0.50",
+          paid_commission: "50",
           paid_time: undefined,
         }),
       ]),
