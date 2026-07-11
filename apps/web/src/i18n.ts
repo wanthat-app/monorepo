@@ -1,5 +1,6 @@
 import i18n from "i18next";
 import { initReactI18next } from "react-i18next";
+import { applyDocumentLanguage } from "./lib/document-language";
 
 // Hebrew-first (RTL), English fallback (ADR-0016).
 const en = {
@@ -848,41 +849,48 @@ const he: typeof en = {
   },
 };
 
-// The chosen language is remembered per device (Hebrew by default) and restored on the next visit.
-// Guarded so the module stays importable outside the browser (tests, SSR).
-const LANG_KEY = "wanthat.lang";
+/** The translation bundles — shared with the admin console's separate instance (admin-i18n.ts). */
+export const resources = { he: { translation: he }, en: { translation: en } } as const;
 
-function storedLanguage(): "he" | "en" {
+/** Read a remembered "he"/"en" choice; `fallback` when unset/unavailable (private mode, tests). */
+export function storedLanguage(key: string, fallback: "he" | "en" = "he"): "he" | "en" {
   try {
-    const stored = localStorage.getItem(LANG_KEY);
-    return stored === "en" || stored === "he" ? stored : "he";
+    const stored = localStorage.getItem(key);
+    return stored === "en" || stored === "he" ? stored : fallback;
   } catch {
-    return "he";
+    return fallback;
   }
 }
 
-void i18n.use(initReactI18next).init({
-  lng: typeof localStorage === "undefined" ? "he" : storedLanguage(),
-  fallbackLng: "en",
-  interpolation: { escapeValue: false },
-  resources: { he: { translation: he }, en: { translation: en } },
-});
-
-// Keep the document direction/lang in sync with the active locale so the layout mirrors (RTL for
-// Hebrew, the default; LTR for English). Logical Tailwind properties handle the rest.
-function applyDir(lng: string) {
-  if (typeof document === "undefined") return;
-  document.documentElement.lang = lng;
-  document.documentElement.dir = lng.startsWith("he") ? "rtl" : "ltr";
-}
-applyDir(i18n.language ?? "he");
-i18n.on("languageChanged", (lng) => {
-  applyDir(lng);
+/** Remember a language choice per device; storage failures are silently accepted. */
+export function rememberLanguage(key: string, lng: string): void {
   try {
-    localStorage.setItem(LANG_KEY, lng.startsWith("he") ? "he" : "en");
+    localStorage.setItem(key, lng.startsWith("he") ? "he" : "en");
   } catch {
     // Storage unavailable (private mode/tests) — the choice simply isn't remembered.
   }
+}
+
+// The MEMBER app's language, remembered per device (Hebrew by default) and restored on the next
+// visit; once signed in the profile locale takes over (SessionProvider's locale sync). The admin
+// console deliberately does NOT share this instance or this key — see admin-i18n.ts.
+const LANG_KEY = "wanthat.lang";
+
+void i18n.use(initReactI18next).init({
+  lng: storedLanguage(LANG_KEY),
+  fallbackLng: "en",
+  interpolation: { escapeValue: false },
+  resources,
+});
+
+// Keep the document direction/lang in sync with the active locale so the layout mirrors (RTL for
+// Hebrew, the default; LTR for English). Logical Tailwind properties handle the rest. Guarded by
+// document ownership: while the admin console is mounted it owns <html dir> (its own instance +
+// language), and member-side changes must not flip it from underneath.
+applyDocumentLanguage("app", i18n.language ?? "he");
+i18n.on("languageChanged", (lng) => {
+  applyDocumentLanguage("app", lng);
+  rememberLanguage(LANG_KEY, lng);
 });
 
 export default i18n;
