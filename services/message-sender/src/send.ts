@@ -77,7 +77,7 @@ export async function deliverOtp(deps: SendDeps, event: CustomSmsSenderEvent): P
 
   const code = await deps.decryptCode(event.request.code);
 
-  // Dev-only sink (docs/dev-otp-sink.md): park the code instead of delivering. Checked before the
+  // Dev-only sink (docs/otp-sink.md): park the code instead of delivering. Checked before the
   // channel dispatch so BOTH channels sink; the code itself is never logged. The parked `channel`
   // is the RESOLVED one — what would have delivered — so at least one channel must be enabled
   // even in sink mode (the resolution throw above applies uniformly).

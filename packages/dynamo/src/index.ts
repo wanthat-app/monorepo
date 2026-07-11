@@ -13,7 +13,6 @@ export {
   CustomerCounterRepo,
   type CustomerCounts,
 } from "./customer-counter";
-export { type DevOtpSinkItem, DevOtpSinkRepo } from "./dev-otp-sink";
 export { FxRateRepo, fxPairKey } from "./fx-rate";
 export { type GuestAttribution, GuestAttributionRepo } from "./guest-attribution";
 export {
@@ -21,6 +20,7 @@ export {
   NotificationOutboxRepo,
   type NotificationStatus,
 } from "./notification-outbox";
+export { type DevOtpSinkItem, OtpSinkRepo } from "./otp-sink";
 export { type PollerStateItem, PollerStateRepo } from "./poller-state";
 export { PRODUCT_COUNTER_SK, ProductItem, ProductRepo, type ProductUpsert } from "./product";
 export {

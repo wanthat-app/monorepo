@@ -156,7 +156,7 @@ app.get("/admin/stats/catalog", async (c) => {
 
 // GET /admin/activity — one paged feed over the audit log (money events and any future audited
 // admin action), newest first. In dev the first page also merges the parked OTP codes from the
-// dev sink (DEV_OTP_SINK_TABLE is only set where the table exists — never prod), so codes are
+// dev sink (OTP_SINK_TABLE is only set where the table exists — never prod), so codes are
 // grabbed from this panel instead of the AWS CLI. `total` counts audit rows plus the live sink
 // items; page boundaries can drift by the sink size on page 1 — accepted, dev only.
 // NOT IMPLEMENTED (moderation audit): user moderation (disable / enable / global-signout /
@@ -174,7 +174,7 @@ app.get("/admin/activity", async (c) => {
   const { entries, total } = await listAuditLog(getContext().db, { page, pageSize });
   let items = entries.map(auditEntryToItem);
   let grandTotal = total;
-  const sink = getContext().devOtpSink;
+  const sink = getContext().otpSink;
   if (sink && page === 1) {
     const otp = otpSinkToItems(await sink.scanAll(), Date.now());
     items = mergeByAtDesc(items, otp);

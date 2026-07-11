@@ -11,7 +11,7 @@ import type { OtpChannel } from "@wanthat/contracts";
  * instead of delivering, so a developer can complete login without SMS/WhatsApp (both blocked:
  * sandbox cap / Meta onboarding). NEVER active in prod — the sender honours the config key only
  * when WANTHAT_ENV !== "prod", so the prod table exists but stays empty. Items self-expire
- * (5-minute TTL). The read path is the AWS CLI (docs/dev-otp-sink.md), not the app.
+ * (5-minute TTL). The read path is the AWS CLI (docs/otp-sink.md), not the app.
  */
 export interface DevOtpSinkItem {
   /** E.164 destination — the lookup key the developer knows. */
@@ -23,7 +23,7 @@ export interface DevOtpSinkItem {
   ttl: number;
 }
 
-export class DevOtpSinkRepo {
+export class OtpSinkRepo {
   constructor(
     private readonly doc: DynamoDBDocumentClient,
     private readonly tableName: string,

@@ -51,8 +51,8 @@ export class DataStack extends Stack {
   readonly opsCountersTable: dynamodb.Table;
   readonly fxRateTable: dynamodb.Table;
   readonly notificationOutboxTable: dynamodb.Table;
-  /** Absent in prod by design (fail-closed) — see the DevOtpSink construct below. */
-  readonly devOtpSinkTable?: dynamodb.Table;
+  /** OTP sink for admin-visible codes (auth.otpSink = "devSink") — see the construct below. */
+  readonly otpSinkTable: dynamodb.Table;
   readonly retailerSecret: secretsmanager.Secret;
   readonly cluster: rds.DatabaseCluster;
 
@@ -148,17 +148,20 @@ export class DataStack extends Stack {
       ...common,
     });
 
-    // Dev OTP sink (auth.otpSink = "devSink", docs/dev-otp-sink.md): message-sender parks codes
-    // here for CLI pickup while both delivery channels are blocked. NOT provisioned in prod at
-    // all (fail-closed: no table, no env var, no grant - a sink write there fails loudly), so
-    // codes cannot land in a prod table under any code path. 5-minute TTL.
-    if (wanthatEnv.name !== "prod") {
-      this.devOtpSinkTable = new dynamodb.Table(this, "DevOtpSink", {
-        partitionKey: { name: "phone", type: dynamodb.AttributeType.STRING },
-        timeToLiveAttribute: "ttl",
-        ...common,
-      });
-    }
+    // OTP sink (auth.otpSink = "devSink", docs/otp-sink.md): message-sender parks codes here
+    // instead of delivering, and the admin activity feed lists them. Provisioned in EVERY env
+    // since the SMS sandbox blocks real prod delivery during MVP testing; the runtime switch
+    // defaults to real delivery and flipping it is an admin-only, audit-chained action. NOTE:
+    // while flipped in prod, members' sign-in codes divert to the admin panel - flip back to
+    // "delivery" before real members onboard. 5-minute TTL either way.
+    // Construct id stays "DevOtpSink" (its historical name): changing it would REPLACE the
+    // table and rewrite its cross-stack export while deployed consumers still import it —
+    // the export-in-use deploy failure. Only code identifiers were renamed.
+    this.otpSinkTable = new dynamodb.Table(this, "DevOtpSink", {
+      partitionKey: { name: "phone", type: dynamodb.AttributeType.STRING },
+      timeToLiveAttribute: "ttl",
+      ...common,
+    });
 
     // Secret-scoped retailer (AliExpress) credential — created empty, populated out-of-band.
     this.retailerSecret = new secretsmanager.Secret(this, "RetailerCredential", {

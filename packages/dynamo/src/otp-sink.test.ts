@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { DevOtpSinkRepo } from "./dev-otp-sink";
+import { OtpSinkRepo } from "./otp-sink";
 
 const item = {
   phone: "+972541234567",
@@ -10,10 +10,10 @@ const item = {
   ttl: 1782996300,
 };
 
-describe("DevOtpSinkRepo", () => {
+describe("OtpSinkRepo", () => {
   it("puts and gets a sink item by phone", async () => {
     const send = vi.fn().mockResolvedValue({});
-    const repo = new DevOtpSinkRepo({ send } as never, "sink");
+    const repo = new OtpSinkRepo({ send } as never, "sink");
     await repo.put(item);
     expect(send.mock.calls[0]?.[0]?.input).toMatchObject({ TableName: "sink", Item: item });
     send.mockResolvedValue({ Item: item });
@@ -24,7 +24,7 @@ describe("DevOtpSinkRepo", () => {
 
   it("scanAll returns every parked item", async () => {
     const send = vi.fn().mockResolvedValue({ Items: [item] });
-    const repo = new DevOtpSinkRepo({ send } as never, "sink");
+    const repo = new OtpSinkRepo({ send } as never, "sink");
     const items = await repo.scanAll();
     expect(send.mock.calls[0]?.[0]?.input).toMatchObject({ TableName: "sink" });
     expect(items).toEqual([expect.objectContaining({ phone: "+972541234567" })]);

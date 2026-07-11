@@ -102,9 +102,12 @@ export const RetailerAliexpressTrackingId = z.string().trim().min(1).max(64);
 
 /**
  * Where message-sender routes decrypted OTP codes. `delivery` = the real channel (WhatsApp/SMS).
- * `devSink` = a TTL'd DynamoDB item a developer reads via the CLI — unblocks end-to-end user
- * creation while both real channels are blocked (SMS sandbox cap / Meta onboarding). The sender
- * honours `devSink` ONLY outside prod (deploy-time env guard); flipping this key in prod is inert.
+ * `devSink` = a TTL'd (5 min) DynamoDB item surfaced in the admin activity feed (and readable
+ * via the CLI) — unblocks end-to-end member creation while both real channels are blocked (SMS
+ * sandbox cap / Meta onboarding). Honoured in EVERY environment including prod: the sandbox is
+ * account-wide, so prod testing needs it too. CAUTION: while `devSink` is set, members'
+ * sign-in codes divert to the admin panel instead of being delivered — flip back to `delivery`
+ * before real members onboard. (The stored value name `devSink` predates the prod enablement.)
  */
 export const AuthOtpSink = z.enum(["delivery", "devSink"]);
 

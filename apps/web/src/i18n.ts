@@ -345,6 +345,7 @@ const en = {
     },
     units: { minutes: "min", hours: "hrs", sends: "sends" },
     fxProvider: { ecb: "ECB", boi: "BoI" },
+    otpSink: { delivery: "Real delivery", devSink: "Park in panel" },
     otpChannel: { whatsapp: "WhatsApp", sms: "SMS" },
     integrations: {
       title: "Integrations",
@@ -421,6 +422,10 @@ const en = {
       auth_defaultOtpChannel: {
         title: "Default OTP channel",
         desc: "Preselected code channel for new sign-ups; the sender falls back when it is disabled.",
+      },
+      auth_otpSink: {
+        title: "OTP code routing",
+        desc: "Park in panel shows codes in the Activity feed instead of delivering them (SMS sandbox testing). Members cannot sign in while parked - return to Real delivery before onboarding.",
       },
       auth_smsMaxPerWindow: {
         title: "SMS sends per window",
@@ -861,6 +866,7 @@ const he: typeof en = {
     },
     units: { minutes: "דק׳", hours: "שע׳", sends: "שליחות" },
     fxProvider: { ecb: "ECB", boi: "בנק ישראל" },
+    otpSink: { delivery: "שליחה אמיתית", devSink: "הצגה בפאנל" },
     otpChannel: { whatsapp: "וואטסאפ", sms: "SMS" },
     integrations: {
       title: "אינטגרציות",
@@ -936,6 +942,10 @@ const he: typeof en = {
       auth_defaultOtpChannel: {
         title: "ערוץ קוד ברירת מחדל",
         desc: "הערוץ שנבחר מראש לנרשמים חדשים; השולח עובר לערוץ אחר כשהוא מנוטרל.",
+      },
+      auth_otpSink: {
+        title: "ניתוב קודי OTP",
+        desc: "הצגה בפאנל חונה את הקודים בעמוד הפעילות במקום לשלוח אותם (בדיקות בזמן ארגז החול של SMS). חברים לא יכולים להתחבר בזמן החניה - החזירו לשליחה אמיתית לפני קליטת משתמשים.",
       },
       auth_smsMaxPerWindow: {
         title: "שליחות SMS לחלון",

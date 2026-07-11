@@ -2,7 +2,7 @@ import { buildClient, CommitmentPolicy, KmsKeyringNode } from "@aws-crypto/clien
 import { Logger } from "@aws-lambda-powertools/logger";
 import { PublishCommand, SNSClient } from "@aws-sdk/client-sns";
 import { SocialMessagingClient } from "@aws-sdk/client-socialmessaging";
-import { DevOtpSinkRepo, getDocClient, RuntimeConfigRepo } from "@wanthat/dynamo";
+import { getDocClient, OtpSinkRepo, RuntimeConfigRepo } from "@wanthat/dynamo";
 import { WhatsAppSender } from "@wanthat/whatsapp";
 import { cachedConfigReader } from "./config-cache";
 import { type CustomSmsSenderEvent, deliverOtp, type SendDeps } from "./send";
@@ -29,9 +29,8 @@ function getDeps(): SendDeps {
   // End User Messaging Social is not available in il-central-1; the client region is deploy-time.
   const social = new SocialMessagingClient({ region: requireEnv("WHATSAPP_SOCIAL_REGION") });
   const whatsapp = new WhatsAppSender(social);
-  // The sink table is NOT provisioned in prod (no env var, no table, no grant — fail-closed).
-  const sinkTable = process.env.DEV_OTP_SINK_TABLE;
-  const sink = sinkTable ? new DevOtpSinkRepo(getDocClient(region), sinkTable) : undefined;
+  const sinkTable = process.env.OTP_SINK_TABLE;
+  const sink = sinkTable ? new OtpSinkRepo(getDocClient(region), sinkTable) : undefined;
   deps = {
     // 30s per-container cache: channel resolution reads four config keys per OTP (ADR-0006
     // decision 5). A kill-switch flip still lands within the TTL on warm containers; app-auth
@@ -59,9 +58,10 @@ function getDeps(): SendDeps {
       },
     },
     devSink: {
-      // Deploy-time guard: whatever the config says, the sink can never activate in prod —
-      // belt (env name) and braces (the table only exists where DataStack provisioned it).
-      allowed: process.env.WANTHAT_ENV !== "prod" && sink !== undefined,
+      // Available wherever DataStack provisioned the table (every env, since the SMS sandbox
+      // blocks real prod delivery during MVP); the runtime `auth.otpSink` key is the actual
+      // switch and defaults to real delivery.
+      allowed: sink !== undefined,
       put: async (item) => {
         // Unreachable when !allowed; if a future bug ever gets here without a table, fail loudly.
         if (!sink) throw new Error("message-sender: dev OTP sink is not provisioned in this env");
