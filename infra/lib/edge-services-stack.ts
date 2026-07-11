@@ -193,12 +193,13 @@ export class EdgeServicesStack extends Stack {
 
     // The conversion poll heartbeat (ADR-0009): fires the PROXY every 15 minutes; the op gates
     // itself on CONFIG poller.intervalMinutes (default 30), so admins tune cadence without any
-    // scheduler mutation. Dev only for now — prod stays disabled (decision 2026-07-10).
+    // scheduler mutation. Enabled in EVERY env (2026-07-11, reversing the 2026-07-10 dev-only
+    // decision): the prod retailer credential is populated and prod order ingestion is live.
     this.addSchedule(
       "OrderPollHeartbeat",
       retailerProxy,
       "rate(15 minutes)",
-      wanthatEnv.name === "dev",
+      true,
       JSON.stringify({ op: "listOrders", retailer: "aliexpress" }),
     );
     // fx-rates is live: refresh on the CONFIG default cadence (fx.updateIntervalMinutes = 720m).
