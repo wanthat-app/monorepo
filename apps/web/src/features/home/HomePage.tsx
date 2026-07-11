@@ -2,14 +2,13 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { type WalletEntryWire, walletApi } from "../../lib/api";
+import { type ActivityItemWire, activityApi, walletApi } from "../../lib/api";
 import { formatMoneyMinor, splitMoneyMinor } from "../../lib/money";
 import { Logo } from "../../ui/brand";
 import { Button } from "../../ui/components";
 import { ActivityRow, BalanceCard, PromptCard, TabBar, TopNav } from "../../ui/wallet";
 import { enrollPasskey, listPasskeys, passkeysSupported, UserChip, useSession } from "../../user";
 
-const RECENT_LIMIT = 4;
 const ROW_STATUS = { confirmed: "confirmed", pending: "pending", clawback: "rejected" } as const;
 
 const FACE_ICON = (
@@ -49,9 +48,10 @@ export function HomePage() {
     queryFn: () => walletApi.get(token as string),
     enabled: !!token && !!profile,
   });
-  const entries = useQuery({
-    queryKey: ["wallet-entries", profile?.sub, RECENT_LIMIT],
-    queryFn: () => walletApi.entries(token as string, RECENT_LIMIT),
+  // No explicit limit: the server applies CONFIG home.recentActivityLimit (admin-tunable).
+  const activity = useQuery({
+    queryKey: ["activity", profile?.sub],
+    queryFn: () => activityApi.list(token as string),
     enabled: !!token && !!profile,
   });
   const passkeys = useQuery({
@@ -91,17 +91,17 @@ export function HomePage() {
       ? t("home.pendingNote", { amount: formatMoneyMinor(est.pending.amountMinor, "ILS") })
       : undefined;
   const dateLocale = i18n.language.startsWith("he") ? "he-IL" : "en-US";
-  const entryMeta = (e: WalletEntryWire) =>
-    new Date(e.createdAt).toLocaleDateString(dateLocale, { day: "numeric", month: "short" });
+  const itemMeta = (at: string) =>
+    new Date(at).toLocaleDateString(dateLocale, { day: "numeric", month: "short" });
 
   return (
     <div className="relative flex min-h-screen flex-col bg-page">
-      {/* Desktop chrome: top nav. Activity is the slice's inert edge. */}
+      {/* Desktop chrome: top nav. */}
       <div className="hidden md:block">
         <TopNav
           links={[
             { key: "home", label: t("home.navHome"), active: true },
-            { key: "activity", label: t("home.navActivity") },
+            { key: "activity", label: t("home.navActivity"), onClick: () => navigate("/activity") },
           ]}
           createLabel={t("home.createLink")}
           onCreate={() => navigate("/create")}
@@ -180,24 +180,21 @@ export function HomePage() {
         <section className="rounded-card bg-surface p-5">
           <div className="mb-1 flex items-center justify-between">
             <h2 className="text-[15px] font-bold text-ink">{t("home.recentActivity")}</h2>
-            <button type="button" className="text-[13px] font-bold text-accent">
+            <button
+              type="button"
+              onClick={() => navigate("/activity")}
+              className="text-[13px] font-bold text-accent"
+            >
               {t("home.seeAll")}
             </button>
           </div>
-          {entries.isPending || entries.isError ? (
+          {activity.isPending || activity.isError ? (
             [0, 1, 2].map((i) => <ActivityRow key={i} loading />)
-          ) : entries.data.items.length === 0 ? (
+          ) : activity.data.items.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">{t("home.noActivity")}</p>
           ) : (
-            entries.data.items.map((e) => (
-              <ActivityRow
-                key={e.id}
-                title={t(`home.kind.${e.kind}`)}
-                status={ROW_STATUS[e.status]}
-                statusLabel={t(`home.status.${e.status}`)}
-                meta={entryMeta(e)}
-                amount={formatMoneyMinor(e.amount.amountMinor, e.amount.currency)}
-              />
+            activity.data.items.map((item) => (
+              <MemberActivityRow key={rowKey(item)} item={item} meta={itemMeta(item.at)} />
             ))
           )}
         </section>
@@ -210,9 +207,47 @@ export function HomePage() {
           activityLabel={t("home.navActivity")}
           active="home"
           createLabel={t("home.createLink")}
+          onActivity={() => navigate("/activity")}
           onCreate={() => navigate("/create")}
         />
       </nav>
     </div>
+  );
+}
+
+/** Stable list key: wallet rows have a ledger id; a recommendation is created once. */
+export function rowKey(item: ActivityItemWire): string {
+  return item.type === "wallet_entry" ? item.id : `rec-${item.recommendationId}`;
+}
+
+/** One merged-feed row — wallet movements as before, creations as a neutral "link created" row. */
+export function MemberActivityRow({ item, meta }: { item: ActivityItemWire; meta: string }) {
+  const { t } = useTranslation();
+  if (item.type === "wallet_entry") {
+    return (
+      <ActivityRow
+        title={t(`home.kind.${item.kind}`)}
+        status={ROW_STATUS[item.status]}
+        statusLabel={t(`home.status.${item.status}`)}
+        meta={meta}
+        amount={formatMoneyMinor(item.amount.amountMinor, item.amount.currency)}
+      />
+    );
+  }
+  return (
+    <ActivityRow
+      thumb={
+        item.imageUrl ? (
+          <img
+            src={item.imageUrl}
+            alt=""
+            referrerPolicy="no-referrer"
+            className="h-full w-full rounded-thumb object-contain"
+          />
+        ) : undefined
+      }
+      title={t("home.kind.recommendation_created")}
+      meta={`${item.title.length > 40 ? `${item.title.slice(0, 40)}…` : item.title} · ${meta}`}
+    />
   );
 }

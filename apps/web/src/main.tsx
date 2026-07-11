@@ -3,6 +3,7 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { App } from "./App";
+import { ActivityPage } from "./features/activity/ActivityPage";
 import { AdminCallbackPage } from "./features/admin/AdminCallbackPage";
 import { AdminPage } from "./features/admin/AdminPage";
 import { AuthPage } from "./features/auth/AuthPage";
@@ -22,6 +23,7 @@ const router = createBrowserRouter([
   // No /auth/callback any more: customer auth is Cognito-native in-page (ADR-0006); the only
   // OAuth redirect left is the ADMIN console's (its own callback below).
   { path: "/home", element: <HomePage /> },
+  { path: "/activity", element: <ActivityPage /> },
   { path: "/create", element: <CreateLinkPage /> },
   // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).
   { path: "/p/:id", element: <SharedProductPage /> },

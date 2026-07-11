@@ -14,6 +14,7 @@ import { waitForDb } from "@wanthat/db";
 import { Hono } from "hono";
 import type { LambdaEvent } from "hono/aws-lambda";
 import { handle } from "hono/aws-lambda";
+import { activityRouter } from "./activity/router";
 import { getContext } from "./context";
 import { walletRouter } from "./wallet/router";
 
@@ -35,6 +36,7 @@ app.get("/healthz/db", async (c) => {
 
 // `/wallet` sits behind the JWT authorizer at the gateway and reads the verified claims.
 app.route("/wallet", walletRouter());
+app.route("/activity", activityRouter());
 // The links module lives on the NON-VPC app-links edge (Aurora-free path; the sync retailer-proxy
 // invoke is free there — in-VPC it would need a paid lambda interface endpoint, ADR-0004).
 

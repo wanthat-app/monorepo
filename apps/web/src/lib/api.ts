@@ -75,6 +75,39 @@ export interface WalletEntryWire {
   createdAt: string;
 }
 
+/** One item of the merged member activity feed (GET /activity). */
+export type ActivityItemWire =
+  | {
+      type: "recommendation_created";
+      recommendationId: string;
+      title: string;
+      imageUrl: string | null;
+      at: string;
+    }
+  | {
+      type: "wallet_entry";
+      id: string;
+      kind: "referrer_cashback" | "consumer_reward" | "adjustment" | "withdrawal";
+      amount: { amountMinor: string; currency: string };
+      status: "pending" | "confirmed" | "clawback";
+      recommendationId: string | null;
+      at: string;
+    };
+
+export const activityApi = {
+  /** No limit -> the server applies CONFIG home.recentActivityLimit (the home strip's size). */
+  list: (token: string, opts: { limit?: number; cursor?: string } = {}) => {
+    const params = new URLSearchParams();
+    if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+    if (opts.cursor) params.set("cursor", opts.cursor);
+    const qs = params.toString();
+    return request<{ items: ActivityItemWire[]; nextCursor: string | null }>(
+      `/activity${qs ? `?${qs}` : ""}`,
+      { token },
+    );
+  },
+};
+
 export const walletApi = {
   get: (token: string) =>
     request<{ balances: WalletBalanceWire[]; estimated: WalletEstimateWire | null }>("/wallet", {
