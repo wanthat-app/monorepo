@@ -111,6 +111,14 @@ export const AuthOtpSink = z.enum(["delivery", "devSink"]);
 /** The member home's recent-activity strip: how many merged items GET /activity answers by default. */
 export const HomeRecentActivityLimit = z.number().int().min(1).max(50);
 
+/**
+ * Admin-set site-wide notice, one key per app language (the store holds primitives). When a
+ * text is non-empty, every page — member and admin — carries a warning bar with it (e.g. "test
+ * environment", maintenance heads-up). Empty (the default) = no banner. Public: the SPA reads
+ * it before any sign-in on every page load.
+ */
+export const SiteNotice = z.string().trim().max(200);
+
 /** Known config keys. Dotted namespaces group related settings. */
 export const CONFIG_KEYS = [
   "landing.countdownSeconds",
@@ -131,6 +139,8 @@ export const CONFIG_KEYS = [
   "auth.otpSink",
   "retailer.aliexpressTrackingId",
   "home.recentActivityLimit",
+  "site.noticeEn",
+  "site.noticeHe",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -156,6 +166,8 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "auth.otpSink": AuthOtpSink,
   "retailer.aliexpressTrackingId": RetailerAliexpressTrackingId,
   "home.recentActivityLimit": HomeRecentActivityLimit,
+  "site.noticeEn": SiteNotice,
+  "site.noticeHe": SiteNotice,
 };
 
 /**
@@ -190,6 +202,9 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   // The AliExpress portal's auto-created tracking id; replace via admin once a named one exists.
   "retailer.aliexpressTrackingId": "default",
   "home.recentActivityLimit": 10,
+  // Site-wide notice banner — empty means no banner (the shipped state).
+  "site.noticeEn": "",
+  "site.noticeHe": "",
 };
 
 /**
@@ -202,6 +217,8 @@ export const CONFIG_PUBLIC: Partial<Record<ConfigKey, boolean>> = {
   "auth.whatsappEnabled": true,
   "auth.smsEnabled": true,
   "auth.defaultOtpChannel": true,
+  "site.noticeEn": true,
+  "site.noticeHe": true,
 };
 
 /** Whether `key` may be served by the public config endpoint (default false). */

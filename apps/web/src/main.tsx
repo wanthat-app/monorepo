@@ -14,6 +14,7 @@ import { LegalPage } from "./features/legal/LegalPage";
 import { NotFoundPage } from "./features/not-found/NotFoundPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
 import { RouteErrorPage } from "./features/shell/RouteErrorPage";
+import { SiteNotice } from "./features/shell/SiteNotice";
 import "./i18n";
 import "./index.css";
 import { initConfig } from "./lib/config";
@@ -65,6 +66,8 @@ initConfig().finally(() => {
     <StrictMode>
       <QueryClientProvider client={queryClient}>
         <SessionProvider>
+          {/* Admin-set site-wide notice — above the router so EVERY page carries it. */}
+          <SiteNotice />
           <RouterProvider router={router} />
         </SessionProvider>
       </QueryClientProvider>
