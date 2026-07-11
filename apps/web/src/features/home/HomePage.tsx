@@ -78,7 +78,12 @@ export function HomePage() {
     }
   };
 
-  const userChip = <UserChip onSignedOut={() => navigate("/auth", { replace: true })} />;
+  const userChip = (
+    <UserChip
+      onProfile={() => navigate("/profile")}
+      onSignedOut={() => navigate("/auth", { replace: true })}
+    />
+  );
 
   const est = wallet.data?.estimated ?? null;
   const [amount, fraction] = est ? splitMoneyMinor(est.available.amountMinor, "ILS") : ["", ""];

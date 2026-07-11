@@ -55,7 +55,12 @@ export function ActivityPage() {
     return null;
   }
 
-  const userChip = <UserChip onSignedOut={() => navigate("/auth", { replace: true })} />;
+  const userChip = (
+    <UserChip
+      onProfile={() => navigate("/profile")}
+      onSignedOut={() => navigate("/auth", { replace: true })}
+    />
+  );
   const dateLocale = i18n.language.startsWith("he") ? "he-IL" : "en-US";
   const itemMeta = (at: string) =>
     new Date(at).toLocaleDateString(dateLocale, { day: "numeric", month: "short" });

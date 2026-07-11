@@ -11,6 +11,7 @@ import { CreateLinkPage } from "./features/create/CreateLinkPage";
 import { HomePage } from "./features/home/HomePage";
 import { SharedProductPage } from "./features/landing/SharedProductPage";
 import { NotFoundPage } from "./features/not-found/NotFoundPage";
+import { ProfilePage } from "./features/profile/ProfilePage";
 import "./i18n";
 import "./index.css";
 import { initConfig } from "./lib/config";
@@ -24,6 +25,7 @@ const router = createBrowserRouter([
   // OAuth redirect left is the ADMIN console's (its own callback below).
   { path: "/home", element: <HomePage /> },
   { path: "/activity", element: <ActivityPage /> },
+  { path: "/profile", element: <ProfilePage /> },
   { path: "/create", element: <CreateLinkPage /> },
   // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).
   { path: "/p/:id", element: <SharedProductPage /> },

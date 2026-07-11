@@ -32,6 +32,7 @@ export {
 } from "./actions";
 export type { UserProfile } from "./claims";
 export { CognitoError } from "./cognito";
+export { ProfileEditor } from "./ProfileEditor";
 export { type Session, SessionProvider, useSession } from "./SessionProvider";
 export { hasStoredSession, rememberedPhone } from "./store";
 export { UserChip } from "./UserChip";
