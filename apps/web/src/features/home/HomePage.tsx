@@ -238,12 +238,16 @@ export function MemberActivityRow({ item, meta }: { item: ActivityItemWire; meta
     <ActivityRow
       thumb={
         item.imageUrl ? (
-          <img
-            src={item.imageUrl}
-            alt=""
-            referrerPolicy="no-referrer"
-            className="h-full w-full rounded-thumb object-contain"
-          />
+          // ActivityRow renders the thumb slot raw - the wrapper must own its size (44px, the
+          // row's design thumb), or the image renders at natural size and floods the row.
+          <span className="flex h-11 w-11 shrink-0 items-center justify-center overflow-hidden rounded-thumb border border-line bg-page">
+            <img
+              src={item.imageUrl}
+              alt=""
+              referrerPolicy="no-referrer"
+              className="max-h-full max-w-full object-contain"
+            />
+          </span>
         ) : undefined
       }
       title={t("home.kind.recommendation_created")}
