@@ -19,7 +19,7 @@ export type ListActivityQuery = z.infer<typeof ListActivityQuery>;
  * One feed row. `type` is an open string: audit payloads are free-form jsonb, and unknown/future
  * types must still render (the SPA shows a generic badge with the raw type). Field presence by
  * type: user_registered/user_deleted carry phone/name/email (actor on deletions); otp_sent
- * carries phone/channel/code/expiresAt.
+ * carries phone/channel/code/expiresAt; config_changed carries key/value/previous/actor.
  */
 export const ActivityItem = z.object({
   id: z.string(), // "audit_<id>" | "otp_<phone>"
@@ -28,10 +28,13 @@ export const ActivityItem = z.object({
   phone: z.string().optional(),
   name: z.string().optional(), // "First Last" when known
   email: z.string().optional(),
-  actor: z.string().optional(), // user_deleted: the acting admin
+  actor: z.string().optional(), // user_deleted / config_changed: the acting admin
   channel: OtpChannel.optional(), // otp_sent only
   code: z.string().optional(), // otp_sent only - the dev sink code
   expiresAt: z.string().datetime().optional(), // otp_sent only
+  key: z.string().optional(), // config_changed only - the runtime-config key
+  value: z.unknown().optional(), // config_changed only - the value as applied (any JSON)
+  previous: z.unknown().optional(), // config_changed only - the effective value before
 });
 export type ActivityItem = z.infer<typeof ActivityItem>;
 

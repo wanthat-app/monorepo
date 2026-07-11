@@ -224,7 +224,34 @@ function Details({ item }: { item: ActivityItem }) {
     );
   }
 
+  if (item.type === "config_changed" && item.key) {
+    return (
+      <>
+        <span
+          className="rounded-[9px] border border-edge bg-base px-2 py-0.5 font-mono text-[12px] font-semibold text-ink"
+          dir="ltr"
+        >
+          {item.key}
+        </span>
+        <span className="tabular" dir="ltr">
+          {configValue(item.previous)} → {configValue(item.value)}
+        </span>
+        {item.actor ? (
+          <span className="text-[11.5px] text-placeholder">
+            {t("admin.activityPage.byActor", { actor: item.actor })}
+          </span>
+        ) : null}
+      </>
+    );
+  }
+
   return <span>—</span>;
+}
+
+/** Config values are free JSON (booleans, numbers, strings): compact one-line display. */
+function configValue(v: unknown): string {
+  if (v === undefined) return "—";
+  return typeof v === "string" ? v : JSON.stringify(v);
 }
 
 function EventBadge({ type }: { type: string }) {
@@ -238,6 +265,11 @@ function EventBadge({ type }: { type: string }) {
   if (type === "user_deleted") {
     return (
       <Badge className="bg-rejected-soft text-rejected">{t("admin.activityPage.deleted")}</Badge>
+    );
+  }
+  if (type === "config_changed") {
+    return (
+      <Badge className="bg-bank-soft text-bank">{t("admin.activityPage.configChanged")}</Badge>
     );
   }
   if (type === "otp_sent") {

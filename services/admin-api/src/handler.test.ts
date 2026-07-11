@@ -21,10 +21,12 @@ vi.mock("./context", () => ({ getContext: () => ctx }));
 const { dbFns } = vi.hoisted(() => ({
   dbFns: {
     listAuditLog: vi.fn(),
+    appendConfigChangeAudit: vi.fn().mockResolvedValue(undefined),
   },
 }));
 vi.mock("@wanthat/db", () => dbFns);
 
+import { CONFIG_DEFAULTS } from "@wanthat/contracts";
 import { app } from "./handler";
 
 const adminEnv = {
@@ -73,7 +75,8 @@ describe("admin config", () => {
     expect(body.items.length).toBeGreaterThanOrEqual(8);
   });
 
-  it("validates and persists a config write", async () => {
+  it("validates and persists a config write, and chains a config_changed audit event", async () => {
+    ctx.config.getAll.mockResolvedValue([]);
     ctx.config.put.mockResolvedValue({
       key: "landing.countdownSeconds",
       value: 5,
@@ -90,6 +93,61 @@ describe("admin config", () => {
     );
     expect(res.status).toBe(200);
     expect(ctx.config.put).toHaveBeenCalledWith("landing.countdownSeconds", 5, expect.any(String));
+    // The audit rides every applied write: new value, prior effective value (the default —
+    // nothing stored), and the acting admin from the token claims.
+    expect(dbFns.appendConfigChangeAudit).toHaveBeenCalledWith(ctx.db, {
+      key: "landing.countdownSeconds",
+      value: 5,
+      previous: CONFIG_DEFAULTS["landing.countdownSeconds"],
+      actor: "dennis@wanthat.co.il",
+    });
+  });
+
+  it("audits the stored value as `previous` when the key was set before", async () => {
+    dbFns.appendConfigChangeAudit.mockClear();
+    ctx.config.getAll.mockResolvedValue([
+      { key: "landing.countdownSeconds", value: 3, updatedAt: "2026-06-01T00:00:00.000Z" },
+    ]);
+    ctx.config.put.mockResolvedValue({
+      key: "landing.countdownSeconds",
+      value: 5,
+      updatedAt: "2026-06-29T00:00:00.000Z",
+    });
+    const res = await app.request(
+      "/admin/config/landing.countdownSeconds",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ value: 5 }),
+      },
+      adminEnv,
+    );
+    expect(res.status).toBe(200);
+    expect(dbFns.appendConfigChangeAudit).toHaveBeenCalledWith(
+      ctx.db,
+      expect.objectContaining({ previous: 3, value: 5 }),
+    );
+  });
+
+  it("fails the save loudly when the audit append fails (the trail must not break silently)", async () => {
+    ctx.config.getAll.mockResolvedValue([]);
+    ctx.config.put.mockResolvedValue({
+      key: "landing.countdownSeconds",
+      value: 5,
+      updatedAt: "2026-06-29T00:00:00.000Z",
+    });
+    dbFns.appendConfigChangeAudit.mockRejectedValueOnce(new Error("db down"));
+    const res = await app.request(
+      "/admin/config/landing.countdownSeconds",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ value: 5 }),
+      },
+      adminEnv,
+    );
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toBe("audit_failed");
   });
 
   it("404s an unknown config key", async () => {

@@ -29,6 +29,11 @@ export function auditEntryToItem(entry: AuditLogEntry): ActivityItem {
     ...(name ? { name } : {}),
     ...(str(p.email) ? { email: str(p.email) } : {}),
     ...(str(p.actor) ? { actor: str(p.actor) } : {}),
+    // config_changed (0007): the key plus the value transition (values are free JSON — the
+    // admin SPA stringifies them for display).
+    ...(str(p.key) ? { key: str(p.key) } : {}),
+    ...(p.value !== undefined ? { value: p.value } : {}),
+    ...(p.previous !== undefined ? { previous: p.previous } : {}),
   });
 }
 

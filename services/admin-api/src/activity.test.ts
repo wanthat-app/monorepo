@@ -48,6 +48,29 @@ describe("auditEntryToItem", () => {
     expect(item.email).toBeUndefined(); // null email is omitted, not ""
   });
 
+  it("maps a config_changed payload with key, value transition and actor", () => {
+    const item = auditEntryToItem({
+      id: "20",
+      createdAt: AT,
+      payload: {
+        type: "config_changed",
+        key: "auth.smsEnabled",
+        value: false,
+        previous: true,
+        actor: "dennis@wanthat.co.il",
+      },
+    });
+    expect(item).toEqual({
+      id: "audit_20",
+      type: "config_changed",
+      at: AT.toISOString(),
+      key: "auth.smsEnabled",
+      value: false,
+      previous: true,
+      actor: "dennis@wanthat.co.il",
+    });
+  });
+
   it("tolerates unknown types and non-object payloads", () => {
     expect(
       auditEntryToItem({ id: "1", createdAt: AT, payload: { type: "fx_rate_written" } }),
