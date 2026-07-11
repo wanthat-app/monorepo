@@ -230,6 +230,7 @@ export function BalanceCard({
   pendingNote,
   cta,
   onCta,
+  ctaDisabled = false,
   children,
   loading = false,
 }: {
@@ -243,6 +244,8 @@ export function BalanceCard({
   pendingNote?: string;
   cta?: string;
   onCta?: () => void;
+  /** Renders the CTA inert (e.g. "coming soon" features) — visibly dimmed, not clickable. */
+  ctaDisabled?: boolean;
   children?: ReactNode;
   loading?: boolean;
 }) {
@@ -303,7 +306,8 @@ export function BalanceCard({
         <button
           type="button"
           onClick={onCta}
-          className="w-full rounded-[14px] bg-mint p-3.5 font-display text-[15px] font-bold text-mint-ink transition hover:bg-mint/90"
+          disabled={ctaDisabled}
+          className="w-full rounded-[14px] bg-mint p-3.5 font-display text-[15px] font-bold text-mint-ink transition hover:bg-mint/90 disabled:cursor-not-allowed disabled:opacity-50 disabled:hover:bg-mint"
         >
           {cta}
         </button>
