@@ -62,17 +62,38 @@ export function SharedProductPage() {
     setDiag((d) => [...d, line]);
   };
 
-  // The server-injected landing payload. Absent (client-side navigation / stale shell) → one
-  // hard reload of /p/{id}: the landing Lambda ALWAYS injects a snapshot, so this cannot loop.
+  // The server-injected landing payload. Absent (client-side navigation / stale shell) → ONE
+  // hard reload of /p/{id} so the server injects a fresh one. The one-shot lives in
+  // sessionStorage, not a ref — a ref resets on the reload itself, which turned a persistently
+  // missing snapshot (e.g. a plain dev server) into an infinite reload loop; now the second
+  // miss renders an error instead.
   const snapshot = readLandingSnapshot(id);
   const ok = snapshot?.status === "ok";
-  const reloaded = useRef(false);
-  useEffect(() => {
-    if (!snapshot && !reloaded.current) {
-      reloaded.current = true;
-      window.location.reload();
+  const RELOAD_KEY = "wanthat.landingReloaded";
+  const [reloadExhausted] = useState(() => {
+    try {
+      return sessionStorage.getItem(RELOAD_KEY) === id;
+    } catch {
+      return true; // no storage → cannot bound a reload; fail to the error state, never loop
     }
-  }, [snapshot]);
+  });
+  useEffect(() => {
+    if (snapshot) {
+      try {
+        sessionStorage.removeItem(RELOAD_KEY);
+      } catch {
+        // best-effort
+      }
+      return;
+    }
+    if (reloadExhausted) return;
+    try {
+      sessionStorage.setItem(RELOAD_KEY, id);
+    } catch {
+      // best-effort
+    }
+    window.location.reload();
+  }, [snapshot, reloadExhausted, id]);
 
   // A recognised (valid refresh) or just-authenticated member enters the redirect interstitial:
   // resolve once (Bearer → ref + c), count down, navigate. `authRequired` means the session went
@@ -172,7 +193,22 @@ export function SharedProductPage() {
   }, []);
 
   // Snapshot missing → the reload effect above is firing; render nothing for the split second.
-  if (!snapshot) return null;
+  // If the reload already happened and the shell STILL has no snapshot, reloading again would
+  // loop — surface a friendly error instead.
+  if (!snapshot) {
+    if (!reloadExhausted) return null;
+    return (
+      <Screen>
+        <div className="mx-auto flex w-full max-w-[440px] flex-col gap-4 text-center">
+          <div className="font-display text-[22px] font-bold tracking-[-0.03em]">wanthat</div>
+          <h1 className="font-display text-[19px] font-semibold tracking-[-0.02em]">
+            {t("shared.loadFailedTitle")}
+          </h1>
+          <p className="text-[13.5px] text-muted">{t("shared.loadFailedBody")}</p>
+        </div>
+      </Screen>
+    );
+  }
 
   if (snapshot.status === "notFound") {
     return (
@@ -329,9 +365,7 @@ export function SharedProductPage() {
 
             <div className="mt-[18px]">
               <Button onClick={() => window.location.assign(`/auth?intent=signup&ref=${id}`)}>
-                {cashbackDisplay
-                  ? t("shared.signupCta", { amount: cashbackDisplay })
-                  : t("shared.signupCtaNoAmount")}
+                {t("shared.signupCta")}
               </Button>
             </div>
             <p className="mt-3.5 text-center text-xs leading-normal text-subtle">
