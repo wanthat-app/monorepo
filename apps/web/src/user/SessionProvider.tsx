@@ -1,3 +1,4 @@
+import i18n from "i18next";
 import {
   createContext,
   type ReactNode,
@@ -31,7 +32,25 @@ export function SessionProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     void rehydrate();
   }, []);
+  useProfileLocaleSync();
   return <SessionContext.Provider value={true}>{children}</SessionContext.Provider>;
+}
+
+/**
+ * The signed-in member's saved locale is the source of truth for the app language: applied on
+ * sign-in/rehydrate (a fresh device honours the preference instead of the Hebrew default) and
+ * after a profile edit (`refreshProfile` updates the store — no page calls changeLanguage
+ * itself). Signed out, the per-device choice (i18n's own localStorage memory) stays in charge;
+ * a sign-out deliberately keeps the last language rather than snapping back.
+ */
+function useProfileLocaleSync() {
+  const snapshot = useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+  const locale = snapshot.profile?.locale;
+  useEffect(() => {
+    if (!locale) return;
+    const lang = locale.startsWith("he") ? "he" : "en";
+    if (i18n.language !== lang) void i18n.changeLanguage(lang);
+  }, [locale]);
 }
 
 export function useSession(): Session {

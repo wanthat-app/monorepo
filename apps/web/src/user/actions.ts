@@ -18,7 +18,7 @@ import {
   updateUserAttributes,
   verifyUserAttribute,
 } from "./cognito";
-import { clearDevicePasskey, hasDevicePasskey, markDevicePasskey } from "./passkey-device";
+import { hasDevicePasskey, markDevicePasskey } from "./passkey-device";
 import {
   clearSession,
   completeSignIn,
@@ -223,16 +223,12 @@ export async function loginWithPasskey(opts?: {
   const raw = JSON.parse(res.ChallengeParameters?.CREDENTIAL_REQUEST_OPTIONS ?? "{}") as {
     publicKey?: unknown;
   };
-  let credential: Awaited<ReturnType<typeof getAssertion>>;
-  try {
-    credential = await getAssertion(raw.publicKey ?? raw);
-  } catch (err) {
-    // NotAllowedError = the browser found no usable credential here (or the member dismissed
-    // the sheet): drop the per-device flag so the biometric button stops arming a ceremony
-    // that cannot succeed on this device. Re-set by the next successful enrolment/login.
-    if (isNoCredentialError(err)) clearDevicePasskey();
-    throw err;
-  }
+  // A ceremony failure (including NotAllowedError) deliberately leaves the per-device flag
+  // alone: the browser raises the SAME NotAllowedError for a dismissed sheet as for a missing
+  // credential, and clearing on it stripped an enrolled member's biometric button after one
+  // cancelled prompt (leaving OTP as the only path). The flag is set only on success, so a
+  // device that never enrolled still never shows the button.
+  const credential = await getAssertion(raw.publicKey ?? raw);
   opts?.onCredential?.();
   const final = await respondToAuthChallenge({
     challengeName: "WEB_AUTHN",
@@ -244,15 +240,6 @@ export async function loginWithPasskey(opts?: {
   });
   completeSignIn(requireAuthResult(final));
   markDevicePasskey();
-}
-
-/** WebAuthn's "no usable credential / dismissed" signal — DOMException, so match by name. */
-function isNoCredentialError(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    (err as { name?: unknown }).name === "NotAllowedError"
-  );
 }
 
 /**

@@ -8,9 +8,12 @@
  * Transitions:
  * - SET on a successful enrolment ({@link markDevicePasskey} from `enrollPasskey`) or a
  *   successful passkey login (`loginWithPasskey`).
- * - CLEARED when a login ceremony fails with `NotAllowedError` — the browser's "no usable
- *   credential here" signal (also raised on user dismissal; clearing then is accepted — the
- *   next successful ceremony re-sets it, and OTP always remains).
+ * - NOT cleared on a ceremony failure: the browser raises the same `NotAllowedError` for a
+ *   dismissed sheet as for a missing credential, and clearing on it stripped an enrolled
+ *   member's biometric button after a single cancelled prompt. A device whose credential was
+ *   deleted externally keeps the button; a tap fails into the friendly OTP guidance.
+ * - {@link clearDevicePasskey} remains for explicit de-enrolment paths; no production code
+ *   path currently clears.
  *
  * Devices that enrolled BEFORE this flag existed start unflagged: their button reappears after
  * the next successful enrolment or login — a deliberate fail-closed default.
