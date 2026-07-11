@@ -18,13 +18,15 @@ import {
 import {
   biometricLabelKey,
   CognitoError,
-  canLoginWithPasskey,
   enrollPasskey,
   hasStoredSession,
+  loginWithDiscoveredPasskey,
   loginWithOtp,
   loginWithPasskey,
   type OtpLoginFlow,
+  passkeyLoginAvailable,
   passkeysSupported,
+  rememberedPhone,
   resumeSignUp,
   type SignUpFlow,
   signUpWithOtp,
@@ -47,10 +49,13 @@ const SIGNUP_CODE_LENGTH = 6;
  * rides the SignUp call itself, then the confirmation code and a biometric enrolment step
  * (device-matched Face ID / Touch ID label + glyph). The offered OTP channels mirror the
  * admin kill switches via the public config endpoint (SMS-only when it is unreachable).
- * Where passkeys are supported AND a remembered phone exists AND a passkey ceremony has
- * succeeded on this device (per-device flag), passkey login is auto-armed on focus and
- * offered as a square icon button beside Continue (userless login is waived — ADR-0006);
- * a failed ceremony falls back to the OTP form with friendly guidance, never a dead button.
+ * Passkey gating is COGNITO'S truth, not a local flag (`AvailableChallenges`): with a
+ * remembered phone whose account has a passkey, login is auto-armed on focus AND offered as
+ * a square icon button beside Continue; with no remembered phone, a conditional-UI (autofill)
+ * discovery is armed instead — the browser surfaces the passkey in the phone field iff one
+ * exists on this device — and typing a phone re-checks availability to light the button.
+ * A failed/cancelled ceremony falls back to the OTP form with friendly guidance and keeps
+ * the button; native userless login remains waived (ADR-0006).
  */
 // Mock affiliate store — where the acquisition flow lands after auth (the real per-product affiliate
 // redirect lands with the full-landing slice). A hardcoded constant, so `?ref` can never open-redirect.
@@ -94,17 +99,18 @@ export function AuthPage() {
   const [error, setError] = useState<string | undefined>();
   // Friendly (non-alarming) guidance after a failed biometric ceremony — steers to the OTP form.
   const [notice, setNotice] = useState<string | undefined>();
-  // Snapshot of the per-device passkey gate: state (not a render-time call), re-read after
-  // each ceremony so the button always mirrors the gate. A cancelled ceremony keeps the flag
-  // (cancel and no-credential are indistinguishable), so the button survives a dismissed
-  // sheet — the member can re-open the OS prompt instead of being forced onto OTP.
-  const [passkeyAvailable, setPasskeyAvailable] = useState(
-    () => passkeysSupported() && canLoginWithPasskey(),
-  );
+  // Whether the biometric button shows — Cognito's answer (passkeyLoginAvailable), resolved
+  // async: for the remembered phone on mount, or for a typed phone via the debounced check.
+  // A cancelled ceremony changes nothing (the gate is server truth), so the button always
+  // survives a dismissed sheet — the member can re-open the OS prompt instead of OTP.
+  const [passkeyAvailable, setPasskeyAvailable] = useState(false);
 
   // The pending Cognito ceremonies (module flow objects) — refs, not state: they carry no UI.
   const loginFlow = useRef<OtpLoginFlow | null>(null);
   const signUpFlow = useRef<SignUpFlow | null>(null);
+  // Pending conditional-UI discovery (no-remembered-phone path) — aborted before any modal
+  // ceremony (one WebAuthn request at a time) and on unmount.
+  const discovery = useRef<AbortController | null>(null);
 
   const bioLabel = t(`auth.biometric.${biometricLabelKey()}`);
   const armed = useRef(false);
@@ -125,29 +131,63 @@ export function AuthPage() {
   }, []);
 
   // Automatic passkey login (ADR-0006): armed once per mount, ONLY when this device remembers
-  // a phone (Cognito's WEB_AUTHN challenge is username-gated — userless login is waived) AND a
-  // passkey ceremony has succeeded here before (per-device flag). The module waits for document
-  // focus internally (iOS rejects an unfocused ceremony), so this fires right after load or at
-  // worst on the member's first tap. Cancel/failure leaves the OTP form in charge with a gentle
-  // pointer at it — the biometric button stays available for a manual retry.
+  // a phone (Cognito's WEB_AUTHN challenge is username-gated) AND Cognito confirms the account
+  // has a passkey (AvailableChallenges — server truth, sends nothing). The module waits for
+  // document focus internally (iOS rejects an unfocused ceremony), so this fires right after
+  // load or at worst on the member's first tap. Cancel/failure leaves the OTP form in charge
+  // with a gentle pointer at it; the button stays — the gate is Cognito's answer, which a
+  // dismissed sheet cannot change.
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;
     // A returning member with a stored session is being rehydrated — the effect above will
     // forward them; don't pop a passkey prompt at someone who's already logged in.
     if (hasStoredSession()) return;
-    if (!passkeysSupported() || !canLoginWithPasskey()) return;
-    loginWithPasskey()
-      .then(complete)
-      .catch(() => {
-        setPasskeyAvailable(passkeysSupported() && canLoginWithPasskey());
-        setNotice(t("auth.passkeyFallback"));
-      });
+    if (!passkeysSupported() || !rememberedPhone()) return;
+    void passkeyLoginAvailable().then((available) => {
+      if (!available) return;
+      setPasskeyAvailable(true);
+      loginWithPasskey()
+        .then(complete)
+        .catch(() => setNotice(t("auth.passkeyFallback")));
+    });
+  }, [complete, t]);
+
+  // No remembered phone: arm conditional-UI (autofill) discovery instead — the browser shows
+  // this site's passkey in the phone field's autofill IFF one exists on this device (the only
+  // way the platform exposes "a passkey exists here"); picking it discovers the account and
+  // signs in (discovery pick + the real Cognito ceremony — two verifications, once; the
+  // sign-in stores the phone so later visits take the single-prompt path above). Re-armed per
+  // mount, aborted on unmount — never armed alongside the modal auto-prompt (one pending
+  // WebAuthn request at a time).
+  useEffect(() => {
+    if (hasStoredSession() || rememberedPhone() || !passkeysSupported()) return;
+    const controller = new AbortController();
+    discovery.current = controller;
+    loginWithDiscoveredPasskey(controller.signal)
+      .then((signedIn) => {
+        if (signedIn) complete();
+      })
+      .catch(() => setNotice(t("auth.passkeyFallback")));
+    return () => controller.abort();
   }, [complete, t]);
 
   // The country affordance is IL (+972); the field carries the local part. Normalize + validate to
   // E.164 (null until it's a valid number); Cognito re-validates the attribute server-side.
   const e164 = normalizePhone(phone, "IL");
+
+  // Typed-phone availability check (debounced): a member on a wiped device who types their
+  // number gets the biometric button lit before any code is sent — covers browsers without
+  // conditional UI. Never un-lights: a shown button stays tappable.
+  useEffect(() => {
+    if (passkeyAvailable || !e164 || !passkeysSupported()) return;
+    const timer = setTimeout(() => {
+      void passkeyLoginAvailable(e164).then((available) => {
+        if (available) setPasskeyAvailable(true);
+      });
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [e164, passkeyAvailable]);
   const lang = i18n.language.startsWith("he") ? "he" : "en";
 
   const run = async (fn: () => Promise<void>) => {
@@ -194,16 +234,18 @@ export function AuthPage() {
     });
 
   // Deliberately NOT run(): a biometric failure must fall back to the OTP flow with friendly
-  // guidance (and re-read the per-device gate), not surface as a red error on the phone field.
+  // guidance, not surface as a red error on the phone field. A typed number wins over the
+  // remembered one (the member may be signing into a different account); the pending autofill
+  // discovery is aborted first — the platform allows one WebAuthn request at a time.
   const onPasskeyLogin = async () => {
     setBusy(true);
     setError(undefined);
     setNotice(undefined);
+    discovery.current?.abort();
     try {
-      await loginWithPasskey();
+      await loginWithPasskey(e164 ? { phone: e164 } : undefined);
       complete();
     } catch {
-      setPasskeyAvailable(passkeysSupported() && canLoginWithPasskey());
       setNotice(t("auth.passkeyFallback"));
     } finally {
       setBusy(false);
@@ -296,12 +338,14 @@ export function AuthPage() {
                 <span className="inline-flex h-12 shrink-0 items-center gap-1.5 rounded-input border border-line bg-surface px-3.5 font-medium text-ink">
                   🇮🇱 +972
                 </span>
+                {/* "webauthn" in autocomplete opts this field into conditional-UI passkey
+                    autofill: the browser lists the site's passkey here iff one exists. */}
                 <input
                   id="phone"
                   name="phone"
                   type="tel"
                   inputMode="tel"
-                  autoComplete="tel"
+                  autoComplete="tel webauthn"
                   placeholder="50 123 4567"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
@@ -320,10 +364,9 @@ export function AuthPage() {
                 </Button>
               </div>
               {/* Manual biometric login — a square icon button per platform convention (FaceID /
-                  fingerprint glyph via the device-match logic), shown only where passkeys are
-                  supported AND a ceremony has succeeded on this device AND a phone is remembered
-                  (the native WEB_AUTHN challenge is username-gated, ADR-0006). A cancelled
-                  auto-prompt lands here; one tap re-opens the OS sheet. */}
+                  fingerprint glyph via the device-match logic), shown when Cognito confirms the
+                  account (remembered or typed phone) has a passkey. A cancelled auto-prompt
+                  lands here; one tap re-opens the OS sheet. */}
               {passkeyAvailable && (
                 <button
                   type="button"

@@ -97,6 +97,8 @@ export interface AuthFlowResponse {
   ChallengeName?: string;
   Session?: string;
   ChallengeParameters?: Record<string, string>;
+  /** USER_AUTH without PREFERRED_CHALLENGE: the sign-in methods this account supports. */
+  AvailableChallenges?: string[];
 }
 
 export interface CognitoAttribute {

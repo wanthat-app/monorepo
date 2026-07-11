@@ -3,16 +3,52 @@ import { startAuthentication, startRegistration } from "@simplewebauthn/browser"
 /**
  * Browser WebAuthn helpers for the Cognito-native passkey flows (ADR-0006 decision 2).
  * Cognito runs the protocol (challenge mint + verification); this file only drives the
- * browser ceremony and the UX gates that survived the native migration: focus-arming and
- * device-matched biometric labels. The userless/conditional-UI machinery of the replaced
- * app-owned design (autofill, immediate mode) is gone — the gate is "a remembered phone
- * exists AND a passkey ceremony succeeded on this device" (store.rememberedPhone +
- * passkey-device.ts).
+ * browser ceremonies: focus-arming, device-matched biometric labels, and the conditional-UI
+ * (autofill) DISCOVERY ceremony for devices with no remembered phone. Whether a passkey can
+ * actually sign someone in is Cognito's answer (`AvailableChallenges` — see
+ * actions.passkeyLoginAvailable), not a client-side flag.
  */
 
 /** Whether this browser can use platform passkeys (Face ID / Touch ID / Windows Hello). */
 export function passkeysSupported(): boolean {
   return typeof window !== "undefined" && !!window.PublicKeyCredential;
+}
+
+/** Whether the browser supports conditional-UI (autofill) passkey mediation. */
+export async function conditionalMediationSupported(): Promise<boolean> {
+  return (
+    passkeysSupported() &&
+    typeof PublicKeyCredential.isConditionalMediationAvailable === "function" &&
+    (await PublicKeyCredential.isConditionalMediationAvailable().catch(() => false))
+  );
+}
+
+/**
+ * Conditional (autofill) discovery ceremony: a pending non-modal `get()` that makes the
+ * browser surface this site's passkey in the phone field's autofill IFF one exists on the
+ * device — the only web-platform way to show a passkey affordance exactly when a credential
+ * exists (silent presence queries are deliberately impossible). The challenge is a throwaway:
+ * the assertion is never sent anywhere — its sole output is the `userHandle` naming the
+ * Cognito account (the pool's UUID username), which the caller feeds into the REAL,
+ * server-verified WEB_AUTHN flow. Resolves null on abort/dismissal/no-support.
+ */
+export async function discoverPasskeyUser(signal: AbortSignal): Promise<string | null> {
+  try {
+    const credential = (await navigator.credentials.get({
+      mediation: "conditional",
+      signal,
+      publicKey: {
+        challenge: crypto.getRandomValues(new Uint8Array(32)),
+        userVerification: "preferred",
+        allowCredentials: [],
+      },
+    })) as PublicKeyCredential | null;
+    const response = credential?.response as AuthenticatorAssertionResponse | undefined;
+    if (!response?.userHandle) return null;
+    return new TextDecoder().decode(new Uint8Array(response.userHandle));
+  } catch {
+    return null; // aborted / dismissed / unsupported — the visible flows stay in charge
+  }
 }
 
 /**

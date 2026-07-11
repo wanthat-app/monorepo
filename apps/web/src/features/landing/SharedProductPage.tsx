@@ -6,10 +6,11 @@ import { getOrMintGuestId, resolveRedirect } from "../../lib/landing-api";
 import { formatMoneyMinor } from "../../lib/money";
 import { Button, Screen, Spinner } from "../../ui/components";
 import {
-  canLoginWithPasskey,
   hasStoredSession,
   loginWithPasskey,
+  passkeyLoginAvailable,
   passkeysSupported,
+  rememberedPhone,
   useSession,
 } from "../../user";
 import { readLandingSnapshot } from "./snapshot";
@@ -134,13 +135,20 @@ export function SharedProductPage() {
       note("gate: webauthn unsupported → no prompt");
       return;
     }
-    if (!canLoginWithPasskey()) {
+    if (!rememberedPhone()) {
       note("gate: no remembered phone → no prompt (ADR-0006: userless login waived)");
       return;
     }
-    note("auto-prompt: armed — fires on document focus");
+    note("auto-prompt: checking passkey availability (Cognito AvailableChallenges)");
     void (async () => {
       try {
+        // Server truth: the account must actually have a passkey (a local flag can drift —
+        // it did; see the AuthPage gate for the same check).
+        if (!(await passkeyLoginAvailable())) {
+          note("gate: account has no passkey → no prompt");
+          return;
+        }
+        note("auto-prompt: armed — fires on document focus");
         await loginWithPasskey({
           onCredential: () => {
             note("biometric ok → verifying");
