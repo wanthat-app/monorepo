@@ -3,9 +3,10 @@ import { OtpChannel } from "../identity/channel";
 
 /**
  * Admin activity feed (GET /admin/activity) — one paged list, newest first, over the Aurora
- * audit_log (user_registered / user_deleted / future audited admin actions) plus, in dev only,
- * live OTP codes from the dev sink (merged into page 1 by admin-api; the sink table does not
- * exist in prod, so the otp_sent item type can never appear there).
+ * audit_log (wallet_entry / user_deleted / config_changed / future audited actions) plus two
+ * DynamoDB merges into page 1: live OTP codes from the sink (docs/otp-sink.md, every env) and
+ * member signups from the notification outbox (user_registered; bounded by the outbox's
+ * ~30-day TTL, which suits an activity feed).
  */
 
 /** Query for GET /admin/activity — 1-based paging, no filters in v1. */
@@ -35,6 +36,11 @@ export const ActivityItem = z.object({
   key: z.string().optional(), // config_changed only - the runtime-config key
   value: z.unknown().optional(), // config_changed only - the value as applied (any JSON)
   previous: z.unknown().optional(), // config_changed only - the effective value before
+  orderId: z.string().optional(), // wallet_entry only - the retailer order
+  kind: z.string().optional(), // wallet_entry only - referrer_cashback / consumer_reward / ...
+  status: z.string().optional(), // wallet_entry only - pending / confirmed / clawback
+  amountMinor: z.string().optional(), // wallet_entry only - decimal-string minor units
+  currency: z.string().optional(), // wallet_entry only
 });
 export type ActivityItem = z.infer<typeof ActivityItem>;
 

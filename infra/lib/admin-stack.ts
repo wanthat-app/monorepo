@@ -46,6 +46,9 @@ export interface AdminStackProps extends StackProps {
   // OTP sink (docs/otp-sink.md) - the activity page lists every parked code (5-minute TTL);
   // message-sender parks each OTP before delivering, in every environment.
   readonly otpSinkTable: dynamodb.ITable;
+  // Notification outbox (read-only): the activity page maps optin_welcome items to
+  // user_registered rows — the signup event source (see admin-api activity.ts).
+  readonly notificationOutboxTable: dynamodb.ITable;
   // Retailer credential secret — admin-api may WRITE it (credential drop from the admin panel)
   // but never read it; retailer-proxy stays the sole reader (see the inline policy below).
   readonly retailerSecret: secretsmanager.ISecret;
@@ -98,6 +101,7 @@ export class AdminStack extends Stack {
         PRODUCT_TABLE: props.productTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
         OTP_SINK_TABLE: props.otpSinkTable.tableName,
+        NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
         DB_USER: "app_ro",
@@ -121,8 +125,9 @@ export class AdminStack extends Stack {
     props.unattributedOrderTable.grantReadWriteData(fn);
     props.productTable.grantReadData(fn);
     props.recommendationTable.grantReadData(fn);
-    // The activity feed scans the parked OTP codes (read-only).
+    // The activity feed scans the parked OTP codes and the signup outbox (read-only).
     props.otpSinkTable.grantReadData(fn);
+    props.notificationOutboxTable.grantReadData(fn);
 
     // The retailer-credential drop runs as a separate NON-VPC function: Secrets Manager is only
     // reachable over its public endpoint, and the VPC is deliberately endpoint-free (ADR-0004;

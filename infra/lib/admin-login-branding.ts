@@ -59,7 +59,9 @@ export const ADMIN_LOGIN_SETTINGS = {
     divider: { lightMode: { borderColor: HAIRLINE } },
   },
   components: {
-    pageBackground: { lightMode: { color: PAGE } },
+    // `image.enabled: false` matters: Cognito's DEFAULT background image renders on top of the
+    // color when left enabled, hiding it (verified via describe-managed-login-branding on dev).
+    pageBackground: { image: { enabled: false }, lightMode: { color: PAGE } },
     form: {
       borderRadius: 20,
       lightMode: { backgroundColor: SURFACE, borderColor: HAIRLINE },

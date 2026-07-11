@@ -2,6 +2,7 @@ import type { ActivityItem } from "@wanthat/contracts";
 import { type ReactNode, useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { adminApi } from "../../lib/admin-api";
+import { formatMoneyMinor } from "../../lib/money";
 import { Skeleton } from "../../ui/components";
 
 const PAGE_SIZE = 20;
@@ -224,6 +225,28 @@ function Details({ item }: { item: ActivityItem }) {
     );
   }
 
+  // wallet_entry (the conversion writer's chained ledger rows): amount + kind + status + order.
+  if (item.type === "wallet_entry" && item.amountMinor && item.currency) {
+    return (
+      <>
+        <span className="tabular font-bold text-ink" dir="ltr">
+          {formatMoneyMinor(item.amountMinor, item.currency)}
+        </span>
+        {item.kind ? (
+          <span>{t(`admin.activityPage.walletKind.${item.kind}`, item.kind)}</span>
+        ) : null}
+        {item.status ? (
+          <span className="text-[11.5px] font-semibold text-secondary">{item.status}</span>
+        ) : null}
+        {item.orderId ? (
+          <span className="tabular text-[11.5px] text-placeholder" dir="ltr">
+            #{item.orderId}
+          </span>
+        ) : null}
+      </>
+    );
+  }
+
   if (item.type === "config_changed" && item.key) {
     return (
       <>
@@ -265,6 +288,11 @@ function EventBadge({ type }: { type: string }) {
   if (type === "user_deleted") {
     return (
       <Badge className="bg-rejected-soft text-rejected">{t("admin.activityPage.deleted")}</Badge>
+    );
+  }
+  if (type === "wallet_entry") {
+    return (
+      <Badge className="bg-accent-soft text-accent">{t("admin.activityPage.walletEntry")}</Badge>
     );
   }
   if (type === "config_changed") {
