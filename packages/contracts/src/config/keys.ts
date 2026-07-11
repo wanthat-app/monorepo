@@ -108,6 +108,9 @@ export const RetailerAliexpressTrackingId = z.string().trim().min(1).max(64);
  */
 export const AuthOtpSink = z.enum(["delivery", "devSink"]);
 
+/** The member home's recent-activity strip: how many merged items GET /activity answers by default. */
+export const HomeRecentActivityLimit = z.number().int().min(1).max(50);
+
 /** Known config keys. Dotted namespaces group related settings. */
 export const CONFIG_KEYS = [
   "landing.countdownSeconds",
@@ -127,6 +130,7 @@ export const CONFIG_KEYS = [
   "notifications.whatsappEnabled",
   "auth.otpSink",
   "retailer.aliexpressTrackingId",
+  "home.recentActivityLimit",
 ] as const;
 
 export const ConfigKey = z.enum(CONFIG_KEYS);
@@ -151,6 +155,7 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "notifications.whatsappEnabled": NotificationsWhatsappEnabled,
   "auth.otpSink": AuthOtpSink,
   "retailer.aliexpressTrackingId": RetailerAliexpressTrackingId,
+  "home.recentActivityLimit": HomeRecentActivityLimit,
 };
 
 /**
@@ -184,6 +189,7 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "auth.otpSink": "delivery",
   // The AliExpress portal's auto-created tracking id; replace via admin once a named one exists.
   "retailer.aliexpressTrackingId": "default",
+  "home.recentActivityLimit": 10,
 };
 
 /**

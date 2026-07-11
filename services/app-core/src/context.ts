@@ -2,6 +2,7 @@ import { createDb } from "@wanthat/db";
 import {
   FxRateRepo,
   getDocClient,
+  RecommendationRepo,
   type RuntimeConfigReader,
   RuntimeConfigRepo,
 } from "@wanthat/dynamo";
@@ -22,6 +23,8 @@ export interface CoreContext {
   fx: FxRateRepo;
   /** Read-only by design: the config table is single-writer (admin-api) — ADR-0019 spec. */
   config: RuntimeConfigReader;
+  /** Read-only: the activity feed merges the member's recommendation creations (byOwner). */
+  recommendations: Pick<RecommendationRepo, "listByOwner">;
 }
 
 let cached: CoreContext | undefined;
@@ -48,6 +51,7 @@ export function getContext(): CoreContext {
     }),
     fx: new FxRateRepo(doc, requireEnv("FX_RATE_TABLE")),
     config: new RuntimeConfigRepo(doc, requireEnv("RUNTIME_CONFIG_TABLE")),
+    recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
   };
   return cached;
 }
