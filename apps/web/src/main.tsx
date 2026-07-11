@@ -10,8 +10,10 @@ import { AuthPage } from "./features/auth/AuthPage";
 import { CreateLinkPage } from "./features/create/CreateLinkPage";
 import { HomePage } from "./features/home/HomePage";
 import { SharedProductPage } from "./features/landing/SharedProductPage";
+import { LegalPage } from "./features/legal/LegalPage";
 import { NotFoundPage } from "./features/not-found/NotFoundPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
+import { RouteErrorPage } from "./features/shell/RouteErrorPage";
 import "./i18n";
 import "./index.css";
 import { initConfig } from "./lib/config";
@@ -19,27 +21,37 @@ import { SessionProvider } from "./user";
 
 const queryClient = new QueryClient();
 const router = createBrowserRouter([
-  { path: "/", element: <App /> },
-  { path: "/auth", element: <AuthPage /> },
-  // No /auth/callback any more: customer auth is Cognito-native in-page (ADR-0006); the only
-  // OAuth redirect left is the ADMIN console's (its own callback below).
-  { path: "/home", element: <HomePage /> },
-  { path: "/activity", element: <ActivityPage /> },
-  { path: "/profile", element: <ProfilePage /> },
-  { path: "/create", element: <CreateLinkPage /> },
-  // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).
-  { path: "/p/:id", element: <SharedProductPage /> },
-  // Each admin view has its own URL so deep links, reloads and browser history work.
-  { path: "/admin", element: <AdminPage /> },
-  { path: "/admin/users", element: <AdminPage /> },
-  { path: "/admin/users/:sub", element: <AdminPage /> },
-  { path: "/admin/orders", element: <AdminPage /> },
-  { path: "/admin/orders/:orderId", element: <AdminPage /> },
-  { path: "/admin/activity", element: <AdminPage /> },
-  { path: "/admin/settings", element: <AdminPage /> },
-  { path: "/admin/callback", element: <AdminCallbackPage /> },
-  // Catch-all 404 for any unknown URL (otherwise react-router shows its developer error page).
-  { path: "*", element: <NotFoundPage /> },
+  {
+    // Pathless parent: one errorElement catches a throw from any route below, replacing
+    // react-router's developer error page ("Unexpected Application Error!").
+    errorElement: <RouteErrorPage />,
+    children: [
+      { path: "/", element: <App /> },
+      { path: "/auth", element: <AuthPage /> },
+      // No /auth/callback any more: customer auth is Cognito-native in-page (ADR-0006); the only
+      // OAuth redirect left is the ADMIN console's (its own callback below).
+      { path: "/home", element: <HomePage /> },
+      { path: "/activity", element: <ActivityPage /> },
+      { path: "/profile", element: <ProfilePage /> },
+      { path: "/create", element: <CreateLinkPage /> },
+      // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).
+      { path: "/p/:id", element: <SharedProductPage /> },
+      // Sample legal pages — linked from the registration consent checkbox.
+      { path: "/terms", element: <LegalPage kind="terms" /> },
+      { path: "/privacy", element: <LegalPage kind="privacy" /> },
+      // Each admin view has its own URL so deep links, reloads and browser history work.
+      { path: "/admin", element: <AdminPage /> },
+      { path: "/admin/users", element: <AdminPage /> },
+      { path: "/admin/users/:sub", element: <AdminPage /> },
+      { path: "/admin/orders", element: <AdminPage /> },
+      { path: "/admin/orders/:orderId", element: <AdminPage /> },
+      { path: "/admin/activity", element: <AdminPage /> },
+      { path: "/admin/settings", element: <AdminPage /> },
+      { path: "/admin/callback", element: <AdminCallbackPage /> },
+      // Catch-all 404 for any unknown URL (otherwise react-router shows its developer error page).
+      { path: "*", element: <NotFoundPage /> },
+    ],
+  },
 ]);
 
 const root = document.getElementById("root");

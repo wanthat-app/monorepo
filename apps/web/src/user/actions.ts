@@ -19,6 +19,12 @@ import {
   verifyUserAttribute,
 } from "./cognito";
 import {
+  clearPendingOtp,
+  loadPendingOtp,
+  savePendingLoginOtp,
+  savePendingSignupOtp,
+} from "./pending-otp";
+import {
   clearSession,
   completeSignIn,
   currentAccessToken,
@@ -93,8 +99,8 @@ async function startSmsChallenge(phone: string): Promise<{ session: string; user
  * branches to sign-up (ADR-0006 unified phone-first flow) — and `user_not_confirmed` for an
  * abandoned sign-up — the caller resumes confirmation via {@link resumeSignUp}.
  */
-export async function loginWithOtp(phone: string): Promise<OtpLoginFlow> {
-  let challenge = await startSmsChallenge(phone);
+function otpLoginFlow(phone: string, initial: { session: string; username: string }): OtpLoginFlow {
+  let challenge = initial;
   return {
     submit: async (code) => {
       const res = await respondToAuthChallenge({
@@ -105,12 +111,21 @@ export async function loginWithOtp(phone: string): Promise<OtpLoginFlow> {
       // A wrong code throws (CodeMismatch) and the session stays retryable; anything else
       // must be the tokens.
       completeSignIn(requireAuthResult(res));
+      clearPendingOtp();
     },
     // Cognito has no resend on a live SMS_OTP challenge — a fresh InitiateAuth IS the resend.
     resend: async () => {
       challenge = await startSmsChallenge(phone);
+      savePendingLoginOtp(phone, challenge.session, challenge.username);
     },
   };
+}
+
+export async function loginWithOtp(phone: string): Promise<OtpLoginFlow> {
+  const challenge = await startSmsChallenge(phone);
+  // Persisted so a mid-validation reload (app-switch to copy the code) restores this screen.
+  savePendingLoginOtp(phone, challenge.session, challenge.username);
+  return otpLoginFlow(phone, challenge);
 }
 
 // ---------------------------------------------------------------------------
@@ -151,6 +166,8 @@ function signUpFlow(phone: string, session: string | undefined): SignUpFlow {
         session,
         ...(guestId ? { clientMetadata: { guestId } } : {}),
       });
+      // Code consumed — a reload from here restarts as a (confirmed) login, not a signup.
+      clearPendingOtp();
       if (confirmed.Session) {
         const res = await initiateUserAuth({ phone, session: confirmed.Session });
         if (res.AuthenticationResult) {
@@ -162,6 +179,7 @@ function signUpFlow(phone: string, session: string | undefined): SignUpFlow {
     },
     resend: async () => {
       await resendConfirmationCode(phone);
+      savePendingSignupOtp(phone);
     },
   };
 }
@@ -186,6 +204,7 @@ export async function signUpWithOtp(input: SignUpInput): Promise<SignUpFlow> {
     },
     ...(guestId ? { clientMetadata: { guestId } } : {}),
   });
+  savePendingSignupOtp(input.phone);
   return signUpFlow(input.phone, res.Session);
 }
 
@@ -196,7 +215,36 @@ export async function signUpWithOtp(input: SignUpInput): Promise<SignUpFlow> {
  */
 export async function resumeSignUp(phone: string): Promise<SignUpFlow> {
   await resendConfirmationCode(phone);
+  savePendingSignupOtp(phone);
   return signUpFlow(phone, undefined);
+}
+
+/** A pending OTP challenge rebuilt after a reload (see pending-otp.ts). */
+export type ResumedOtp =
+  | { kind: "login"; phone: string; flow: OtpLoginFlow }
+  | { kind: "signup"; phone: string; flow: SignUpFlow };
+
+/**
+ * Rebuild the OTP challenge persisted before a reload, or null if none survived the TTL.
+ * A login flow resumes on the SAME code (the stored Cognito `Session` is the challenge —
+ * nothing is re-sent); a sign-up confirm is stateless, though the seamless post-confirm
+ * continuation is lost with the reload, so it resolves `"loginRequired"` and the caller
+ * falls back to a normal OTP login.
+ */
+export function resumePendingOtp(): ResumedOtp | null {
+  const pending = loadPendingOtp();
+  if (!pending) return null;
+  if (pending.kind === "login") {
+    return {
+      kind: "login",
+      phone: pending.phone,
+      flow: otpLoginFlow(pending.phone, {
+        session: pending.session,
+        username: pending.username,
+      }),
+    };
+  }
+  return { kind: "signup", phone: pending.phone, flow: signUpFlow(pending.phone, undefined) };
 }
 
 // ---------------------------------------------------------------------------

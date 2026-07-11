@@ -17,7 +17,9 @@ import {
 import {
   biometricLabelKey,
   CognitoError,
+  clearPendingOtp,
   enrollPasskey,
+  hasPendingOtp,
   hasStoredSession,
   loginWithDiscoveredPasskey,
   loginWithOtp,
@@ -26,6 +28,7 @@ import {
   passkeyLoginAvailable,
   passkeysSupported,
   rememberedPhone,
+  resumePendingOtp,
   resumeSignUp,
   type SignUpFlow,
   signUpWithOtp,
@@ -136,6 +139,29 @@ export function AuthPage() {
     };
   }, []);
 
+  // Reload survival: a pending OTP challenge persisted by the user module (sessionStorage,
+  // TTL = the code's server-side validity) puts the member straight back on the code screen.
+  // The use case: switching apps to copy the code and the mobile browser reloading the tab
+  // on return. A login flow resumes on the SAME session — nothing is re-sent.
+  const restoredPending = useRef(false);
+  useEffect(() => {
+    if (restoredPending.current) return;
+    restoredPending.current = true;
+    if (hasStoredSession()) return; // a signed-in rehydration forwards home instead
+    const resumed = resumePendingOtp();
+    if (!resumed) return;
+    setPhone(resumed.phone);
+    setCode("");
+    setResendLeft(RESEND_COOLDOWN_S);
+    if (resumed.kind === "login") {
+      loginFlow.current = resumed.flow;
+      setStep("loginOtp");
+    } else {
+      signUpFlow.current = resumed.flow;
+      setStep("signupOtp");
+    }
+  }, []);
+
   // Automatic passkey login (ADR-0006): armed once per mount, ONLY when this device remembers
   // a phone (Cognito's WEB_AUTHN challenge is username-gated) AND Cognito confirms the account
   // has a passkey (AvailableChallenges — server truth, sends nothing). The module waits for
@@ -147,8 +173,9 @@ export function AuthPage() {
     if (armed.current) return;
     armed.current = true;
     // A returning member with a stored session is being rehydrated — the effect above will
-    // forward them; don't pop a passkey prompt at someone who's already logged in.
-    if (hasStoredSession()) return;
+    // forward them; don't pop a passkey prompt at someone who's already logged in. Same for
+    // a restored mid-OTP challenge: they're validating a code, not starting a sign-in.
+    if (hasStoredSession() || hasPendingOtp()) return;
     if (!passkeysSupported() || !rememberedPhone()) return;
     void passkeyLoginAvailable().then((available) => {
       if (!available) return;
@@ -167,7 +194,7 @@ export function AuthPage() {
   // mount, aborted on unmount — never armed alongside the modal auto-prompt (one pending
   // WebAuthn request at a time).
   useEffect(() => {
-    if (hasStoredSession() || rememberedPhone() || !passkeysSupported()) return;
+    if (hasStoredSession() || hasPendingOtp() || rememberedPhone() || !passkeysSupported()) return;
     const controller = new AbortController();
     discovery.current = controller;
     loginWithDiscoveredPasskey(controller.signal)
@@ -419,8 +446,13 @@ export function AuthPage() {
         {(step === "loginOtp" || step === "signupOtp") && (
           <>
             <div className="mb-7">
+              {/* Backing out abandons the challenge — clear it so a later reload doesn't
+                  resurrect an OTP screen the member deliberately left. */}
               <BackButton
-                onClick={() => setStep(step === "loginOtp" ? "phone" : "register")}
+                onClick={() => {
+                  clearPendingOtp();
+                  setStep(step === "loginOtp" ? "phone" : "register");
+                }}
                 label={t("auth.back")}
               />
             </div>
@@ -558,8 +590,9 @@ export function AuthPage() {
               )}
               <Checkbox id="agree-terms" checked={agreed} onChange={setAgreed}>
                 {t("auth.agreePre")}{" "}
+                {/* New tab on purpose: same-tab navigation would drop the filled form. */}
                 <a
-                  href="https://wanthat.co.il/terms"
+                  href="/terms"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-semibold text-accent underline"
@@ -568,7 +601,7 @@ export function AuthPage() {
                 </a>{" "}
                 {t("auth.and")}{" "}
                 <a
-                  href="https://wanthat.co.il/privacy"
+                  href="/privacy"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="font-semibold text-accent underline"

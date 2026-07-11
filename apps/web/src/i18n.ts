@@ -22,14 +22,13 @@ const en = {
     registerCta: "Let me join",
   },
   auth: {
-    heading: "Cashback you can trust.",
+    heading: "Recommendations you can trust.",
     subheading:
       "Shop the most popular stores through wanthat and earn real money back — and earn again when friends use your links.",
     back: "Back",
     phoneLabel: "Phone number",
     phoneCta: "Send me a code",
-    phoneHelper:
-      "We'll text a one-time code to verify it's you. By continuing you agree to our Terms & Privacy.",
+    phoneHelper: "We'll text a one-time code to verify it's you.",
     otpTitle: "Enter your code",
     otpSent: "We sent a {{digits}}-digit code to",
     resendPre: "Didn't get it?",
@@ -44,7 +43,7 @@ const en = {
     language: "Language",
     continue: "Continue",
     verify: "Verify",
-    resend: "Resend code",
+    resend: "Send again",
     channelLabel: "Send the code via",
     channel: { whatsapp: "WhatsApp", sms: "SMS" },
     finish: "Create account",
@@ -426,6 +425,68 @@ const en = {
     message: "The page you're looking for doesn't exist or has moved.",
     home: "Back to home",
   },
+  error: {
+    oops: "Oops",
+    title: "Something went wrong",
+    message: "An unexpected error occurred. Please try again.",
+    retry: "Reload",
+    home: "Back to home",
+  },
+  // SAMPLE legal copy — placeholder for counsel-approved text; the pages carry a draft notice.
+  legal: {
+    sampleNotice: "Sample draft — for review only, not yet binding.",
+    updated: "Last updated: July 2026",
+    terms: {
+      title: "Terms of Service",
+      sections: [
+        {
+          h: "1. The service",
+          p: "wanthat lets members earn real cashback on purchases made through wanthat links at partner stores — and earn again when friends buy through links they share.",
+        },
+        {
+          h: "2. Your account",
+          p: "One account per person, verified by phone number. You are responsible for keeping access to your device and phone number; sign-in codes and passkeys are personal and must not be shared.",
+        },
+        {
+          h: "3. Cashback and withdrawals",
+          p: "Cashback becomes available only after the partner store confirms the order; cancelled or returned orders forfeit it. Amounts shown in ₪ before confirmation are estimates based on exchange rates. Withdrawals are made to the payout methods offered in the app.",
+        },
+        {
+          h: "4. Acceptable use",
+          p: "No self-dealing, misleading recommendations, or automated abuse. We may suspend accounts that attempt to game the program, and withhold cashback obtained in breach of these terms.",
+        },
+        {
+          h: "5. Changes and contact",
+          p: "We may update these terms from time to time; material changes will be announced in the app. Questions: support@wanthat.app.",
+        },
+      ],
+    },
+    privacy: {
+      title: "Privacy Policy",
+      sections: [
+        {
+          h: "1. What we collect",
+          p: "Your phone number, name, optional email and language preference; the links you create, orders attributed to them, and your wallet activity.",
+        },
+        {
+          h: "2. How we use it",
+          p: "To run the cashback program: verifying you by SMS/WhatsApp code, attributing orders to your links, calculating and paying cashback, and showing your activity in the app.",
+        },
+        {
+          h: "3. Sharing",
+          p: "Order data is exchanged with partner stores and affiliate networks solely to confirm purchases and cashback. We do not sell personal data.",
+        },
+        {
+          h: "4. Retention and security",
+          p: "Personal data and money movements are stored encrypted, with money records kept in an audited ledger, for as long as your account exists or the law requires.",
+        },
+        {
+          h: "5. Your rights",
+          p: "You can edit your profile in the app at any time, and contact us to export or delete your account data: support@wanthat.app.",
+        },
+      ],
+    },
+  },
   shared: {
     onMerchant: "on {{merchant}}",
     earnLabel: "You earn back",
@@ -465,13 +526,13 @@ const he: typeof en = {
     registerCta: "צרפו אותי",
   },
   auth: {
-    heading: "קאשבק שאפשר לסמוך עליו.",
+    heading: "המלצות שאפשר לסמוך עליהן.",
     subheading:
       "קנו בחנויות הכי פופולריות דרך wanthat והרוויחו כסף אמיתי בחזרה — והרוויחו שוב כשחברים משתמשים בקישורים שלכם.",
     back: "חזרה",
     phoneLabel: "מספר טלפון",
     phoneCta: "שלחו לי קוד",
-    phoneHelper: "נשלח לכם קוד חד-פעמי לאימות. בהמשך אתם מסכימים לתנאים ולמדיניות הפרטיות.",
+    phoneHelper: "נשלח לכם קוד חד-פעמי לאימות.",
     otpTitle: "הזינו את הקוד",
     otpSent: "שלחנו קוד בן {{digits}} ספרות אל",
     resendPre: "לא קיבלתם?",
@@ -486,7 +547,7 @@ const he: typeof en = {
     language: "שפה",
     continue: "המשך",
     verify: "אימות",
-    resend: "שליחת קוד מחדש",
+    resend: "שלחו שוב",
     channelLabel: "לאן לשלוח את הקוד",
     channel: { whatsapp: "וואטסאפ", sms: "SMS" },
     finish: "יצירת חשבון",
@@ -861,6 +922,67 @@ const he: typeof en = {
     title: "הדף לא נמצא",
     message: "הדף שחיפשתם אינו קיים או שהועבר.",
     home: "חזרה לדף הבית",
+  },
+  error: {
+    oops: "אופס",
+    title: "משהו השתבש",
+    message: "אירעה שגיאה לא צפויה. נסו שוב.",
+    retry: "רענון",
+    home: "חזרה לדף הבית",
+  },
+  legal: {
+    sampleNotice: "טיוטה לדוגמה — לעיון בלבד, אינה מחייבת.",
+    updated: "עודכן לאחרונה: יולי 2026",
+    terms: {
+      title: "תנאי השימוש",
+      sections: [
+        {
+          h: "1. השירות",
+          p: "wanthat מאפשרת לחברים להרוויח קאשבק אמיתי על רכישות שבוצעו דרך קישורי wanthat בחנויות השותפות — ולהרוויח שוב כשחברים קונים דרך קישורים ששיתפו.",
+        },
+        {
+          h: "2. החשבון שלכם",
+          p: "חשבון אחד לאדם, מאומת באמצעות מספר טלפון. אתם אחראים לשמירה על הגישה למכשיר ולמספר הטלפון שלכם; קודי התחברות ומפתחות גישה הם אישיים ואין לשתפם.",
+        },
+        {
+          h: "3. קאשבק ומשיכות",
+          p: "הקאשבק הופך זמין רק לאחר שהחנות השותפה מאשרת את ההזמנה; הזמנות שבוטלו או הוחזרו מאבדות אותו. סכומים המוצגים ב-₪ לפני האישור הם אומדנים לפי שערי המרה. משיכות מתבצעות לאמצעי התשלום המוצעים באפליקציה.",
+        },
+        {
+          h: "4. שימוש הוגן",
+          p: "אין לבצע רכישות עצמיות, המלצות מטעות או שימוש אוטומטי לרעה. אנו רשאים להשעות חשבונות המנסים לנצל את התוכנית ולעכב קאשבק שהושג בניגוד לתנאים.",
+        },
+        {
+          h: "5. שינויים ויצירת קשר",
+          p: "אנו עשויים לעדכן תנאים אלה מעת לעת; שינויים מהותיים יוכרזו באפליקציה. שאלות: support@wanthat.app.",
+        },
+      ],
+    },
+    privacy: {
+      title: "מדיניות הפרטיות",
+      sections: [
+        {
+          h: "1. מה אנחנו אוספים",
+          p: "מספר הטלפון, השם, אימייל (לא חובה) והעדפת השפה שלכם; הקישורים שאתם יוצרים, הזמנות המשויכות אליהם ופעילות הארנק שלכם.",
+        },
+        {
+          h: "2. איך אנחנו משתמשים בזה",
+          p: "להפעלת תוכנית הקאשבק: אימות באמצעות קוד SMS/וואטסאפ, שיוך הזמנות לקישורים שלכם, חישוב ותשלום קאשבק והצגת הפעילות שלכם באפליקציה.",
+        },
+        {
+          h: "3. שיתוף",
+          p: "נתוני הזמנות מוחלפים עם חנויות שותפות ורשתות שותפים אך ורק לאישור רכישות וקאשבק. איננו מוכרים מידע אישי.",
+        },
+        {
+          h: "4. שמירה ואבטחה",
+          p: "מידע אישי ותנועות כספים נשמרים מוצפנים, כאשר רשומות כספיות נשמרות ביומן מבוקר, כל עוד החשבון קיים או כנדרש בחוק.",
+        },
+        {
+          h: "5. הזכויות שלכם",
+          p: "ניתן לערוך את הפרופיל באפליקציה בכל עת, וליצור קשר לייצוא או מחיקה של נתוני החשבון: support@wanthat.app.",
+        },
+      ],
+    },
   },
   shared: {
     onMerchant: "ב-{{merchant}}",
