@@ -5,6 +5,22 @@ import { applyDocumentLanguage } from "./lib/document-language";
 // Hebrew-first (RTL), English fallback (ADR-0016).
 const en = {
   app: { title: "Wanthat" },
+  // Logged-out app landing at `/` (design: Wallet flow "app-landing"); one CTA — login and
+  // signup are the same phone-first flow (ADR-0006), so the landing doesn't split them.
+  landing: {
+    headline: "Real cashback on every AliExpress order.",
+    sub: "Shop through wanthat, earn money back — and earn again when friends use your links.",
+    availableCashback: "Available cashback",
+    sample: "Sample",
+    sampleNote: "Illustrative balance — your real cashback appears once you join.",
+    earnEveryOrder: "Earn on every order",
+    earnEveryOrderSub: "Up to 10% back, withdraw it directly.",
+    earnFromLinks: "Earn from recommendations",
+    earnFromLinksSub: "Friends buy — you both earn.",
+    secure: "Secure by design",
+    secureSub: "SMS codes + Face ID sign-in.",
+    registerCta: "Count me in",
+  },
   auth: {
     tagline: "Cashback on what you recommend",
     heading: "Cashback you can trust.",
@@ -431,6 +447,20 @@ const en = {
 
 const he: typeof en = {
   app: { title: "וונטהאט" },
+  landing: {
+    headline: "קאשבק אמיתי על כל הזמנה ב-AliExpress.",
+    sub: "קנו דרך wanthat, קבלו כסף בחזרה — והרוויחו שוב כשחברים משתמשים בקישורים שלכם.",
+    availableCashback: "קאשבק זמין",
+    sample: "דוגמה",
+    sampleNote: "יתרה להמחשה — הקאשבק האמיתי שלכם יופיע לאחר ההצטרפות.",
+    earnEveryOrder: "מרוויחים על כל הזמנה",
+    earnEveryOrderSub: "עד 10% בחזרה, במשיכה ישירה.",
+    earnFromLinks: "מרוויחים מהמלצות",
+    earnFromLinksSub: "חברים קונים — שניכם מרוויחים.",
+    secure: "מאובטח מהיסוד",
+    secureSub: "קודי SMS והתחברות ב-Face ID.",
+    registerCta: "הכניסו אותי גם",
+  },
   auth: {
     tagline: "קאשבק על מה שאתם ממליצים",
     heading: "קאשבק שאפשר לסמוך עליו.",

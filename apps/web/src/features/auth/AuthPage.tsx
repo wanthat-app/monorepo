@@ -326,6 +326,13 @@ export function AuthPage() {
       <Card className="flex flex-col gap-4">
         {step === "phone" && (
           <>
+            {/* Back to the app landing at `/` — except for referral arrivals, whose landing
+                was the /p/:id product pitch, not the generic one. */}
+            {!referral && (
+              <div>
+                <BackButton onClick={() => navigate("/")} label={t("auth.back")} />
+              </div>
+            )}
             <div className="flex flex-col gap-3">
               <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
               <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
