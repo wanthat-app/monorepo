@@ -33,6 +33,7 @@ export {
   updateProfile,
   verifyEmail,
 } from "./actions";
+export { BiometricGlyph } from "./BiometricGlyph";
 export type { UserProfile } from "./claims";
 export { CognitoError } from "./cognito";
 export { ProfileEditor } from "./ProfileEditor";

@@ -7,26 +7,16 @@ import { formatMoneyMinor, splitMoneyMinor } from "../../lib/money";
 import { Logo } from "../../ui/brand";
 import { Button } from "../../ui/components";
 import { ActivityRow, BalanceCard, PromptCard, TabBar, TopNav } from "../../ui/wallet";
-import { enrollPasskey, listPasskeys, passkeysSupported, UserChip, useSession } from "../../user";
+import {
+  BiometricGlyph,
+  enrollPasskey,
+  listPasskeys,
+  passkeysSupported,
+  UserChip,
+  useSession,
+} from "../../user";
 
 const ROW_STATUS = { confirmed: "confirmed", pending: "pending", clawback: "rejected" } as const;
-
-const FACE_ICON = (
-  <svg
-    width="20"
-    height="20"
-    viewBox="0 0 24 24"
-    fill="none"
-    stroke="currentColor"
-    strokeWidth="2"
-    strokeLinecap="round"
-    strokeLinejoin="round"
-    aria-hidden="true"
-  >
-    <path d="M7 3H5a2 2 0 0 0-2 2v2M17 3h2a2 2 0 0 1 2 2v2M7 21H5a2 2 0 0 1-2-2v-2M17 21h2a2 2 0 0 0 2-2v-2" />
-    <path d="M9 9h.01M15 9h.01M9.5 15a3.5 3.5 0 0 0 5 0" />
-  </svg>
-);
 
 /**
  * Member home — the wallet dashboard (design handoff: Wallet flow, Home). Balance + activity come
@@ -172,7 +162,7 @@ export function HomePage() {
             members never see the card flash and an outage stays quiet rather than nagging. */}
         {passkeysSupported() && passkeyState !== "done" && passkeys.data?.length === 0 && (
           <PromptCard
-            icon={FACE_ICON}
+            icon={<BiometricGlyph size={20} />}
             title={t("home.setupFaceId")}
             subtitle={
               passkeyState === "error" ? t("auth.errors.generic") : t("home.setupFaceIdSub")

@@ -15,6 +15,7 @@ import {
   TextField,
 } from "../../ui";
 import {
+  BiometricGlyph,
   biometricLabelKey,
   CognitoError,
   clearPendingOtp,
@@ -414,32 +415,32 @@ export function AuthPage() {
               {error ? <span className="mt-1 block text-sm text-rejected">{error}</span> : null}
             </label>
             {notice ? <p className="mt-3 text-sm text-muted">{notice}</p> : null}
-            <div className="mt-3.5 flex gap-2">
-              <div className="min-w-0 flex-1">
-                <Button onClick={onSubmitPhone} loading={busy} disabled={!e164}>
-                  {t("auth.phoneCta")}
-                </Button>
-              </div>
-              {/* Manual biometric login — a square icon button per platform convention (FaceID /
-                  fingerprint glyph via the device-match logic), shown when Cognito confirms the
-                  account (remembered or typed phone) has a passkey. A cancelled auto-prompt
-                  lands here; one tap re-opens the OS sheet. */}
-              {passkeyAvailable && (
+            <div className="mt-3.5">
+              <Button onClick={onSubmitPhone} loading={busy} disabled={!e164}>
+                {t("auth.phoneCta")}
+              </Button>
+            </div>
+            <p className="mx-1 mt-3.5 text-center text-xs leading-normal text-subtle">
+              {t("auth.phoneHelper")}
+            </p>
+            {/* Manual biometric login — the square icon button at the bottom of the screen
+                (FaceID / fingerprint glyph via the device-match logic), shown when Cognito
+                confirms the account (remembered or typed phone) has a passkey. A cancelled
+                auto-prompt lands here; one tap re-opens the OS sheet. */}
+            {passkeyAvailable && (
+              <div className="mt-8 flex justify-center">
                 <button
                   type="button"
                   onClick={() => void onPasskeyLogin()}
                   disabled={busy}
                   aria-label={t("auth.passkeyCta", { label: bioLabel })}
                   title={t("auth.passkeyCta", { label: bioLabel })}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-button border border-edge bg-surface text-accent transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex h-20 w-20 shrink-0 items-center justify-center rounded-chip border border-edge bg-surface text-accent transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <BiometricGlyph size={24} />
+                  <BiometricGlyph size={42} strokeWidth={1.7} />
                 </button>
-              )}
-            </div>
-            <p className="mx-1 mt-3.5 text-center text-xs leading-normal text-subtle">
-              {t("auth.phoneHelper")}
-            </p>
+              </div>
+            )}
           </>
         )}
 
@@ -645,51 +646,5 @@ export function AuthPage() {
         )}
       </div>
     </Screen>
-  );
-}
-
-/**
- * The device-matched biometric glyph (design system convention: inline SVG, stroke
- * currentColor): the Face ID frame-and-face for iPhone/iPad, a fingerprint everywhere else
- * (Touch ID / Windows Hello / generic passkey) — same device-match logic as the label
- * (`biometricLabelKey`). Decorative: the surrounding control carries the accessible name.
- */
-function BiometricGlyph({ size = 24, strokeWidth = 2 }: { size?: number; strokeWidth?: number }) {
-  const face = biometricLabelKey() === "faceId";
-  return (
-    <svg
-      width={size}
-      height={size}
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={strokeWidth}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      aria-hidden="true"
-    >
-      {face ? (
-        <>
-          <path d="M4 8V6a2 2 0 0 1 2-2h2" />
-          <path d="M16 4h2a2 2 0 0 1 2 2v2" />
-          <path d="M20 16v2a2 2 0 0 1-2 2h-2" />
-          <path d="M8 20H6a2 2 0 0 1-2-2v-2" />
-          <path d="M9 10.5v.5M15 10.5v.5" />
-          <path d="M9.5 15a3.5 3.5 0 0 0 5 0" />
-        </>
-      ) : (
-        <>
-          <path d="M12 10a2 2 0 0 0-2 2c0 1.02-.1 2.51-.26 4" />
-          <path d="M14 13.12c0 2.38 0 6.38-1 8.88" />
-          <path d="M17.29 21.02c.12-.6.43-2.3.5-3.02" />
-          <path d="M2 12a10 10 0 0 1 18-6" />
-          <path d="M2 16h.01" />
-          <path d="M21.8 16c.2-2 .131-5.354 0-6" />
-          <path d="M5 19.5C5.5 18 6 15 6 12a6 6 0 0 1 .34-2" />
-          <path d="M8.65 22c.21-.66.45-1.32.57-2" />
-          <path d="M9 6.8a6 6 0 0 1 9 5.2v2" />
-        </>
-      )}
-    </svg>
   );
 }
