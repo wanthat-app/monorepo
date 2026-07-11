@@ -4,4 +4,5 @@
 export * from "./admin";
 export * from "./brand";
 export * from "./components";
+export * from "./icons";
 export * from "./wallet";

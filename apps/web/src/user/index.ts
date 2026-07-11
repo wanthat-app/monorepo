@@ -21,8 +21,10 @@ export {
   type PasskeySummary,
   type ProfilePatch,
   passkeyLoginAvailable,
+  type ResumedOtp,
   refreshProfile,
   removePasskey,
+  resumePendingOtp,
   resumeSignUp,
   type SignUpFlow,
   type SignUpInput,
@@ -31,9 +33,11 @@ export {
   updateProfile,
   verifyEmail,
 } from "./actions";
+export { BiometricGlyph } from "./BiometricGlyph";
 export type { UserProfile } from "./claims";
 export { CognitoError } from "./cognito";
 export { ProfileEditor } from "./ProfileEditor";
+export { clearPendingOtp, hasPendingOtp } from "./pending-otp";
 export { type Session, SessionProvider, useSession } from "./SessionProvider";
 export { hasStoredSession, rememberedPhone } from "./store";
 export { UserChip } from "./UserChip";

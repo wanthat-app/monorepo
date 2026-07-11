@@ -16,8 +16,12 @@ const LANG_BY_LOCALE = (locale: string) => (locale.startsWith("he") ? "he" : "en
  * the signed-in source of truth), not an explicit changeLanguage here. The OTP channel
  * chooser mirrors the admin kill switches (same public config predicate as sign-up): a
  * disabled channel is never offered, and a single available channel needs no chooser at all.
+ *
+ * `onSaved` fires when the save has fully landed — after a plain save, or after the email
+ * verification code is confirmed when the email changed (never in between: the editor must
+ * stay mounted to collect the code). The host navigates; the module stays router-free.
  */
-export function ProfileEditor() {
+export function ProfileEditor({ onSaved }: { onSaved?: () => void }) {
   const { t, i18n } = useTranslation();
   const { profile } = useSession();
   const [firstName, setFirstName] = useState(profile?.firstName ?? "");
@@ -54,8 +58,9 @@ export function ProfileEditor() {
         ...(LOCALE_BY_LANG[lang] !== profile.locale ? { locale: LOCALE_BY_LANG[lang] } : {}),
         ...(channel !== profile.otpChannel ? { otpChannel: channel } : {}),
       });
-      if (emailCodeSent) setEmailCode("");
       setState("saved");
+      if (emailCodeSent) setEmailCode("");
+      else onSaved?.();
     } catch {
       setState("error");
     }
@@ -67,6 +72,7 @@ export function ProfileEditor() {
       await verifyEmail(code);
       setEmailCode(null);
       setState("saved");
+      onSaved?.();
     } catch {
       setState("error");
     }

@@ -1,6 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { convertMinor } from "@wanthat/domain";
-import { type ClipboardEvent, useRef, useState } from "react";
+import { type ClipboardEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import {
@@ -140,6 +140,43 @@ export function CreateLinkPage() {
     },
   });
 
+  const startCreate = (text: string) => {
+    if (resolve.isPending) return;
+    setInputError(null);
+    // The paste may be the whole share-button message — send the extracted URL, not the prose.
+    const candidate = extractSupportedUrl(text);
+    if (!candidate) {
+      setInputError(t("create.unsupported"));
+      return;
+    }
+    resolve.mutate(candidate);
+  };
+
+  // One-shot clipboard prefill on open — the member usually arrives right after copying a
+  // product link, so the field fills itself without a paste, and a SUPPORTED link starts
+  // loading immediately (same as an explicit paste). Any URL-looking content fills the box —
+  // an unsupported store waits for the tap and gets the clear error — while non-link
+  // clipboard text (notes, passwords) never lands in the field. Browsers gate readText
+  // (permission prompt in Chrome, user-gesture-only in Safari): any rejection just leaves
+  // the field empty. Waits out the session rehydrate — the resolve call needs the token.
+  const prefilled = useRef(false);
+  useEffect(() => {
+    if (prefilled.current || sessionLoading || !profile) return;
+    prefilled.current = true;
+    if (!navigator.clipboard?.readText) return;
+    navigator.clipboard.readText().then(
+      (text) => {
+        const candidate = text.trim();
+        if (!/https?:\/\/\S+/.test(candidate)) return;
+        setUrl((current) => current || candidate);
+        if (extractSupportedUrl(candidate)) startCreate(candidate);
+      },
+      () => {
+        // Clipboard unavailable (denied / needs a gesture) — leave the field empty.
+      },
+    );
+  });
+
   const saveReview = useMutation({
     mutationFn: (vars: { recommendationId: string; text: string }) =>
       linksApi.updateReview(
@@ -159,18 +196,6 @@ export function CreateLinkPage() {
     navigate("/auth", { replace: true });
     return null;
   }
-
-  const startCreate = (text: string) => {
-    if (resolve.isPending) return;
-    setInputError(null);
-    // The paste may be the whole share-button message — send the extracted URL, not the prose.
-    const candidate = extractSupportedUrl(text);
-    if (!candidate) {
-      setInputError(t("create.unsupported"));
-      return;
-    }
-    resolve.mutate(candidate);
-  };
 
   // Auto-submit the moment a supported link lands in the field — whether pasted bare or inside
   // the share-button text (design: onPaste → startCreate).

@@ -4,14 +4,37 @@ import { applyDocumentLanguage } from "./lib/document-language";
 
 // Hebrew-first (RTL), English fallback (ADR-0016).
 const en = {
-  app: { title: "Wanthat" },
+  app: { title: "Wanthat", login: "Log in" },
+  // Logged-out app landing at `/` (design: Wallet flow "app-landing"); one CTA — login and
+  // signup are the same phone-first flow (ADR-0006), so the landing doesn't split them.
+  landing: {
+    headline: "Real cashback on every order at the most popular stores.",
+    sub: "Shop through wanthat, earn money back — and earn again when friends use your links.",
+    availableCashback: "Available cashback",
+    sample: "Sample",
+    sampleNote: "Illustrative balance — your real cashback appears once you join.",
+    earnEveryOrder: "Earn on every order",
+    earnEveryOrderSub: "Up to 10% back, withdraw it directly.",
+    earnFromLinks: "Earn from recommendations",
+    earnFromLinksSub: "Friends buy — you both earn.",
+    secure: "Secure by design",
+    secureSub: "SMS codes + Face ID sign-in.",
+    registerCta: "Let me join",
+  },
   auth: {
-    tagline: "Cashback on what you recommend",
-    heading: "Cashback you can trust.",
+    heading: "Recommendations you can trust.",
     subheading:
-      "Shop AliExpress through Wanthat and earn real money back — and again when friends use your links.",
+      "Shop the most popular stores through wanthat and earn real money back — and earn again when friends use your links.",
     back: "Back",
     phoneLabel: "Phone number",
+    phoneCta: "Send me a code",
+    phoneHelper: "We'll text a one-time code to verify it's you.",
+    otpTitle: "Enter your code",
+    otpSent: "We sent a {{digits}}-digit code to",
+    resendPre: "Didn't get it?",
+    resendIn: "Resend in {{time}}",
+    skipCodes: "Skip codes next time",
+    skipCodesSub: "Turn on Face ID / passkey after sign-in.",
     codeLabel: "Verification code",
     firstName: "First name",
     lastName: "Last name",
@@ -20,14 +43,9 @@ const en = {
     language: "Language",
     continue: "Continue",
     verify: "Verify",
-    resend: "Resend code",
+    resend: "Send again",
     channelLabel: "Send the code via",
     channel: { whatsapp: "WhatsApp", sms: "SMS" },
-    sentVia: {
-      whatsapp: "We sent a code to your WhatsApp.",
-      sms: "We sent a code by SMS.",
-    },
-    sentCode: "We sent you a sign-in code.",
     finish: "Create account",
     passkeyCta: "Sign in with {{label}}",
     passkeyFallback: "Biometric sign-in didn't work here — enter your phone and we'll send a code.",
@@ -86,7 +104,7 @@ const en = {
     recentActivity: "Recent activity", // (design)
     seeAll: "See all", // (design)
     noActivity: "No activity yet — cashback from your links will show up here.",
-    createLink: "Create link",
+    createLink: "Recommend",
     navHome: "Home", // (design)
     navActivity: "Activity", // (design)
     setupFaceId: "Set up Face ID", // (design)
@@ -109,7 +127,7 @@ const en = {
       recommendation_created: "Recommended",
     },
     turnLinkTitle: "Turn a link into cashback", // (design)
-    turnLinkSub: "Paste any AliExpress product and share your reward link.", // (design)
+    turnLinkSub: "Paste any product link and share your recommendation.",
     pastePlaceholder: "Paste product link…", // (design)
   },
   memberActivity: {
@@ -118,11 +136,11 @@ const en = {
     share: "Share",
   },
   create: {
-    title: "Create a link", // (design)
-    linkLabel: "AliExpress product link", // (design)
+    title: "Recommend to friends",
+    linkLabel: "Product link",
     pastePlaceholder: "Paste product link…", // (design)
     hint: "Paste a link — we'll pull the product automatically.", // (design)
-    cta: "Create cashback link", // (design)
+    cta: "Recommend",
     pulling: "Pulling product details…", // (design)
     unsupported: "Only AliExpress product links are supported right now.",
     notConfigured: "Link creation isn't available right now. Please try again later.",
@@ -130,7 +148,7 @@ const en = {
       "AliExpress doesn't offer cashback on this item, so a link can't be created for it.",
     resolveFailed: "We couldn't pull that product. Please try again.",
     linkReady: "Your link is ready", // (design)
-    detailsPulled: "Details pulled from AliExpress", // (design)
+    detailsPulled: "Details pulled from the store",
     youEarnSale: "You earn / sale", // (design)
     theyEarn: "They earn", // (design)
     reviewLabel: "Add your review (optional)", // (design)
@@ -407,21 +425,87 @@ const en = {
     message: "The page you're looking for doesn't exist or has moved.",
     home: "Back to home",
   },
+  error: {
+    oops: "Oops",
+    title: "Something went wrong",
+    message: "An unexpected error occurred. Please try again.",
+    retry: "Reload",
+    home: "Back to home",
+  },
+  // SAMPLE legal copy — placeholder for counsel-approved text; the pages carry a draft notice.
+  legal: {
+    sampleNotice: "Sample draft — for review only, not yet binding.",
+    updated: "Last updated: July 2026",
+    terms: {
+      title: "Terms of Service",
+      sections: [
+        {
+          h: "1. The service",
+          p: "wanthat lets members earn real cashback on purchases made through wanthat links at partner stores — and earn again when friends buy through links they share.",
+        },
+        {
+          h: "2. Your account",
+          p: "One account per person, verified by phone number. You are responsible for keeping access to your device and phone number; sign-in codes and passkeys are personal and must not be shared.",
+        },
+        {
+          h: "3. Cashback and withdrawals",
+          p: "Cashback becomes available only after the partner store confirms the order; cancelled or returned orders forfeit it. Amounts shown in ₪ before confirmation are estimates based on exchange rates. Withdrawals are made to the payout methods offered in the app.",
+        },
+        {
+          h: "4. Acceptable use",
+          p: "No self-dealing, misleading recommendations, or automated abuse. We may suspend accounts that attempt to game the program, and withhold cashback obtained in breach of these terms.",
+        },
+        {
+          h: "5. Changes and contact",
+          p: "We may update these terms from time to time; material changes will be announced in the app. Questions: support@wanthat.app.",
+        },
+      ],
+    },
+    privacy: {
+      title: "Privacy Policy",
+      sections: [
+        {
+          h: "1. What we collect",
+          p: "Your phone number, name, optional email and language preference; the links you create, orders attributed to them, and your wallet activity.",
+        },
+        {
+          h: "2. How we use it",
+          p: "To run the cashback program: verifying you by SMS/WhatsApp code, attributing orders to your links, calculating and paying cashback, and showing your activity in the app.",
+        },
+        {
+          h: "3. Sharing",
+          p: "Order data is exchanged with partner stores and affiliate networks solely to confirm purchases and cashback. We do not sell personal data.",
+        },
+        {
+          h: "4. Retention and security",
+          p: "Personal data and money movements are stored encrypted, with money records kept in an audited ledger, for as long as your account exists or the law requires.",
+        },
+        {
+          h: "5. Your rights",
+          p: "You can edit your profile in the app at any time, and contact us to export or delete your account data: support@wanthat.app.",
+        },
+      ],
+    },
+  },
   shared: {
     onMerchant: "on {{merchant}}",
-    earnLabel: "You earn back",
-    recommendsThis: "{{name}} recommends this",
+    sentLink: "recommended you a product",
     sentYouLink: "Someone sent you a cashback link",
     notFoundTitle: "Link not found",
     notFoundBody: "This link may have expired or never existed.",
-    pitch: "Buy through wanthat and get real cashback to your wallet once the order confirms.",
-    signupCta: "Sign up to earn",
-    signupTrust: "Free · takes 30 seconds",
-    loginCta: "I already have an account",
+    signupEarnLabel: "Sign up and you'll earn",
+    backOnOrder: "back on this order",
+    twoSidedNote: "{{name}} earns from this too — that's how wanthat works.",
+    twoSidedNoteGeneric: "Whoever shared it earns too — that's how wanthat works.",
+    signupCta: "Sign up & earn {{amount}}",
+    signupCtaNoAmount: "Sign up to earn",
+    signupTrust: "Free · 20-second SMS sign-up · withdraw straight to your bank",
     guestCta: "Continue as guest — no cashback",
+    guestNote: "Goes straight to the store. You won't earn cashback on this order.",
     guestConsent: "Continuing as guest stores an anonymous id on this device.",
+    welcomeBack: "Welcome back",
     signingIn: "Signing you in…",
-    goToStore: "Go to store",
+    loggingBiometric: "Logging you in with {{label}}…",
     redirectingStore: "Taking you to {{merchant}} to complete your order…",
     earnOnThis: "You'll earn {{amount}} cashback on this order.",
     continueToStore: "Continue to {{merchant}}",
@@ -430,14 +514,35 @@ const en = {
 };
 
 const he: typeof en = {
-  app: { title: "וונטהאט" },
+  app: { title: "וונטהאט", login: "התחברות" },
+  landing: {
+    headline: "קאשבק אמיתי על כל הזמנה בחנויות הכי פופולריות.",
+    sub: "קנו דרך wanthat, קבלו כסף בחזרה — והרוויחו שוב כשחברים משתמשים בקישורים שלכם.",
+    availableCashback: "קאשבק זמין",
+    sample: "דוגמה",
+    sampleNote: "יתרה להמחשה — הקאשבק האמיתי שלכם יופיע לאחר ההצטרפות.",
+    earnEveryOrder: "מרוויחים על כל הזמנה",
+    earnEveryOrderSub: "עד 10% בחזרה, במשיכה ישירה.",
+    earnFromLinks: "מרוויחים מהמלצות",
+    earnFromLinksSub: "חברים קונים — שניכם מרוויחים.",
+    secure: "מאובטח מהיסוד",
+    secureSub: "קודי SMS והתחברות ב-Face ID.",
+    registerCta: "צרפו אותי",
+  },
   auth: {
-    tagline: "קאשבק על מה שאתם ממליצים",
-    heading: "קאשבק שאפשר לסמוך עליו.",
+    heading: "המלצות שאפשר לסמוך עליהן.",
     subheading:
-      "קנו ב-AliExpress דרך Wanthat והרוויחו כסף אמיתי בחזרה — והרוויחו שוב כשחברים משתמשים בקישורים שלכם.",
+      "קנו בחנויות הכי פופולריות דרך wanthat והרוויחו כסף אמיתי בחזרה — והרוויחו שוב כשחברים משתמשים בקישורים שלכם.",
     back: "חזרה",
     phoneLabel: "מספר טלפון",
+    phoneCta: "שלחו לי קוד",
+    phoneHelper: "נשלח לכם קוד חד-פעמי לאימות.",
+    otpTitle: "הזינו את הקוד",
+    otpSent: "שלחנו קוד בן {{digits}} ספרות אל",
+    resendPre: "לא קיבלתם?",
+    resendIn: "שליחה חוזרת בעוד {{time}}",
+    skipCodes: "דלגו על קודים בפעם הבאה",
+    skipCodesSub: "הפעילו Face ID / מפתח גישה אחרי ההתחברות.",
     codeLabel: "קוד אימות",
     firstName: "שם פרטי",
     lastName: "שם משפחה",
@@ -446,14 +551,9 @@ const he: typeof en = {
     language: "שפה",
     continue: "המשך",
     verify: "אימות",
-    resend: "שליחת קוד מחדש",
+    resend: "שלחו שוב",
     channelLabel: "לאן לשלוח את הקוד",
     channel: { whatsapp: "וואטסאפ", sms: "SMS" },
-    sentVia: {
-      whatsapp: "שלחנו קוד לוואטסאפ שלך.",
-      sms: "שלחנו קוד ב-SMS.",
-    },
-    sentCode: "שלחנו לך קוד כניסה.",
     finish: "יצירת חשבון",
     passkeyCta: "כניסה עם {{label}}",
     passkeyFallback: "הכניסה הביומטרית לא הצליחה כאן — הזינו את מספר הטלפון ונשלח לכם קוד.",
@@ -512,7 +612,7 @@ const he: typeof en = {
     recentActivity: "פעילות אחרונה",
     seeAll: "הצג הכל",
     noActivity: "אין פעילות עדיין — קאשבק מהקישורים שלכם יופיע כאן.",
-    createLink: "יצירת קישור",
+    createLink: "המליצו",
     navHome: "בית",
     navActivity: "פעילות",
     setupFaceId: "הגדרת Face ID",
@@ -535,7 +635,7 @@ const he: typeof en = {
       recommendation_created: "המלצתם",
     },
     turnLinkTitle: "הפכו קישור לקאשבק",
-    turnLinkSub: "הדביקו מוצר מ-AliExpress ושתפו קישור תגמול.",
+    turnLinkSub: "הדביקו קישור למוצר ושתפו את ההמלצה שלכם.",
     pastePlaceholder: "הדביקו קישור למוצר…",
   },
   memberActivity: {
@@ -544,18 +644,18 @@ const he: typeof en = {
     share: "שיתוף",
   },
   create: {
-    title: "יצירת קישור",
-    linkLabel: "קישור למוצר ב-AliExpress",
+    title: "המליצו לחברים",
+    linkLabel: "קישור למוצר",
     pastePlaceholder: "הדביקו קישור למוצר…",
     hint: "הדביקו קישור — נשלוף את המוצר אוטומטית.",
-    cta: "צרו קישור קאשבק",
+    cta: "המליצו",
     pulling: "שולפים פרטי מוצר…",
     unsupported: "כרגע נתמכים רק קישורי מוצר מ-AliExpress.",
     notConfigured: "יצירת קישורים אינה זמינה כרגע. נסו שוב מאוחר יותר.",
     notSupported: "AliExpress אינו מציע קאשבק על מוצר זה, לכן לא ניתן ליצור עבורו קישור.",
     resolveFailed: "לא הצלחנו לשלוף את המוצר. נסו שוב.",
     linkReady: "הקישור שלכם מוכן",
-    detailsPulled: "הפרטים נשלפו מ-AliExpress",
+    detailsPulled: "הפרטים נשלפו מהחנות",
     youEarnSale: "אתם מרוויחים / מכירה",
     theyEarn: "הם מרוויחים",
     reviewLabel: "הוסיפו המלצה (לא חובה)",
@@ -827,21 +927,86 @@ const he: typeof en = {
     message: "הדף שחיפשתם אינו קיים או שהועבר.",
     home: "חזרה לדף הבית",
   },
+  error: {
+    oops: "אופס",
+    title: "משהו השתבש",
+    message: "אירעה שגיאה לא צפויה. נסו שוב.",
+    retry: "רענון",
+    home: "חזרה לדף הבית",
+  },
+  legal: {
+    sampleNotice: "טיוטה לדוגמה — לעיון בלבד, אינה מחייבת.",
+    updated: "עודכן לאחרונה: יולי 2026",
+    terms: {
+      title: "תנאי השימוש",
+      sections: [
+        {
+          h: "1. השירות",
+          p: "wanthat מאפשרת לחברים להרוויח קאשבק אמיתי על רכישות שבוצעו דרך קישורי wanthat בחנויות השותפות — ולהרוויח שוב כשחברים קונים דרך קישורים ששיתפו.",
+        },
+        {
+          h: "2. החשבון שלכם",
+          p: "חשבון אחד לאדם, מאומת באמצעות מספר טלפון. אתם אחראים לשמירה על הגישה למכשיר ולמספר הטלפון שלכם; קודי התחברות ומפתחות גישה הם אישיים ואין לשתפם.",
+        },
+        {
+          h: "3. קאשבק ומשיכות",
+          p: "הקאשבק הופך זמין רק לאחר שהחנות השותפה מאשרת את ההזמנה; הזמנות שבוטלו או הוחזרו מאבדות אותו. סכומים המוצגים ב-₪ לפני האישור הם אומדנים לפי שערי המרה. משיכות מתבצעות לאמצעי התשלום המוצעים באפליקציה.",
+        },
+        {
+          h: "4. שימוש הוגן",
+          p: "אין לבצע רכישות עצמיות, המלצות מטעות או שימוש אוטומטי לרעה. אנו רשאים להשעות חשבונות המנסים לנצל את התוכנית ולעכב קאשבק שהושג בניגוד לתנאים.",
+        },
+        {
+          h: "5. שינויים ויצירת קשר",
+          p: "אנו עשויים לעדכן תנאים אלה מעת לעת; שינויים מהותיים יוכרזו באפליקציה. שאלות: support@wanthat.app.",
+        },
+      ],
+    },
+    privacy: {
+      title: "מדיניות הפרטיות",
+      sections: [
+        {
+          h: "1. מה אנחנו אוספים",
+          p: "מספר הטלפון, השם, אימייל (לא חובה) והעדפת השפה שלכם; הקישורים שאתם יוצרים, הזמנות המשויכות אליהם ופעילות הארנק שלכם.",
+        },
+        {
+          h: "2. איך אנחנו משתמשים בזה",
+          p: "להפעלת תוכנית הקאשבק: אימות באמצעות קוד SMS/וואטסאפ, שיוך הזמנות לקישורים שלכם, חישוב ותשלום קאשבק והצגת הפעילות שלכם באפליקציה.",
+        },
+        {
+          h: "3. שיתוף",
+          p: "נתוני הזמנות מוחלפים עם חנויות שותפות ורשתות שותפים אך ורק לאישור רכישות וקאשבק. איננו מוכרים מידע אישי.",
+        },
+        {
+          h: "4. שמירה ואבטחה",
+          p: "מידע אישי ותנועות כספים נשמרים מוצפנים, כאשר רשומות כספיות נשמרות ביומן מבוקר, כל עוד החשבון קיים או כנדרש בחוק.",
+        },
+        {
+          h: "5. הזכויות שלכם",
+          p: "ניתן לערוך את הפרופיל באפליקציה בכל עת, וליצור קשר לייצוא או מחיקה של נתוני החשבון: support@wanthat.app.",
+        },
+      ],
+    },
+  },
   shared: {
     onMerchant: "ב-{{merchant}}",
-    earnLabel: "מקבלים בחזרה",
-    recommendsThis: "{{name}} ממליץ/ה על זה",
+    sentLink: "ממליץ/ה לך על מוצר",
     sentYouLink: "מישהו שלח לך קישור קאשבק",
     notFoundTitle: "הקישור לא נמצא",
     notFoundBody: "ייתכן שהקישור פג תוקף או שאינו קיים.",
-    pitch: "קונים דרך wanthat ומקבלים קאשבק אמיתי לארנק כשהעסקה מאושרת.",
-    signupCta: "הרשמה וקבלת קאשבק",
-    signupTrust: "חינם לגמרי · הצטרפות ב-30 שניות",
-    loginCta: "כבר יש לי חשבון",
-    guestCta: "המשך כאורח — בלי קאשבק",
+    signupEarnLabel: "הירשמו ותרוויחו",
+    backOnOrder: "חזרה על ההזמנה הזו",
+    twoSidedNote: "גם {{name}} מרוויח/ה מזה — ככה wanthat עובד.",
+    twoSidedNoteGeneric: "גם מי ששיתף מרוויח — ככה wanthat עובד.",
+    signupCta: "הירשמו והרוויחו {{amount}}",
+    signupCtaNoAmount: "הרשמה וקבלת קאשבק",
+    signupTrust: "חינם · הרשמה ב-20 שניות · משיכה ישירה לבנק",
+    guestCta: "המשיכו כאורח — ללא קאשבק",
+    guestNote: "מעבר ישיר לחנות. לא תרוויחו קאשבק על ההזמנה הזו.",
     guestConsent: "המשך כאורח שומר מזהה אנונימי במכשיר הזה.",
+    welcomeBack: "ברוכים השבים",
     signingIn: "מחברים אתכם…",
-    goToStore: "מעבר לחנות",
+    loggingBiometric: "מתחברים עם {{label}}…",
     redirectingStore: "מעבירים אתכם ל-{{merchant}} להשלמת ההזמנה…",
     earnOnThis: "תקבלו {{amount}} קאשבק על ההזמנה הזאת.",
     continueToStore: "המשך ל-{{merchant}}",

@@ -4,8 +4,12 @@ import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getOrMintGuestId, resolveRedirect } from "../../lib/landing-api";
 import { formatMoneyMinor } from "../../lib/money";
-import { Button, Screen, Spinner } from "../../ui/components";
+import { Logo } from "../../ui/brand";
+import { Button, Screen } from "../../ui/components";
+import { AttributionChip, ProductCard, RecommendationQuote } from "../../ui/wallet";
 import {
+  BiometricGlyph,
+  biometricLabelKey,
   hasStoredSession,
   loginWithPasskey,
   passkeyLoginAvailable,
@@ -184,6 +188,32 @@ export function SharedProductPage() {
     );
   }
 
+  // Welcome-back interstitial (design: faceAuthing) — a session is being established, either a
+  // stored-session rehydrate or a biometric ceremony completing; the redirect fires right after.
+  if (loading || verifying) {
+    return (
+      <Screen>
+        <div className="flex flex-col items-center justify-center gap-1.5 text-center">
+          <div className="mb-4 flex h-[88px] w-[88px] items-center justify-center rounded-[26px] border border-accent-border bg-accent-soft text-accent">
+            <span className="animate-pulse">
+              <BiometricGlyph variant="feature" />
+            </span>
+          </div>
+          <div className="font-display text-[22px] font-bold tracking-[-0.02em] text-ink">
+            {t("shared.welcomeBack")}
+          </div>
+          <div className="text-sm text-secondary">
+            {verifying
+              ? t("shared.loggingBiometric", {
+                  label: t(`auth.biometric.${biometricLabelKey()}`),
+                })
+              : t("shared.signingIn")}
+          </div>
+        </div>
+      </Screen>
+    );
+  }
+
   const { landing, displayFx } = snapshot;
   // Display conversion — same convention as CreateLinkPage: the price converts at the pure rate
   // (information), cashback carries the FX margin (what a withdrawal would actually yield).
@@ -205,107 +235,139 @@ export function SharedProductPage() {
   const priceDisplay = display(landing.product.price, false);
   const cashbackDisplay = display(landing.estimate.consumer.estimated, true);
   const merchant = MERCHANT_NAMES[landing.product.storeId] ?? landing.product.storeId;
-  const attribution = landing.referrerFirstName
-    ? t("shared.recommendsThis", { name: landing.referrerFirstName })
-    : t("shared.sentYouLink");
-
-  // The auth module under the product card: progress while a session is being established; the
-  // redirect interstitial for a member (countdown + explicit continue, per the design handoff);
-  // CTAs otherwise. The product content above is NEVER gated by any of this.
-  const authModule =
-    loading || verifying ? (
-      <div className="flex items-center justify-center gap-2 py-2 text-[13.5px] text-muted">
-        <Spinner />
-        <span>{t("shared.signingIn")}</span>
-      </div>
-    ) : memberFlow ? (
-      <div className="flex flex-col gap-2">
-        <p className="text-center text-[13.5px] text-muted">
-          {t("shared.redirectingStore", { merchant })}
-        </p>
-        {cashbackDisplay && (
-          <p className="text-center text-[12.5px] font-semibold text-accent">
-            {t("shared.earnOnThis", { amount: cashbackDisplay })}
-          </p>
-        )}
-        {resolveState === "failed" ? (
-          <Button onClick={() => setResolveState("idle")}>{t("shared.retry")}</Button>
-        ) : (
-          <Button disabled={!storeUrl} onClick={() => storeUrl && window.location.assign(storeUrl)}>
-            {t("shared.continueToStore", { merchant })}
-            {countdown !== null && countdown > 0 ? ` · ${countdown}` : ""}
-          </Button>
-        )}
-      </div>
-    ) : (
-      <>
-        <Button onClick={() => window.location.assign(`/auth?intent=signup&ref=${id}`)}>
-          {t("shared.signupCta")}
-        </Button>
-        <Button variant="ghost" onClick={() => window.location.assign(`/auth?ref=${id}`)}>
-          {t("shared.loginCta")}
-        </Button>
-        <p className="text-center text-[12px] text-muted">{t("shared.signupTrust")}</p>
-      </>
-    );
+  const referrer = landing.referrerFirstName;
 
   return (
     <Screen>
-      <div className="mx-auto flex w-full max-w-[440px] flex-col gap-4">
-        <div className="text-center font-display text-[22px] font-bold tracking-[-0.03em]">
-          wanthat
-        </div>
-        <div className="overflow-hidden rounded-[20px] border border-line bg-surface">
-          {landing.product.imageUrl && (
-            <img
-              src={landing.product.imageUrl}
-              alt={landing.product.title}
-              className="aspect-[16/10] w-full bg-accent-soft object-cover"
-            />
+      <div className="mx-auto flex w-full max-w-[440px] flex-col">
+        {/* Header (design): logo start, Log in end — login lives here, not in the CTA stack. */}
+        <div className="mb-5 flex items-center justify-between">
+          <Logo size="md" />
+          {!memberFlow && (
+            <button
+              type="button"
+              onClick={() => window.location.assign(`/auth?ref=${id}`)}
+              className="text-sm font-bold text-accent"
+            >
+              {t("app.login")}
+            </button>
           )}
-          <div className="flex flex-col gap-3 p-[18px]">
-            <p className="text-[13px] text-muted">{attribution}</p>
-            <h1 className="font-display text-[19px] font-semibold tracking-[-0.02em]">
-              {landing.product.title}
-            </h1>
-            {priceDisplay && (
-              <div className="flex items-baseline gap-2">
-                <b className="text-[20px] tabular-nums" dir="ltr">
-                  {priceDisplay}
-                </b>
-                <span className="text-[13px] text-muted">
-                  {t("shared.onMerchant", { merchant })}
-                </span>
-              </div>
-            )}
-            {cashbackDisplay && (
-              <div className="flex items-center justify-between rounded-[14px] border border-[#d2e3d9] bg-accent-soft px-3.5 py-3">
-                <span className="text-[12.5px] font-semibold text-accent">
-                  {t("shared.earnLabel")}
-                </span>
-                <span className="text-[22px] font-bold tabular-nums text-accent" dir="ltr">
-                  {cashbackDisplay}
-                </span>
-              </div>
-            )}
-            {landing.review && <p className="text-[13.5px]">"{landing.review.text}"</p>}
-            <p className="text-[13.5px] text-muted">{t("shared.pitch")}</p>
-            {authModule}
-          </div>
         </div>
-        {!memberFlow && !loading && !verifying && (
-          <div className="mt-2 flex flex-col items-center gap-1">
+
+        {/* Who sent this (design: attribution chip with the referrer's initial). */}
+        <AttributionChip initial={(referrer ?? "w").charAt(0).toUpperCase()}>
+          {referrer ? (
+            <>
+              <b className="font-bold text-ink">{referrer}</b> {t("shared.sentLink")}
+            </>
+          ) : (
+            t("shared.sentYouLink")
+          )}
+        </AttributionChip>
+
+        {landing.review && (
+          <div className="mt-2">
+            <RecommendationQuote>{landing.review.text}</RecommendationQuote>
+          </div>
+        )}
+
+        <div className="mt-4">
+          <ProductCard
+            src={landing.product.imageUrl ?? undefined}
+            title={landing.product.title}
+            price={priceDisplay ?? undefined}
+            priceNote={t("shared.onMerchant", { merchant })}
+          />
+        </div>
+
+        {memberFlow ? (
+          // Member: the attributed redirect (countdown + explicit continue, per delivery notes).
+          <div className="mt-4 flex flex-col gap-2">
+            <p className="text-center text-[13.5px] text-muted">
+              {t("shared.redirectingStore", { merchant })}
+            </p>
+            {cashbackDisplay && (
+              <p className="text-center text-[12.5px] font-semibold text-accent">
+                {t("shared.earnOnThis", { amount: cashbackDisplay })}
+              </p>
+            )}
+            {resolveState === "failed" ? (
+              <Button onClick={() => setResolveState("idle")}>{t("shared.retry")}</Button>
+            ) : (
+              <Button
+                disabled={!storeUrl}
+                onClick={() => storeUrl && window.location.assign(storeUrl)}
+              >
+                {t("shared.continueToStore", { merchant })}
+                {countdown !== null && countdown > 0 ? ` · ${countdown}` : ""}
+              </Button>
+            )}
+          </div>
+        ) : (
+          <>
+            {/* The earn pitch (design: dark card) — the consumer's estimate large, plus the
+                two-sided note naming the referrer (no amounts for their side). */}
+            {cashbackDisplay && (
+              <div className="mt-3.5 rounded-[22px] bg-ink p-5 text-onink">
+                <div className="mb-1.5 text-[13px] font-medium text-onink-muted">
+                  {t("shared.signupEarnLabel")}
+                </div>
+                <div className="mb-3 flex items-baseline gap-2">
+                  <span className="tabular text-[40px] font-bold leading-none tracking-[-0.03em]">
+                    {cashbackDisplay}
+                  </span>
+                  <span className="text-sm text-onink-soft">{t("shared.backOnOrder")}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[12.5px] leading-snug text-onink-muted">
+                  <span aria-hidden className="h-1.5 w-1.5 shrink-0 rounded-full bg-mint" />
+                  {referrer
+                    ? t("shared.twoSidedNote", { name: referrer })
+                    : t("shared.twoSidedNoteGeneric")}
+                </div>
+              </div>
+            )}
+
+            <div className="mt-[18px]">
+              <Button onClick={() => window.location.assign(`/auth?intent=signup&ref=${id}`)}>
+                {cashbackDisplay
+                  ? t("shared.signupCta", { amount: cashbackDisplay })
+                  : t("shared.signupCtaNoAmount")}
+              </Button>
+            </div>
+            <p className="mt-3.5 text-center text-xs leading-normal text-subtle">
+              {t("shared.signupTrust")}
+            </p>
+
+            <div className="my-[18px] h-px bg-divider" />
+
             <button
               type="button"
               onClick={guestGo}
               disabled={guestState === "pending"}
-              className="text-center text-[13px] text-muted hover:text-ink"
+              className="flex items-center justify-center gap-2 p-1 text-center text-sm font-semibold text-muted transition hover:text-ink disabled:opacity-60"
             >
               {guestState === "failed" ? t("shared.retry") : t("shared.guestCta")}
+              <svg
+                width="15"
+                height="15"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2.2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                aria-hidden="true"
+                className="rtl:-scale-x-100"
+              >
+                <path d="M5 12h14M13 6l6 6-6 6" />
+              </svg>
             </button>
-            <p className="text-center text-[11px] text-muted">{t("shared.guestConsent")}</p>
-          </div>
+            <p className="mt-2 text-center text-[11.5px] leading-snug text-placeholder">
+              {t("shared.guestNote")} {t("shared.guestConsent")}
+            </p>
+          </>
         )}
+
         {debug && (
           <pre className="mx-auto mt-3 w-full max-w-[440px] overflow-x-auto rounded-lg bg-ink p-3 text-[11px] text-white">
             {diag.length ? diag.join("\n") : "(no auth events yet)"}
