@@ -81,7 +81,7 @@ const en = {
     estimated: "Estimated", // (design)
     heldNote: "held in original currencies", // (design)
     pendingNote: "≈{{amount}} pending confirmation", // (design, parameterised)
-    withdrawCash: "Withdraw cash", // (design: withdrawToBank)
+    withdrawCash: "Withdraw (coming soon)", // payout flow not built yet (design: withdrawToBank)
     recentActivity: "Recent activity", // (design)
     seeAll: "See all", // (design)
     noActivity: "No activity yet — cashback from your links will show up here.",
@@ -505,7 +505,7 @@ const he: typeof en = {
     estimated: "משוער",
     heldNote: "מוחזק במטבע המקורי",
     pendingNote: "≈{{amount}} ממתין לאישור",
-    withdrawCash: "משיכת מזומן",
+    withdrawCash: "משיכה (בקרוב)",
     recentActivity: "פעילות אחרונה",
     seeAll: "הצג הכל",
     noActivity: "אין פעילות עדיין — קאשבק מהקישורים שלכם יופיע כאן.",

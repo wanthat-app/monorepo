@@ -140,6 +140,7 @@ export function HomePage() {
             holdingsNote={holdings.length ? t("home.heldNote") : undefined}
             pendingNote={pendingNote}
             cta={t("home.withdrawCash")}
+            ctaDisabled
           />
         )}
 
