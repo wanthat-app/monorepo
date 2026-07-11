@@ -8,6 +8,7 @@ import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
+import { ADMIN_LOGIN_SETTINGS, adminLoginAssets } from "./admin-login-branding";
 import {
   LAMBDA_ARCHITECTURE,
   LAMBDA_RUNTIME,
@@ -473,10 +474,14 @@ export class IdentityStack extends Stack {
       cognitoDomain: { domainPrefix: `wanthat-${wanthatEnv.name}-admin` },
       managedLoginVersion: cognito.ManagedLoginVersion.NEWER_MANAGED_LOGIN,
     });
+    // Branded to the admin console's design system (see admin-login-branding.ts) instead of
+    // the stock AWS look; Cognito merges this over its defaults, so omitted settings keep
+    // sensible values.
     new cognito.CfnManagedLoginBranding(this, "AdminLoginBranding", {
       userPoolId: this.employeePool.userPoolId,
       clientId: this.employeePoolClient.userPoolClientId,
-      useCognitoProvidedValues: true,
+      settings: ADMIN_LOGIN_SETTINGS,
+      assets: adminLoginAssets(),
     });
 
     new CfnOutput(this, "EmployeePoolIdOut", { value: this.employeePool.userPoolId });
