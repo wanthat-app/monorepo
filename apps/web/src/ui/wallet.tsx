@@ -195,15 +195,12 @@ export function ProductCard({
   }
   return (
     <div className="overflow-hidden rounded-[22px] border border-line bg-surface">
-      <div className="flex h-[204px] items-center justify-center border-b border-line bg-surface p-3.5">
+      <div className="border-b border-line bg-surface">
         {/* Hotlinked from the retailer CDN (we store only the URL). Plain <img> needs no CORS;
-            no-referrer keeps it rendering if the CDN ever adds referer-based hotlink protection. */}
-        <img
-          src={src}
-          alt={title}
-          referrerPolicy="no-referrer"
-          className="max-h-full max-w-full object-contain"
-        />
+            no-referrer keeps it rendering if the CDN ever adds referer-based hotlink protection.
+            Full card width with the height following the image's own aspect ratio — the whole
+            picture stays visible, nothing is cropped. */}
+        <img src={src} alt={title} referrerPolicy="no-referrer" className="h-auto w-full" />
       </div>
       <div className="px-4.5 py-4 px-[18px]">
         <div className="mb-2 text-[17px] font-bold leading-[1.25] text-ink">{title}</div>
