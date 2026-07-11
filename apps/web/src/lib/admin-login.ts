@@ -217,9 +217,28 @@ export function loadAdminTokens(): AdminTokens | null {
   }
 }
 
-/** Clear the stored admin tokens (sign-out). */
+/** Clear the stored admin tokens (the local half of sign-out). */
 export function clearAdminTokens(): void {
   sessionStorage.removeItem(TOKENS_KEY);
+}
+
+/**
+ * Full admin sign-out: drop the SPA's tokens AND kill the hosted-UI session cookie via the
+ * managed login `/logout` endpoint. Clearing only the local tokens is the "logout that logs
+ * you straight back in" bug: the next `/oauth2/authorize` finds Cognito's own session cookie
+ * still alive and silently re-issues a code without prompting. `logout_uri` must be a
+ * registered logout URL — the employee client registers the callback URL, whose code-less
+ * branch routes into a fresh (now credential-prompting) login.
+ */
+export function beginAdminLogout(): void {
+  clearAdminTokens();
+  const { adminManagedLoginUrl, adminPoolClientId } = getConfig();
+  const url = new URL(`${adminManagedLoginUrl}/logout`);
+  url.search = new URLSearchParams({
+    client_id: adminPoolClientId,
+    logout_uri: redirectUri(),
+  }).toString();
+  window.location.assign(url.toString());
 }
 
 /** Whether the stored tokens carry the Cognito `admin` group (UI gating only; server re-enforces). */

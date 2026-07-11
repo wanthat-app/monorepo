@@ -25,7 +25,7 @@ export interface IdentityStackProps extends StackProps {
   /** From DataStack — the post-confirmation trigger increments the exact customer counter here. */
   readonly opsCountersTable: dynamodb.ITable;
   /** From DataStack — message-sender's OTP park (docs/otp-sink.md), write-only grant. */
-  readonly otpSinkTable?: dynamodb.ITable;
+  readonly otpSinkTable: dynamodb.ITable;
   /** From DataStack — the post-confirmation trigger queues the optin_welcome item here (ADR-0019). */
   readonly notificationOutboxTable: dynamodb.ITable;
   /** From DataStack — guestId -> sub mapping, claimed best-effort at confirmation (ADR-0008). */
@@ -168,8 +168,7 @@ export class IdentityStack extends Stack {
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
-        // The handler treats absence as sink-disabled (defensive; provisioned in every env).
-        ...(props.otpSinkTable ? { OTP_SINK_TABLE: props.otpSinkTable.tableName } : {}),
+        OTP_SINK_TABLE: props.otpSinkTable.tableName,
         KMS_KEY_ARN: customSenderKey.keyArn,
         // End User Messaging Social is not available in il-central-1; Frankfurt is the closest
         // supported endpoint. Deploy-time by design (moving regions is a redeploy either way).
@@ -182,7 +181,7 @@ export class IdentityStack extends Stack {
     props.runtimeConfigTable.grantReadData(messageSenderFn);
     // Write-only — the read paths are admin-api's activity feed and the developer AWS CLI
     // (docs/otp-sink.md), never this function.
-    props.otpSinkTable?.grantWriteData(messageSenderFn);
+    props.otpSinkTable.grantWriteData(messageSenderFn);
     // sns:Publish scoped away from every topic ARN = direct-to-phone SMS only.
     messageSenderFn.addToRolePolicy(
       new iam.PolicyStatement({

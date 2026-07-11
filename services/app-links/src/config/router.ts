@@ -18,7 +18,7 @@ import { getContext } from "../context";
  *
  * Strict by design: 1..20 keys, and ANY unknown or non-public key fails the whole request with
  * a 400 — no partial answers, so a typo (or a probe for a private key) is loud, and the private
- * set (`auth.otpSink`, `whatsapp.phoneNumberId`, …) is unreachable here regardless of what the
+ * set (`whatsapp.phoneNumberId`, …) is unreachable here regardless of what the
  * config table holds. `cache-control: no-store` because these are live kill switches.
  */
 export function publicConfigRouter(): Hono<{ Bindings: Bindings }> {

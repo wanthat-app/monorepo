@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { type CustomSmsSenderEvent, deliverOtp, type SendDeps } from "./send";
 
 const deps = {
@@ -6,10 +6,7 @@ const deps = {
   decryptCode: vi.fn().mockResolvedValue("12345678"),
   whatsapp: { sendTemplate: vi.fn().mockResolvedValue({ messageId: "wamid.X" }) },
   sms: { publish: vi.fn().mockResolvedValue(undefined) },
-  // `false as boolean`: under `satisfies` (unlike a `: SendDeps` annotation) object-literal
-  // properties keep their narrowed literal type, so an un-widened `false` would forbid the
-  // `deps.devSink.allowed = true` flips the sink tests below perform.
-  devSink: { allowed: false as boolean, put: vi.fn() },
+  sink: { put: vi.fn().mockResolvedValue(undefined) },
   log: vi.fn(),
 } satisfies SendDeps;
 
@@ -24,7 +21,6 @@ const BOTH_ENABLED = {
   "auth.whatsappEnabled": true,
   "whatsapp.phoneNumberId": "phone-number-id-test",
   "auth.defaultOtpChannel": "whatsapp",
-  "auth.otpSink": "delivery",
 };
 
 function event(
@@ -42,10 +38,11 @@ beforeEach(() => {
   deps.decryptCode.mockResolvedValue("12345678");
   config(BOTH_ENABLED);
   // clearAllMocks() does not reset a mock's implementation (only .mock.calls/.results), so a
-  // rejection set by an earlier test (e.g. "propagates an SNS error") would otherwise leak into
-  // every later test that hits the sms path — re-pin the happy-path implementation here.
+  // rejection set by an earlier test would otherwise leak into every later test — re-pin the
+  // happy-path implementations here.
   deps.sms.publish.mockResolvedValue(undefined);
   deps.whatsapp.sendTemplate.mockResolvedValue({ messageId: "wamid.X" });
+  deps.sink.put.mockResolvedValue(undefined);
 });
 
 describe("deliverOtp — channel decision point (ADR-0006 decision 5)", () => {
@@ -112,6 +109,7 @@ describe("deliverOtp — channel decision point (ADR-0006 decision 5)", () => {
     expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
     expect(deps.sms.publish).not.toHaveBeenCalled();
     expect(deps.decryptCode).not.toHaveBeenCalled(); // no channel -> the code is never decrypted
+    expect(deps.sink.put).not.toHaveBeenCalled(); // ...and never parked
     expect(deps.log).not.toHaveBeenCalled();
   });
 
@@ -168,96 +166,78 @@ describe("deliverOtp — channel decision point (ADR-0006 decision 5)", () => {
     );
     expect(deps.config.get).not.toHaveBeenCalled();
   });
-
-  it("logs NO success line when the send throws (failure logging lives in the handler)", async () => {
-    deps.sms.publish.mockRejectedValue(new Error("sns down"));
-    await expect(
-      deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" })),
-    ).rejects.toThrow("sns down");
-    expect(deps.log).not.toHaveBeenCalled();
-  });
-
-  it("propagates a WhatsApp submission error — NO in-Lambda SMS fallback (only a DISABLED channel falls back, a FAILED send does not)", async () => {
-    deps.whatsapp.sendTemplate.mockRejectedValue(new Error("template not approved"));
-    await expect(
-      deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" })),
-    ).rejects.toThrow("template not approved");
-    expect(deps.sms.publish).not.toHaveBeenCalled();
-  });
-
-  it("propagates an SNS error — sms failures fail too", async () => {
-    deps.sms.publish.mockRejectedValue(new Error("sns down"));
-    await expect(
-      deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" })),
-    ).rejects.toThrow("sns down");
-  });
 });
 
-describe("dev OTP sink (auth.otpSink = devSink, never in prod)", () => {
-  // Structural reset: a failing assertion mid-test must not leak `allowed = true` into later tests.
-  afterEach(() => {
-    deps.devSink.allowed = false;
-  });
-
-  it("parks the code instead of delivering when allowed AND configured", async () => {
-    deps.devSink.allowed = true;
-    config({ ...BOTH_ENABLED, "auth.otpSink": "devSink" });
+describe("deliverOtp — the OTP park (docs/otp-sink.md, every environment)", () => {
+  it("parks EVERY code (resolved channel) before delivering", async () => {
     await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
-    expect(deps.devSink.put).toHaveBeenCalledWith({
+    expect(deps.sink.put).toHaveBeenCalledWith({
       phone: "+97254",
       code: "12345678",
       channel: "sms",
       triggerSource: "CustomSMSSender_Authentication",
     });
-    expect(deps.sms.publish).not.toHaveBeenCalled();
-    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
-    expect(deps.log).toHaveBeenCalledWith("otp_sunk_dev", { channel: "sms", sub: undefined });
+    expect(deps.sms.publish).toHaveBeenCalled(); // parking does NOT replace delivery
+    expect(deps.log).toHaveBeenCalledWith("otp_parked", {
+      channel: "sms",
+      triggerSource: "CustomSMSSender_Authentication",
+      sub: undefined,
+    });
   });
 
-  it("parks the RESOLVED channel, not the raw preference (disabled whatsapp sinks as sms)", async () => {
-    deps.devSink.allowed = true;
-    config({ ...BOTH_ENABLED, "auth.whatsappEnabled": false, "auth.otpSink": "devSink" });
+  it("parks the RESOLVED channel, not the raw preference (disabled whatsapp resolves to sms)", async () => {
+    config({ ...BOTH_ENABLED, "auth.whatsappEnabled": false });
     await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
-    expect(deps.devSink.put).toHaveBeenCalledWith(
+    expect(deps.sink.put).toHaveBeenCalledWith(
       expect.objectContaining({ channel: "sms", code: "12345678" }),
     );
-    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
-    expect(deps.sms.publish).not.toHaveBeenCalled();
   });
 
-  it("sinks the whatsapp channel too — no real send is attempted", async () => {
-    deps.devSink.allowed = true;
-    config({ ...BOTH_ENABLED, "auth.otpSink": "devSink" });
-    await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
-    expect(deps.devSink.put).toHaveBeenCalledWith(
-      expect.objectContaining({ channel: "whatsapp", code: "12345678" }),
+  it("delivery failure is swallowed when the code is parked (SMS sandbox: the ceremony survives)", async () => {
+    deps.sms.publish.mockRejectedValue(new Error("sandbox: unverified number"));
+    await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
+    expect(deps.log).toHaveBeenCalledWith(
+      "otp_delivery_failed",
+      expect.objectContaining({ channel: "sms", error: expect.stringContaining("sandbox") }),
     );
-    expect(deps.whatsapp.sendTemplate).not.toHaveBeenCalled();
+    expect(deps.log).not.toHaveBeenCalledWith("otp_delivered", expect.anything());
   });
 
-  it("still throws when NOTHING is enabled — the sink parks a would-be delivery, not a dead one", async () => {
-    deps.devSink.allowed = true;
-    config({
-      ...BOTH_ENABLED,
-      "auth.smsEnabled": false,
-      "auth.whatsappEnabled": false,
-      "auth.otpSink": "devSink",
-    });
+  it("whatsapp delivery failure is swallowed too when parked — no in-Lambda SMS fallback", async () => {
+    deps.whatsapp.sendTemplate.mockRejectedValue(new Error("template not approved"));
+    await deliverOtp(deps, event({ "custom:otpChannel": "whatsapp", phone_number: "+97254" }));
+    expect(deps.sms.publish).not.toHaveBeenCalled();
+    expect(deps.log).toHaveBeenCalledWith(
+      "otp_delivery_failed",
+      expect.objectContaining({ channel: "whatsapp" }),
+    );
+  });
+
+  it("park failure alone does not block the member — delivery proceeds", async () => {
+    deps.sink.put.mockRejectedValue(new Error("dynamo down"));
+    await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
+    expect(deps.sms.publish).toHaveBeenCalled();
+    expect(deps.log).toHaveBeenCalledWith(
+      "otp_park_failed",
+      expect.objectContaining({ error: expect.stringContaining("dynamo down") }),
+    );
+    expect(deps.log).toHaveBeenCalledWith("otp_delivered", expect.anything());
+  });
+
+  it("THROWS only when the code is NEITHER parked NOR delivered", async () => {
+    deps.sink.put.mockRejectedValue(new Error("dynamo down"));
+    deps.sms.publish.mockRejectedValue(new Error("sns down"));
     await expect(
       deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" })),
-    ).rejects.toThrow(/no OTP channel is enabled/);
-    expect(deps.devSink.put).not.toHaveBeenCalled();
+    ).rejects.toThrow(/neither parked nor delivered/);
+    expect(deps.log).toHaveBeenCalledWith("otp_park_failed", expect.anything());
+    expect(deps.log).toHaveBeenCalledWith("otp_delivery_failed", expect.anything());
   });
 
-  it("never reads auth.otpSink when not allowed (the prod guard)", async () => {
-    // allowed stays false; even a poisoned config value cannot activate the sink.
-    config({ ...BOTH_ENABLED, "auth.otpSink": "devSink" });
+  it("never logs the code itself", async () => {
     await deliverOtp(deps, event({ "custom:otpChannel": "sms", phone_number: "+97254" }));
-    expect(deps.devSink.put).not.toHaveBeenCalled();
-    expect(deps.sms.publish).toHaveBeenCalledWith(
-      "+97254",
-      "Your authentication code is 12345678.",
-    );
-    expect(deps.config.get).not.toHaveBeenCalledWith("auth.otpSink"); // guard short-circuits the read
+    for (const call of deps.log.mock.calls) {
+      expect(JSON.stringify(call)).not.toContain("12345678");
+    }
   });
 });

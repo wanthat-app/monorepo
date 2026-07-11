@@ -1,6 +1,6 @@
 import { ActivityItem } from "@wanthat/contracts";
 import type { AuditLogEntry } from "@wanthat/db";
-import type { DevOtpSinkItem } from "@wanthat/dynamo";
+import type { OtpSinkItem } from "@wanthat/dynamo";
 
 /**
  * Pure mapping for the activity feed (I/O-free, like users-stats' buildUsersStats). Audit
@@ -41,7 +41,7 @@ export function auditEntryToItem(entry: AuditLogEntry): ActivityItem {
  * Dev sink items -> otp_sent feed items. Items past their TTL are dropped here because DynamoDB
  * TTL deletion is best-effort (can lag hours); `ttl` is epoch seconds.
  */
-export function otpSinkToItems(items: DevOtpSinkItem[], nowMs: number): ActivityItem[] {
+export function otpSinkToItems(items: OtpSinkItem[], nowMs: number): ActivityItem[] {
   return items
     .filter((i) => i.ttl * 1000 > nowMs)
     .map((i) =>

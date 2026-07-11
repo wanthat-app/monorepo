@@ -51,7 +51,7 @@ export class DataStack extends Stack {
   readonly opsCountersTable: dynamodb.Table;
   readonly fxRateTable: dynamodb.Table;
   readonly notificationOutboxTable: dynamodb.Table;
-  /** OTP sink for admin-visible codes (auth.otpSink = "devSink") — see the construct below. */
+  /** OTP sink for admin-visible codes — see the construct below. */
   readonly otpSinkTable: dynamodb.Table;
   readonly retailerSecret: secretsmanager.Secret;
   readonly cluster: rds.DatabaseCluster;
@@ -148,12 +148,10 @@ export class DataStack extends Stack {
       ...common,
     });
 
-    // OTP sink (auth.otpSink = "devSink", docs/otp-sink.md): message-sender parks codes here
-    // instead of delivering, and the admin activity feed lists them. Provisioned in EVERY env
-    // since the SMS sandbox blocks real prod delivery during MVP testing; the runtime switch
-    // defaults to real delivery and flipping it is an admin-only, audit-chained action. NOTE:
-    // while flipped in prod, members' sign-in codes divert to the admin panel - flip back to
-    // "delivery" before real members onboard. 5-minute TTL either way.
+    // OTP sink (docs/otp-sink.md): message-sender parks EVERY code here before its delivery
+    // attempt, and the admin activity feed lists current ones - a permanent feature in every
+    // environment (it also keeps sign-in completable while the SMS sandbox blocks real prod
+    // delivery). Items self-expire after 5 minutes, the OTP lifetime.
     // Construct id stays "DevOtpSink" (its historical name): changing it would REPLACE the
     // table and rewrite its cross-stack export while deployed consumers still import it —
     // the export-in-use deploy failure. Only code identifiers were renamed.

@@ -27,7 +27,7 @@ export interface AdminContext {
   customerCounter: CustomerCounterRepo;
   /** The unattributed-order claim queue (list + claim/dismiss intents; the proxy settles). */
   unattributedOrders: UnattributedOrderRepo;
-  /** Dev only — undefined in prod (no table, no env var; fail-closed). */
+  /** Parked OTP codes for the activity feed (docs/otp-sink.md) — present in every env. */
   otpSink?: OtpSinkRepo;
 }
 

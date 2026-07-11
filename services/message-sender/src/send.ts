@@ -27,12 +27,11 @@ export interface SendDeps {
   };
   sms: { publish(toE164: string, message: string): Promise<void> };
   /**
-   * Dev-only sink: when `allowed` (deploy-time: WANTHAT_ENV !== "prod") AND `auth.otpSink` is
-   * "devSink", the code is parked for CLI pickup instead of delivered. `allowed` gates the
-   * otpSink config read itself, so prod makes zero sink-related reads.
+   * The OTP park (docs/otp-sink.md): EVERY code is recorded here (5-minute TTL) before the
+   * delivery attempt, so the admin activity feed can show it — a permanent feature in every
+   * environment (the SMS sandbox blocks real prod delivery during MVP testing).
    */
-  devSink: {
-    allowed: boolean;
+  sink: {
     put(item: {
       phone: string;
       code: string;
@@ -77,47 +76,67 @@ export async function deliverOtp(deps: SendDeps, event: CustomSmsSenderEvent): P
 
   const code = await deps.decryptCode(event.request.code);
 
-  // Dev-only sink (docs/otp-sink.md): park the code instead of delivering. Checked before the
-  // channel dispatch so BOTH channels sink; the code itself is never logged. The parked `channel`
-  // is the RESOLVED one — what would have delivered — so at least one channel must be enabled
-  // even in sink mode (the resolution throw above applies uniformly).
-  if (deps.devSink.allowed && (await deps.config.get("auth.otpSink")) === "devSink") {
-    await deps.devSink.put({
-      phone: to,
-      code,
+  // Park FIRST (docs/otp-sink.md): every code lands in the sink (5-minute TTL) so the admin
+  // activity feed can show it — a permanent feature in every environment. Best-effort: a
+  // bookkeeping failure alone must not block a member's sign-in. The code itself is never
+  // logged; the parked `channel` is the RESOLVED one — what delivery will attempt.
+  let parked = true;
+  try {
+    await deps.sink.put({ phone: to, code, channel, triggerSource: event.triggerSource });
+    deps.log("otp_parked", { channel, triggerSource: event.triggerSource, sub: attrs.sub });
+  } catch (err) {
+    parked = false;
+    deps.log("otp_park_failed", {
       channel,
       triggerSource: event.triggerSource,
+      sub: attrs.sub,
+      error: String(err),
     });
-    deps.log("otp_sunk_dev", { channel, sub: attrs.sub });
-    return;
   }
 
-  if (channel === "whatsapp") {
-    // Availability guarantees a non-empty phoneNumberId whenever whatsapp is enabled; this guard
-    // is a belt against a future refactor breaking that invariant — never expected to fire.
-    const phoneNumberId = avail.whatsappPhoneNumberId;
-    if (!phoneNumberId)
-      throw new Error("message-sender: whatsapp.phoneNumberId is unset (onboarding incomplete)");
-    const locale = MessageLanguage.safeParse(attrs.locale);
-    await deps.whatsapp.sendTemplate({
-      phoneNumberId,
-      type: "otp_code",
-      language: locale.success ? locale.data : "en",
-      variables: { code },
-      to,
-    });
-    deps.log("otp_delivered", {
-      channel: "whatsapp",
+  // Delivery is also best-effort: with the code parked and admin-visible, a delivery failure
+  // (e.g. the SMS sandbox refusing an unverified prod number during MVP testing) must not fail
+  // the whole Cognito ceremony. Only when the code is NEITHER parked NOR delivered does the
+  // trigger throw — then the initiating call fails loudly, because the code is unreachable.
+  try {
+    if (channel === "whatsapp") {
+      // Availability guarantees a non-empty phoneNumberId whenever whatsapp is enabled; this
+      // guard is a belt against a future refactor breaking that invariant.
+      const phoneNumberId = avail.whatsappPhoneNumberId;
+      if (!phoneNumberId)
+        throw new Error("message-sender: whatsapp.phoneNumberId is unset (onboarding incomplete)");
+      const locale = MessageLanguage.safeParse(attrs.locale);
+      await deps.whatsapp.sendTemplate({
+        phoneNumberId,
+        type: "otp_code",
+        language: locale.success ? locale.data : "en",
+        variables: { code },
+        to,
+      });
+      deps.log("otp_delivered", {
+        channel: "whatsapp",
+        triggerSource: event.triggerSource,
+        sub: attrs.sub,
+      });
+    } else {
+      // sms — replicate Cognito's native wording: once the trigger is attached, Cognito sends
+      // nothing itself and this function owns ALL OTP delivery (including plain SMS).
+      await deps.sms.publish(to, `Your authentication code is ${code}.`);
+      // "Delivered" = submitted downstream. SNS can still drop silently (e.g. the sandbox
+      // monthly spend cap accepts the publish and never delivers) — this proves OUR side ran.
+      deps.log("otp_delivered", {
+        channel: "sms",
+        triggerSource: event.triggerSource,
+        sub: attrs.sub,
+      });
+    }
+  } catch (err) {
+    deps.log("otp_delivery_failed", {
+      channel,
       triggerSource: event.triggerSource,
       sub: attrs.sub,
+      error: String(err),
     });
-    return;
+    if (!parked) throw new Error("message-sender: OTP was neither parked nor delivered");
   }
-
-  // sms — replicate Cognito's native wording: once the trigger is attached, Cognito sends nothing
-  // itself and this function owns ALL OTP delivery (including plain SMS).
-  await deps.sms.publish(to, `Your authentication code is ${code}.`);
-  // "Delivered" = submitted downstream. SNS can still drop silently (e.g. the sandbox monthly
-  // spend cap accepts the publish and never delivers) — this line proves OUR side completed.
-  deps.log("otp_delivered", { channel: "sms", triggerSource: event.triggerSource, sub: attrs.sub });
 }

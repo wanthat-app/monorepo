@@ -1,4 +1,4 @@
-import type { DevOtpSinkItem } from "@wanthat/dynamo";
+import type { OtpSinkItem } from "@wanthat/dynamo";
 import { describe, expect, it } from "vitest";
 import { auditEntryToItem, mergeByAtDesc, otpSinkToItems } from "./activity";
 
@@ -89,7 +89,7 @@ describe("auditEntryToItem", () => {
 
 describe("otpSinkToItems", () => {
   const nowMs = AT.getTime();
-  const sinkItem: DevOtpSinkItem = {
+  const sinkItem: OtpSinkItem = {
     phone: "+972520000001",
     code: "48213976",
     channel: "whatsapp",

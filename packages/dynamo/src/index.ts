@@ -20,7 +20,7 @@ export {
   NotificationOutboxRepo,
   type NotificationStatus,
 } from "./notification-outbox";
-export { type DevOtpSinkItem, OtpSinkRepo } from "./otp-sink";
+export { type OtpSinkItem, OtpSinkRepo } from "./otp-sink";
 export { type PollerStateItem, PollerStateRepo } from "./poller-state";
 export { PRODUCT_COUNTER_SK, ProductItem, ProductRepo, type ProductUpsert } from "./product";
 export {

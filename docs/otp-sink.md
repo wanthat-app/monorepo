@@ -1,24 +1,28 @@
-# OTP sink — log in without SMS/WhatsApp delivery
+# OTP sink — every code, visible in the admin activity feed
 
-While the SMS sandbox cap and Meta onboarding block real OTP delivery, any environment —
-including prod, since the sandbox is account-wide — can park codes in DynamoDB instead
-(`auth.otpSink = "devSink"`; the stored value name predates the prod enablement). Parked codes
-appear in the admin panel's Activity feed and expire after 5 minutes.
+message-sender parks EVERY decrypted OTP code in DynamoDB (5-minute TTL, the OTP lifetime)
+before attempting delivery — a permanent feature in every environment, not a configuration.
+The admin panel's Activity feed lists current codes; this keeps sign-in completable and
+testable while the account-wide SMS sandbox blocks real delivery, and gives support a way to
+read a member's current code.
 
-CAUTION: while `devSink` is set, members' sign-in codes divert to the admin panel instead of
-being delivered — members cannot log in, and any admin can read their codes. Flip back to
-`delivery` before real members onboard.
+Delivery itself is best-effort once the code is parked: a delivery failure (e.g. the sandbox
+refusing an unverified number) is logged (`otp_delivery_failed`) without failing the Cognito
+ceremony. Only when the code is NEITHER parked NOR delivered does the trigger throw
+(`otp_send_fatal` in the handler log) and the initiating call fail loudly.
 
-## Flip it on
-Set "OTP code routing" to "Park in panel" on /admin/settings (or `PUT /admin/config/auth.otpSink`
-with `devSink`). Flips are audit-chained like every config write. Flip back to `delivery` when a
-real channel is unblocked.
+Security posture: codes are readable by the `admin` group for their 5-minute lifetime — an
+accepted trade-off for support and sandbox-era testing. The sink table carries no grant beyond
+message-sender (write) and admin-api (read); codes are never written to logs.
 
-## Read a code (after tapping Continue on the login screen)
+## Read a code (CLI alternative to the Activity feed)
     aws dynamodb get-item \
-      --table-name "$(aws dynamodb list-tables --query 'TableNames[?contains(@, `DevOtpSink`) && contains(@, `dev`)] | [0]' --output text)" \
+      --table-name "$(aws dynamodb list-tables --query 'TableNames[?contains(@, `DevOtpSink`)] | [0]' --output text)" \
       --key '{"phone":{"S":"+972541234567"}}' \
       --query 'Item.code.S' --output text
 
-Items expire after 5 minutes (the OTP lifetime). The code is never logged; the sink item is the
-only copy outside Cognito. `otp_sunk_dev` in the message-sender logs confirms the park.
+(The physical table name keeps its historical `DevOtpSink` construct id — renaming would
+replace the table under its cross-stack consumers.)
+
+Observability: `otp_parked` confirms the park, `otp_delivered` a completed hand-off to the
+channel, `otp_delivery_failed` / `otp_park_failed` the partial failures.

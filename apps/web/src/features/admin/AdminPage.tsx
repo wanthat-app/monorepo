@@ -16,7 +16,7 @@ import {
 import {
   type AdminTokens,
   beginAdminLogin,
-  clearAdminTokens,
+  beginAdminLogout,
   ensureFreshAdminTokens,
   isAdminSession,
 } from "../../lib/admin-login";
@@ -115,9 +115,10 @@ function AdminConsole() {
     );
   }
 
+  // Full sign-out: local tokens AND the hosted-UI session cookie (beginAdminLogout) — clearing
+  // only the local tokens re-logged the admin in silently on the next authorize redirect.
   const signOut = () => {
-    clearAdminTokens();
-    void beginAdminLogin();
+    beginAdminLogout();
   };
 
   const identity = identityFromIdToken(tokens.idToken);
@@ -412,7 +413,7 @@ function KpiCard({
 // ---------------------------------------------------------------------------
 
 type SectionId = "site" | "margins" | "payouts" | "automation";
-type Control = "percent" | "number" | "fxProvider" | "switch" | "otpChannel" | "otpSink" | "text";
+type Control = "percent" | "number" | "fxProvider" | "switch" | "otpChannel" | "text";
 
 interface FieldMeta {
   key: ConfigKey;
@@ -486,10 +487,6 @@ const FIELDS: FieldMeta[] = [
   { key: "auth.whatsappEnabled", section: "automation", control: "switch" },
   { key: "auth.smsEnabled", section: "automation", control: "switch" },
   { key: "auth.defaultOtpChannel", section: "automation", control: "otpChannel" },
-  // OTP sink: parked-in-panel codes vs real delivery. Exposed since the SMS sandbox blocks
-  // real delivery during MVP testing (docs/otp-sink.md); flips are audit-chained like every
-  // config write. While devSink is set, members' codes divert to the activity feed.
-  { key: "auth.otpSink", section: "automation", control: "otpSink" },
   {
     key: "auth.smsMaxPerWindow",
     section: "automation",
@@ -965,21 +962,6 @@ function FieldControl({
           options={[
             { value: "whatsapp", label: t("admin.otpChannel.whatsapp") },
             { value: "sms", label: t("admin.otpChannel.sms") },
-          ]}
-        />
-      </div>
-    );
-  }
-
-  if (field.control === "otpSink") {
-    return (
-      <div className="flex sm:justify-end">
-        <Segmented
-          value={String(value)}
-          onChange={onChange}
-          options={[
-            { value: "delivery", label: t("admin.otpSink.delivery") },
-            { value: "devSink", label: t("admin.otpSink.devSink") },
           ]}
         />
       </div>
