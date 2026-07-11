@@ -331,7 +331,11 @@ const en = {
       unavailable:
         "Signup and status metrics aren't available since the move to Cognito — the Users page shows the approximate pool size.",
     },
+    noticePlaceholder: "Empty = no banner",
     sections: {
+      siteTitle: "Site notice",
+      siteDesc:
+        "A warning banner shown on every page of this environment, member app and admin console alike. Leave both texts empty to hide it.",
       marginsTitle: "Margins & rewards",
       marginsDesc: "How affiliate commission is split between wanthat, referrers and buyers.",
       payoutsTitle: "Payouts & FX",
@@ -373,6 +377,14 @@ const en = {
       done: "Saved",
     },
     keys: {
+      site_noticeEn: {
+        title: "Notice text — English",
+        desc: "Shown to members using the app in English.",
+      },
+      site_noticeHe: {
+        title: "Notice text — Hebrew",
+        desc: "Shown to members using the app in Hebrew.",
+      },
       cashback_referrerBps: {
         title: "Referrer reward",
         desc: "Share of retailer commission paid to the referrer on new links.",
@@ -834,7 +846,11 @@ const he: typeof en = {
       unavailable:
         "מדדי הרשמה וסטטוס אינם זמינים מאז המעבר ל־Cognito — עמוד המשתמשים מציג את גודל המאגר המקורב.",
     },
+    noticePlaceholder: "ריק = ללא באנר",
     sections: {
+      siteTitle: "הודעת אתר",
+      siteDesc:
+        "באנר אזהרה המוצג בכל עמוד בסביבה הזו — באפליקציה ובקונסולת הניהול. השאירו את שני הטקסטים ריקים כדי להסתירו.",
       marginsTitle: "מרווחים ותגמולים",
       marginsDesc: "כיצד עמלת השותפים מתחלקת בין wanthat, הממליצים והקונים.",
       payoutsTitle: 'תשלומים ומט"ח',
@@ -875,6 +891,14 @@ const he: typeof en = {
       done: "נשמר",
     },
     keys: {
+      site_noticeEn: {
+        title: "טקסט ההודעה — אנגלית",
+        desc: "מוצג לחברים המשתמשים באפליקציה באנגלית.",
+      },
+      site_noticeHe: {
+        title: "טקסט ההודעה — עברית",
+        desc: "מוצג לחברים המשתמשים באפליקציה בעברית.",
+      },
       cashback_referrerBps: {
         title: "תגמול ממליץ",
         desc: "חלק מעמלת הסוחר המשולם לממליץ בקישורים חדשים.",

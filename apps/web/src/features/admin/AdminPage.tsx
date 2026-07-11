@@ -411,8 +411,8 @@ function KpiCard({
 // Configuration
 // ---------------------------------------------------------------------------
 
-type SectionId = "margins" | "payouts" | "automation";
-type Control = "percent" | "number" | "fxProvider" | "switch" | "otpChannel";
+type SectionId = "site" | "margins" | "payouts" | "automation";
+type Control = "percent" | "number" | "fxProvider" | "switch" | "otpChannel" | "text";
 
 interface FieldMeta {
   key: ConfigKey;
@@ -428,6 +428,9 @@ interface FieldMeta {
 // editorial: bps splits read best as percentage sliders, the FX source as a segmented toggle, the SMS
 // kill switch as a switch, and the interval/threshold integers as bounded number fields.
 const FIELDS: FieldMeta[] = [
+  // Site-wide notice banner (both member languages; empty = hidden).
+  { key: "site.noticeEn", section: "site", control: "text" },
+  { key: "site.noticeHe", section: "site", control: "text" },
   {
     key: "cashback.referrerBps",
     section: "margins",
@@ -502,6 +505,7 @@ const FIELDS: FieldMeta[] = [
 ];
 
 const SECTIONS: { id: SectionId; titleKey: string; descKey: string }[] = [
+  { id: "site", titleKey: "admin.sections.siteTitle", descKey: "admin.sections.siteDesc" },
   { id: "margins", titleKey: "admin.sections.marginsTitle", descKey: "admin.sections.marginsDesc" },
   { id: "payouts", titleKey: "admin.sections.payoutsTitle", descKey: "admin.sections.payoutsDesc" },
   {
@@ -909,6 +913,21 @@ function FieldControl({
   onChange: (value: ConfigValue) => void;
 }) {
   const { t } = useTranslation();
+
+  if (field.control === "text") {
+    return (
+      <input
+        type="text"
+        aria-label={title}
+        dir="auto"
+        maxLength={200}
+        value={String(value)}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={t("admin.noticePlaceholder")}
+        className="w-full rounded-input border border-[#e0e6e3] bg-base px-3.5 py-2.5 text-sm font-medium text-ink outline-none transition focus:border-accent"
+      />
+    );
+  }
 
   if (field.control === "switch") {
     return (
