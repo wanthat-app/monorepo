@@ -4,6 +4,7 @@ export {
   type ListAuditLogInput,
   listAuditLog,
 } from "./activity";
+export { appendConfigChangeAudit, type ConfigChangeAudit } from "./admin-audit";
 export {
   appendAudit,
   appendWalletEntry,

@@ -14,7 +14,7 @@ import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
  * Container startup lives in the shared harness (test-harness.ts).
  */
 
-const MIGRATION_COUNT = 6;
+const MIGRATION_COUNT = 7;
 
 let testDb: TestDb;
 let db: Kysely<Database>;
@@ -36,7 +36,7 @@ async function asRole<T>(role: string, fn: (trx: Kysely<Database>) => Promise<T>
   });
 }
 
-describe("migrations 0001-0006 on real PostgreSQL", () => {
+describe("migrations 0001-0007 on real PostgreSQL", () => {
   it("apply cleanly, in order, from an empty database (fresh-env bootstrap path)", async () => {
     const { error, results } = await createMigrator(db, MIGRATIONS_DIR).migrateToLatest();
     if (error) throw error;
@@ -146,6 +146,39 @@ describe("migrations 0001-0006 on real PostgreSQL", () => {
 
     await expect(
       asRole("app_rw", (trx) => sql`SELECT audit_append('{"type":"x"}'::jsonb)`.execute(trx)),
+    ).rejects.toThrow(/permission denied/);
+  });
+
+  it("lets app_ro chain a config_changed audit event, but never call audit_append directly", async () => {
+    // The narrow SECURITY DEFINER wrapper (0007) is app_ro's ONLY append path: the payload
+    // shape is fixed server-side, and the row must chain onto the existing audit trail.
+    const appended = await asRole("app_ro", (trx) =>
+      sql<{ admin_audit_config_change: string }>`
+        SELECT admin_audit_config_change(
+          'auth.smsEnabled', 'false'::jsonb, 'true'::jsonb, 'admin@wanthat.co.il'
+        )
+      `.execute(trx),
+    );
+    expect(appended.rows).toHaveLength(1);
+
+    const { rows } = await sql<{
+      prev_hash: string | null;
+      entry_hash: string;
+      payload: Record<string, unknown>;
+    }>`SELECT prev_hash, entry_hash, payload FROM audit_log ORDER BY id DESC LIMIT 2`.execute(db);
+    expect(rows[0]?.payload).toEqual({
+      type: "config_changed",
+      key: "auth.smsEnabled",
+      value: false,
+      previous: true,
+      actor: "admin@wanthat.co.il",
+    });
+    // The new row chains onto the previous one - the hash chain holds across writer roles.
+    expect(rows[0]?.prev_hash).toBe(rows[1]?.entry_hash);
+
+    // Raw audit_append stays out of reach: app_ro cannot append arbitrary payloads.
+    await expect(
+      asRole("app_ro", (trx) => sql`SELECT audit_append('{"type":"x"}'::jsonb)`.execute(trx)),
     ).rejects.toThrow(/permission denied/);
   });
 });

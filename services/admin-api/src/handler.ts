@@ -5,9 +5,11 @@
  * Owns the runtime-config panel (the sole CONFIG writer), operational stats, and the activity
  * feed. The whole users surface — list/search + ban tooling + account removal — is Cognito-backed
  * (ADR-0006) and served by the non-VPC admin-credentials function; Aurora is money-only since T7
- * (ADR-0006 decision 4), so this function reads it (as `app_ro`) solely for the audit-log feed
- * and, later, wallet stats — money tables stay immutable. Admin-group membership is re-checked
- * in-handler (defence in depth).
+ * (ADR-0006 decision 4), so this function reads it (as `app_ro`) for the audit-log feed and,
+ * later, wallet stats — money tables stay immutable. Its one Aurora write is the audit trail of
+ * its own config edits, via the narrow SECURITY DEFINER wrapper admin_audit_config_change
+ * (0007; app_ro holds no raw audit_append). Admin-group membership is re-checked in-handler
+ * (defence in depth).
  */
 import {
   CatalogStats,
@@ -23,12 +25,12 @@ import {
   PutConfigResponse,
   UsersStats,
 } from "@wanthat/contracts";
-import { listAuditLog } from "@wanthat/db";
+import { appendConfigChangeAudit, listAuditLog } from "@wanthat/db";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { auditEntryToItem, mergeByAtDesc, otpSinkToItems } from "./activity";
 import { getContext } from "./context";
-import { type Bindings, requireAdmin } from "./guard";
+import { actorFrom, type Bindings, requireAdmin } from "./guard";
 import { unattributedRouter } from "./unattributed";
 import { userDetailRouter } from "./user-detail";
 
@@ -70,21 +72,40 @@ app.get("/admin/config/:key", async (c) => {
   return c.json(GetConfigResponse.parse({ item }));
 });
 
-// PUT /admin/config/:key — set one entry (value validated against its schema by RuntimeConfigRepo).
+// PUT /admin/config/:key — set one entry (value validated against its schema by RuntimeConfigRepo),
+// then chain a config_changed event into the audit log (admin_audit_config_change, 0007 — the
+// narrow SECURITY DEFINER append app_ro holds instead of raw audit_append).
 app.put("/admin/config/:key", async (c) => {
   const parsedKey = ConfigKey.safeParse(c.req.param("key"));
   if (!parsedKey.success) return c.json({ error: "unknown_key" }, 404);
   const body = PutConfigBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: "invalid_request" }, 400);
+  const key = parsedKey.data;
 
-  const item = await getContext().config.put(
-    parsedKey.data,
-    body.data.value,
-    new Date().toISOString(),
-  );
+  const ctx = getContext();
+  // The effective value BEFORE the write (stored, or the key's default) — audited alongside
+  // the new value so the feed can show the transition, not just the end state.
+  const stored = (await ctx.config.getAll()).find((i) => i.key === key);
+  const previous = stored ? stored.value : CONFIG_DEFAULTS[key];
+
+  const item = await ctx.config.put(key, body.data.value, new Date().toISOString());
   // NOTE: when poller.intervalMinutes changes, the EventBridge schedule retune lands with the
   // conversion-poller slice (ADR-0009) — its schedule is still DISABLED, so there is nothing to
   // retune yet; the poller reads this value when it goes live.
+
+  // Audited AFTER the write (the event records what actually happened). A failed append fails
+  // the request loudly — the change IS applied by then, but a silently broken audit trail is
+  // worse than a retried idempotent save.
+  try {
+    await appendConfigChangeAudit(ctx.db, {
+      key,
+      value: item.value,
+      previous,
+      actor: actorFrom(c),
+    });
+  } catch {
+    return c.json({ error: "audit_failed" }, 500);
+  }
   return c.json(PutConfigResponse.parse({ item }));
 });
 

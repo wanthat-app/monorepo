@@ -14,21 +14,9 @@ import {
   type UnattributedOrderView,
 } from "@wanthat/contracts";
 import type { UnattributedOrderItem } from "@wanthat/dynamo";
-import type { Context } from "hono";
 import { Hono } from "hono";
 import { getContext } from "./context";
-import type { Bindings } from "./guard";
-
-/** The audit-friendly actor: the admin's email (ID-token claim), falling back to sub. */
-function actorFrom(c: Context<{ Bindings: Bindings }>): string {
-  // biome-ignore lint/suspicious/noExplicitAny: authorizer claim shape varies by event type
-  const claims = (c.env?.event as any)?.requestContext?.authorizer?.jwt?.claims ?? {};
-  return (
-    (typeof claims.email === "string" && claims.email) ||
-    (typeof claims.username === "string" && claims.username) ||
-    String(claims.sub ?? "unknown")
-  );
-}
+import { actorFrom, type Bindings } from "./guard";
 
 const toView = (item: UnattributedOrderItem): UnattributedOrderView => ({
   orderId: item.orderId,
