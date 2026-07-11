@@ -28,28 +28,36 @@ export function UserDetailView({ token, sub }: { token: string | null; sub: stri
   const [recsFailed, setRecsFailed] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
 
-  const load = useCallback(async () => {
+  // Each section renders AS ITS OWN call lands — Promise.allSettled here once serialized the
+  // whole page on the slowest call (the wallet's Aurora read can ride a scale-to-zero resume),
+  // hiding already-loaded identity and recommendations for seconds.
+  const load = useCallback(() => {
     if (!token) return;
     setUserStatus("loading");
+    setUser(null);
+    setWallet(null);
     setWalletFailed(false);
+    setRecs(null);
+    setRecsCursor(null);
     setRecsFailed(false);
-    const [userRes, walletRes, recsRes] = await Promise.allSettled([
-      adminApi.getUser(token, sub),
-      adminApi.getUserWallet(token, sub),
-      adminApi.listUserRecommendations(token, sub),
-    ]);
-    if (userRes.status === "fulfilled") {
-      setUser(userRes.value.user);
-      setUserStatus("ready");
-    } else {
-      setUserStatus((userRes.reason as { status?: number }).status === 404 ? "missing" : "failed");
-    }
-    if (walletRes.status === "fulfilled") setWallet(walletRes.value);
-    else setWalletFailed(true);
-    if (recsRes.status === "fulfilled") {
-      setRecs(recsRes.value.items);
-      setRecsCursor(recsRes.value.nextCursor);
-    } else setRecsFailed(true);
+    adminApi.getUser(token, sub).then(
+      (res) => {
+        setUser(res.user);
+        setUserStatus("ready");
+      },
+      (err) => setUserStatus((err as { status?: number }).status === 404 ? "missing" : "failed"),
+    );
+    adminApi.getUserWallet(token, sub).then(
+      (res) => setWallet(res),
+      () => setWalletFailed(true),
+    );
+    adminApi.listUserRecommendations(token, sub).then(
+      (res) => {
+        setRecs(res.items);
+        setRecsCursor(res.nextCursor);
+      },
+      () => setRecsFailed(true),
+    );
   }, [token, sub]);
 
   useEffect(() => {

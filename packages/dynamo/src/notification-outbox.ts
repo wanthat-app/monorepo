@@ -2,6 +2,7 @@ import {
   type DynamoDBDocumentClient,
   GetCommand,
   PutCommand,
+  ScanCommand,
   UpdateCommand,
 } from "@aws-sdk/lib-dynamodb";
 import type { MessageLanguage } from "@wanthat/contracts";
@@ -45,6 +46,16 @@ export class NotificationOutboxRepo {
       new GetCommand({ TableName: this.tableName, Key: { outboxId } }),
     );
     return res.Item as NotificationOutboxItem | undefined;
+  }
+
+  /**
+   * Every outbox item — the admin activity feed maps optin_welcome items to user_registered
+   * rows (services/admin-api/activity.ts). Bounded by the ~30-day TTL, so an unpaginated
+   * scan is plenty at MVP scale; TTL deletion lag is filtered by the caller.
+   */
+  async scanAll(): Promise<NotificationOutboxItem[]> {
+    const res = await this.doc.send(new ScanCommand({ TableName: this.tableName }));
+    return (res.Items ?? []) as NotificationOutboxItem[];
   }
 
   async markSent(outboxId: string): Promise<void> {

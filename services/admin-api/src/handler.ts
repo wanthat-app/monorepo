@@ -28,7 +28,7 @@ import {
 import { appendConfigChangeAudit, listAuditLog } from "@wanthat/db";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
-import { auditEntryToItem, mergeByAtDesc, otpSinkToItems } from "./activity";
+import { auditEntryToItem, mergeByAtDesc, otpSinkToItems, outboxToItems } from "./activity";
 import { getContext } from "./context";
 import { actorFrom, type Bindings, requireAdmin } from "./guard";
 import { unattributedRouter } from "./unattributed";
@@ -179,6 +179,15 @@ app.get("/admin/activity", async (c) => {
     const otp = otpSinkToItems(await sink.scanAll(), Date.now());
     items = mergeByAtDesc(items, otp);
     grandTotal += otp.length;
+  }
+  // Member signups ride the optin_welcome outbox (one item per confirmed signup, ~30-day
+  // TTL) — nothing else emits user_registered (the audit log is unreachable from the
+  // non-VPC post-confirmation trigger).
+  const outbox = getContext().outbox;
+  if (outbox && page === 1) {
+    const signups = outboxToItems(await outbox.scanAll(), Date.now());
+    items = mergeByAtDesc(items, signups);
+    grandTotal += signups.length;
   }
   return c.json(ListActivityResponse.parse({ items, total: grandTotal, page, pageSize }));
 });

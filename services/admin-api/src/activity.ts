@@ -1,6 +1,6 @@
 import { ActivityItem } from "@wanthat/contracts";
 import type { AuditLogEntry } from "@wanthat/db";
-import type { OtpSinkItem } from "@wanthat/dynamo";
+import type { NotificationOutboxItem, OtpSinkItem } from "@wanthat/dynamo";
 
 /**
  * Pure mapping for the activity feed (I/O-free, like users-stats' buildUsersStats). Audit
@@ -34,6 +34,12 @@ export function auditEntryToItem(entry: AuditLogEntry): ActivityItem {
     ...(str(p.key) ? { key: str(p.key) } : {}),
     ...(p.value !== undefined ? { value: p.value } : {}),
     ...(p.previous !== undefined ? { previous: p.previous } : {}),
+    // wallet_entry (the conversion writer's chained rows): order + money details.
+    ...(str(p.orderId) ? { orderId: str(p.orderId) } : {}),
+    ...(str(p.kind) ? { kind: str(p.kind) } : {}),
+    ...(str(p.status) ? { status: str(p.status) } : {}),
+    ...(str(p.amountMinor) ? { amountMinor: str(p.amountMinor) } : {}),
+    ...(str(p.currency) ? { currency: str(p.currency) } : {}),
   });
 }
 
@@ -53,6 +59,25 @@ export function otpSinkToItems(items: OtpSinkItem[], nowMs: number): ActivityIte
         channel: i.channel,
         code: i.code,
         expiresAt: new Date(i.ttl * 1000).toISOString(),
+      }),
+    );
+}
+
+/**
+ * Outbox items -> user_registered feed items: every confirmed signup enqueues exactly one
+ * optin_welcome, so the outbox doubles as the signup event source (bounded by its ~30-day
+ * TTL). `variables.firstName` is the only profile field the outbox carries.
+ */
+export function outboxToItems(items: NotificationOutboxItem[], nowMs: number): ActivityItem[] {
+  return items
+    .filter((i) => i.messageType === "optin_welcome" && i.ttl * 1000 > nowMs)
+    .map((i) =>
+      ActivityItem.parse({
+        id: `signup_${i.outboxId}`,
+        type: "user_registered",
+        at: i.createdAt,
+        phone: i.phone,
+        ...(i.variables.firstName ? { name: i.variables.firstName } : {}),
       }),
     );
 }
