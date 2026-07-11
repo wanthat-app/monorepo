@@ -23,6 +23,7 @@ import {
 import { identityFromIdToken } from "../../lib/jwt";
 import { Button, RangeSlider, Segmented, Skeleton, Spinner, Switch } from "../../ui/components";
 import { ActivityView } from "./ActivityView";
+import { AdminI18nProvider } from "./AdminI18nProvider";
 import { AdminLayout, type AdminView } from "./AdminLayout";
 import { OrderDetailView } from "./OrderDetailView";
 import { OrdersView } from "./OrdersView";
@@ -71,6 +72,16 @@ function userSubFromPath(pathname: string): string | null {
 }
 
 export function AdminPage() {
+  // The whole console renders inside the admin i18n boundary: its own language instance +
+  // document-direction ownership, independent of the member app (see AdminI18nProvider).
+  return (
+    <AdminI18nProvider>
+      <AdminConsole />
+    </AdminI18nProvider>
+  );
+}
+
+function AdminConsole() {
   const { t } = useTranslation();
   const [tokens, setTokens] = useState<AdminTokens | null>(null);
   const location = useLocation();

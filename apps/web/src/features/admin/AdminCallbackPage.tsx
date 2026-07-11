@@ -7,13 +7,22 @@ import {
   verifyAdminOauthState,
 } from "../../lib/admin-login";
 import { Spinner } from "../../ui/components";
+import { AdminI18nProvider } from "./AdminI18nProvider";
 
 /**
  * OAuth callback for the employee Managed Login flow (ADR-0006 §two-pool): verify CSRF `state`,
- * exchange the code for admin tokens, then route into the console. Follows the document direction
- * (RTL for Hebrew, the default) like the rest of the admin surface.
+ * exchange the code for admin tokens, then route into the console. Renders inside the admin
+ * i18n boundary — the console's own language + direction, independent of the member app.
  */
 export function AdminCallbackPage() {
+  return (
+    <AdminI18nProvider>
+      <AdminCallback />
+    </AdminI18nProvider>
+  );
+}
+
+function AdminCallback() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const [error, setError] = useState(false);
