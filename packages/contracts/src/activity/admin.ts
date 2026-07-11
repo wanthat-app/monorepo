@@ -36,6 +36,7 @@ export const ActivityItem = z.object({
   key: z.string().optional(), // config_changed only - the runtime-config key
   value: z.unknown().optional(), // config_changed only - the value as applied (any JSON)
   previous: z.unknown().optional(), // config_changed only - the effective value before
+  cognitoSub: z.string().optional(), // wallet_entry only - the member whose wallet changed
   orderId: z.string().optional(), // wallet_entry only - the retailer order
   kind: z.string().optional(), // wallet_entry only - referrer_cashback / consumer_reward / ...
   status: z.string().optional(), // wallet_entry only - pending / confirmed / clawback
