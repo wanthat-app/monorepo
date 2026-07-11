@@ -207,7 +207,7 @@ export class ApiStack extends Stack {
     // Public runtime-config projection -> the links edge. GET, NO authorizer (same wiring as
     // /healthz): the SPA reads it before any sign-in (e.g. the register screen's OTP channel
     // options). The handler serves ONLY keys allow-listed in contracts CONFIG_PUBLIC, so no
-    // private value (auth.otpSink, whatsapp.phoneNumberId, ...) is reachable on this route.
+    // private value (whatsapp.phoneNumberId, retailer credentials, ...) is reachable on this route.
     this.httpApi.addRoutes({
       path: "/config",
       methods: [HttpMethod.GET],

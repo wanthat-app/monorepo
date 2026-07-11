@@ -13,7 +13,7 @@ const { ctx } = vi.hoisted(() => ({
     recommendations: { count: ReturnType<typeof vi.fn> };
     customerCounter: { get: ReturnType<typeof vi.fn> };
     db: object;
-    devOtpSink?: { scanAll: ReturnType<typeof vi.fn> };
+    otpSink?: { scanAll: ReturnType<typeof vi.fn> };
   },
 }));
 vi.mock("./context", () => ({ getContext: () => ctx }));
@@ -253,7 +253,7 @@ describe("admin activity", () => {
 
   it("merges live dev-sink codes into page 1 when the sink is configured", async () => {
     dbFns.listAuditLog.mockResolvedValue({ entries: [ENTRY], total: 1 });
-    ctx.devOtpSink = {
+    ctx.otpSink = {
       scanAll: vi.fn().mockResolvedValue([
         {
           phone: "+972520000001",
@@ -269,15 +269,15 @@ describe("admin activity", () => {
     const body = (await res.json()) as { items: { type: string; code?: string }[]; total: number };
     expect(body.total).toBe(2);
     expect(body.items[0]).toMatchObject({ type: "otp_sent", code: "48213976" });
-    delete ctx.devOtpSink;
+    delete ctx.otpSink;
   });
 
   it("does not merge sink codes on page 2", async () => {
     dbFns.listAuditLog.mockResolvedValue({ entries: [], total: 21 });
-    ctx.devOtpSink = { scanAll: vi.fn() };
+    ctx.otpSink = { scanAll: vi.fn() };
     const res = await app.request("/admin/activity?page=2", {}, adminEnv);
     expect(res.status).toBe(200);
-    expect(ctx.devOtpSink.scanAll).not.toHaveBeenCalled();
-    delete ctx.devOtpSink;
+    expect(ctx.otpSink.scanAll).not.toHaveBeenCalled();
+    delete ctx.otpSink;
   });
 });

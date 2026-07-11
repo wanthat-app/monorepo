@@ -16,7 +16,7 @@ import {
 import {
   type AdminTokens,
   beginAdminLogin,
-  clearAdminTokens,
+  beginAdminLogout,
   ensureFreshAdminTokens,
   isAdminSession,
 } from "../../lib/admin-login";
@@ -115,9 +115,10 @@ function AdminConsole() {
     );
   }
 
+  // Full sign-out: local tokens AND the hosted-UI session cookie (beginAdminLogout) — clearing
+  // only the local tokens re-logged the admin in silently on the next authorize redirect.
   const signOut = () => {
-    clearAdminTokens();
-    void beginAdminLogin();
+    beginAdminLogout();
   };
 
   const identity = identityFromIdToken(tokens.idToken);
@@ -482,7 +483,7 @@ const FIELDS: FieldMeta[] = [
   },
   // The OTP delivery kill switches + default channel (ADR-0019): both switches surface here so
   // an abuse spike (or Meta onboarding) is flippable without a redeploy; the sign-up screen
-  // mirrors them via the public config endpoint. auth.otpSink is deliberately NOT exposed.
+  // mirrors them via the public config endpoint.
   { key: "auth.whatsappEnabled", section: "automation", control: "switch" },
   { key: "auth.smsEnabled", section: "automation", control: "switch" },
   { key: "auth.defaultOtpChannel", section: "automation", control: "otpChannel" },

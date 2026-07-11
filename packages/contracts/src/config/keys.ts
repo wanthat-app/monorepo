@@ -100,14 +100,6 @@ export const NotificationsWhatsappEnabled = z.boolean();
  */
 export const RetailerAliexpressTrackingId = z.string().trim().min(1).max(64);
 
-/**
- * Where message-sender routes decrypted OTP codes. `delivery` = the real channel (WhatsApp/SMS).
- * `devSink` = a TTL'd DynamoDB item a developer reads via the CLI — unblocks end-to-end user
- * creation while both real channels are blocked (SMS sandbox cap / Meta onboarding). The sender
- * honours `devSink` ONLY outside prod (deploy-time env guard); flipping this key in prod is inert.
- */
-export const AuthOtpSink = z.enum(["delivery", "devSink"]);
-
 /** The member home's recent-activity strip: how many merged items GET /activity answers by default. */
 export const HomeRecentActivityLimit = z.number().int().min(1).max(50);
 
@@ -136,7 +128,6 @@ export const CONFIG_KEYS = [
   "auth.defaultOtpChannel",
   "whatsapp.phoneNumberId",
   "notifications.whatsappEnabled",
-  "auth.otpSink",
   "retailer.aliexpressTrackingId",
   "home.recentActivityLimit",
   "site.noticeEn",
@@ -163,7 +154,6 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "auth.defaultOtpChannel": AuthDefaultOtpChannel,
   "whatsapp.phoneNumberId": WhatsappPhoneNumberId,
   "notifications.whatsappEnabled": NotificationsWhatsappEnabled,
-  "auth.otpSink": AuthOtpSink,
   "retailer.aliexpressTrackingId": RetailerAliexpressTrackingId,
   "home.recentActivityLimit": HomeRecentActivityLimit,
   "site.noticeEn": SiteNotice,
@@ -197,8 +187,6 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "whatsapp.phoneNumberId": "",
   // Notifications WhatsApp kill switch (ADR-0019) — ships OFF.
   "notifications.whatsappEnabled": false,
-  // real delivery by default; dev flips to devSink while SMS/WhatsApp are blocked
-  "auth.otpSink": "delivery",
   // The AliExpress portal's auto-created tracking id; replace via admin once a named one exists.
   "retailer.aliexpressTrackingId": "default",
   "home.recentActivityLimit": 10,
@@ -211,7 +199,7 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
  * Keys the UNAUTHENTICATED `GET /config` endpoint may serve — values the SPA needs *before* any
  * sign-in (e.g. which OTP channels the register screen offers). Default is PRIVATE: a key is
  * public only when explicitly listed here, so a newly added key can never leak by omission
- * (`auth.otpSink` and `whatsapp.phoneNumberId` in particular stay private).
+ * (`whatsapp.phoneNumberId` in particular stays private).
  */
 export const CONFIG_PUBLIC: Partial<Record<ConfigKey, boolean>> = {
   "auth.whatsappEnabled": true,

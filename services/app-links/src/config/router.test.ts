@@ -45,7 +45,7 @@ describe("GET /config (public projection)", () => {
   });
 
   it("400s a NON-PUBLIC key (the private set is unreachable here)", async () => {
-    for (const key of ["auth.otpSink", "whatsapp.phoneNumberId"]) {
+    for (const key of ["retailer.aliexpressTrackingId", "whatsapp.phoneNumberId"]) {
       const res = await get(`?keys=${key}`);
       expect(res.status).toBe(400);
     }
@@ -53,7 +53,7 @@ describe("GET /config (public projection)", () => {
   });
 
   it("400s the WHOLE request when one key of a mixed list is private — no partial answer", async () => {
-    const res = await get("?keys=auth.smsEnabled,auth.otpSink");
+    const res = await get("?keys=auth.smsEnabled,whatsapp.phoneNumberId");
     expect(res.status).toBe(400);
     expect(fake.config.getMany).not.toHaveBeenCalled();
   });

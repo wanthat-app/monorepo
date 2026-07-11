@@ -1,8 +1,8 @@
 import { createDb } from "@wanthat/db";
 import {
   CustomerCounterRepo,
-  DevOtpSinkRepo,
   getDocClient,
+  OtpSinkRepo,
   ProductRepo,
   RecommendationRepo,
   RuntimeConfigRepo,
@@ -27,8 +27,8 @@ export interface AdminContext {
   customerCounter: CustomerCounterRepo;
   /** The unattributed-order claim queue (list + claim/dismiss intents; the proxy settles). */
   unattributedOrders: UnattributedOrderRepo;
-  /** Dev only — undefined in prod (no table, no env var; fail-closed). */
-  devOtpSink?: DevOtpSinkRepo;
+  /** Parked OTP codes for the activity feed (docs/otp-sink.md) — present in every env. */
+  otpSink?: OtpSinkRepo;
 }
 
 let cached: AdminContext | undefined;
@@ -42,7 +42,7 @@ let cached: AdminContext | undefined;
 export function getContext(): AdminContext {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
-  const devOtpSinkTable = process.env.DEV_OTP_SINK_TABLE;
+  const otpSinkTable = process.env.OTP_SINK_TABLE;
   cached = {
     db: createDb({
       host: requireEnv("DB_HOST"),
@@ -66,10 +66,8 @@ export function getContext(): AdminContext {
       getDocClient(region),
       requireEnv("UNATTRIBUTED_ORDER_TABLE"),
     ),
-    // Dev only: DEV_OTP_SINK_TABLE is set solely where the sink table exists (never prod).
-    ...(devOtpSinkTable
-      ? { devOtpSink: new DevOtpSinkRepo(getDocClient(region), devOtpSinkTable) }
-      : {}),
+    // Dev only: OTP_SINK_TABLE is set solely where the sink table exists (never prod).
+    ...(otpSinkTable ? { otpSink: new OtpSinkRepo(getDocClient(region), otpSinkTable) } : {}),
   };
   return cached;
 }

@@ -60,7 +60,7 @@ const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), {
   runtimeConfigTable: data.runtimeConfigTable,
   // Exact customer counter (customerCounter in OpsCounters) - incremented by post-confirmation.
   opsCountersTable: data.opsCountersTable,
-  devOtpSinkTable: data.devOtpSinkTable,
+  otpSinkTable: data.otpSinkTable,
   // Post-Confirmation trigger targets (ADR-0006 decision 7): welcome outbox + guest attribution.
   notificationOutboxTable: data.notificationOutboxTable,
   guestAttributionTable: data.guestAttributionTable,
@@ -96,7 +96,7 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   // The unattributed-order claim queue (list + claim/dismiss; the retailer-proxy settles).
   unattributedOrderTable: data.unattributedOrderTable,
   // Dev OTP sink: activity page lists parked codes (undefined in prod - fail-closed).
-  devOtpSinkTable: data.devOtpSinkTable,
+  otpSinkTable: data.otpSinkTable,
   // Write-only credential drop (PutSecretValue + DescribeSecret; never read) — see AdminStack.
   retailerSecret: data.retailerSecret,
   vpc: network.vpc,

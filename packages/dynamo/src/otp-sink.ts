@@ -7,13 +7,13 @@ import {
 import type { OtpChannel } from "@wanthat/contracts";
 
 /**
- * Dev-only OTP sink (`auth.otpSink = "devSink"`): message-sender parks decrypted codes here
- * instead of delivering, so a developer can complete login without SMS/WhatsApp (both blocked:
- * sandbox cap / Meta onboarding). NEVER active in prod — the sender honours the config key only
- * when WANTHAT_ENV !== "prod", so the prod table exists but stays empty. Items self-expire
- * (5-minute TTL). The read path is the AWS CLI (docs/dev-otp-sink.md), not the app.
+ * The OTP sink (docs/otp-sink.md): message-sender parks EVERY decrypted code here before its
+ * delivery attempt — a permanent feature in every environment, so the admin activity feed can
+ * show current codes (and sign-in stays completable while the SMS sandbox blocks real
+ * delivery). Items self-expire (5-minute TTL, the OTP lifetime). Read paths: admin-api's
+ * activity feed and the AWS CLI.
  */
-export interface DevOtpSinkItem {
+export interface OtpSinkItem {
   /** E.164 destination — the lookup key the developer knows. */
   phone: string;
   code: string;
@@ -23,28 +23,28 @@ export interface DevOtpSinkItem {
   ttl: number;
 }
 
-export class DevOtpSinkRepo {
+export class OtpSinkRepo {
   constructor(
     private readonly doc: DynamoDBDocumentClient,
     private readonly tableName: string,
   ) {}
 
-  async put(item: DevOtpSinkItem): Promise<void> {
+  async put(item: OtpSinkItem): Promise<void> {
     await this.doc.send(new PutCommand({ TableName: this.tableName, Item: item }));
   }
 
-  async get(phone: string): Promise<DevOtpSinkItem | undefined> {
+  async get(phone: string): Promise<OtpSinkItem | undefined> {
     const res = await this.doc.send(new GetCommand({ TableName: this.tableName, Key: { phone } }));
-    return res.Item as DevOtpSinkItem | undefined;
+    return res.Item as OtpSinkItem | undefined;
   }
 
   /**
-   * Every parked item — the admin activity feed (dev only) lists current codes. The sink holds
+   * Every parked item — the admin activity feed lists current codes. The sink holds
    * at most one 5-minute-TTL item per phone, so a single unpaginated scan is plenty; TTL
    * deletion lags are filtered by the caller (Dynamo TTL is best-effort).
    */
-  async scanAll(): Promise<DevOtpSinkItem[]> {
+  async scanAll(): Promise<OtpSinkItem[]> {
     const res = await this.doc.send(new ScanCommand({ TableName: this.tableName }));
-    return (res.Items ?? []) as DevOtpSinkItem[];
+    return (res.Items ?? []) as OtpSinkItem[];
   }
 }
