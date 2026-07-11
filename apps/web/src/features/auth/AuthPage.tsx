@@ -437,7 +437,7 @@ export function AuthPage() {
                   title={t("auth.passkeyCta", { label: bioLabel })}
                   className="flex h-20 w-20 shrink-0 items-center justify-center rounded-chip border border-edge bg-surface text-accent transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
                 >
-                  <BiometricGlyph size={42} strokeWidth={1.7} />
+                  <BiometricGlyph variant="button" />
                 </button>
               </div>
             )}
@@ -627,7 +627,7 @@ export function AuthPage() {
         {step === "face" && (
           <div className="flex flex-col items-center gap-4 pt-6 text-center">
             <div className="flex h-24 w-24 items-center justify-center rounded-3xl border border-line bg-accent-soft text-accent">
-              <BiometricGlyph size={46} strokeWidth={1.7} />
+              <BiometricGlyph variant="feature" />
             </div>
             <h1 className="text-[25px] tracking-[-0.02em]">
               {t("auth.face.title", { label: bioLabel })}

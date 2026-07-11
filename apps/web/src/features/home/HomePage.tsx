@@ -162,7 +162,7 @@ export function HomePage() {
             members never see the card flash and an outage stays quiet rather than nagging. */}
         {passkeysSupported() && passkeyState !== "done" && passkeys.data?.length === 0 && (
           <PromptCard
-            icon={<BiometricGlyph size={20} />}
+            icon={<BiometricGlyph variant="tile" />}
             title={t("home.setupFaceId")}
             subtitle={
               passkeyState === "error" ? t("auth.errors.generic") : t("home.setupFaceIdSub")

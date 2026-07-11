@@ -1,6 +1,21 @@
 import { biometricLabelKey } from "./webauthn";
 
 /**
+ * Named sizes — one per slot the glyph appears in, so call sites express intent and a
+ * fourth ad-hoc size can't creep in. Larger sizes thin the stroke to keep visual weight.
+ */
+const VARIANTS = {
+  /** Inside the design system's small 42px IconTile (prompt cards, feature rows). */
+  tile: { size: 20, strokeWidth: 2 },
+  /** The 80×80 passkey login button on the auth phone screen. */
+  button: { size: 42, strokeWidth: 1.7 },
+  /** The 96×96 feature tile on the enrolment screen. */
+  feature: { size: 46, strokeWidth: 1.7 },
+} as const;
+
+export type BiometricGlyphVariant = keyof typeof VARIANTS;
+
+/**
  * The device-matched biometric glyph (design system convention: inline SVG, stroke
  * currentColor): the Face ID frame-and-face for iPhone/iPad, a fingerprint everywhere else
  * (Touch ID / Windows Hello / generic passkey) — same device-match logic as the label
@@ -8,13 +23,8 @@ import { biometricLabelKey } from "./webauthn";
  * affordance (login button, enrolment step, home prompt) so they can never drift apart.
  * Decorative: the surrounding control carries the accessible name.
  */
-export function BiometricGlyph({
-  size = 24,
-  strokeWidth = 2,
-}: {
-  size?: number;
-  strokeWidth?: number;
-}) {
+export function BiometricGlyph({ variant = "tile" }: { variant?: BiometricGlyphVariant }) {
+  const { size, strokeWidth } = VARIANTS[variant];
   const face = biometricLabelKey() === "faceId";
   return (
     <svg
