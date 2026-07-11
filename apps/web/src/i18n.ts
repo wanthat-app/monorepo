@@ -104,7 +104,7 @@ const en = {
     recentActivity: "Recent activity", // (design)
     seeAll: "See all", // (design)
     noActivity: "No activity yet — cashback from your links will show up here.",
-    createLink: "Create link",
+    createLink: "Recommend",
     navHome: "Home", // (design)
     navActivity: "Activity", // (design)
     setupFaceId: "Set up Face ID", // (design)
@@ -127,7 +127,7 @@ const en = {
       recommendation_created: "Recommended",
     },
     turnLinkTitle: "Turn a link into cashback", // (design)
-    turnLinkSub: "Paste any AliExpress product and share your reward link.", // (design)
+    turnLinkSub: "Paste any product link and share your recommendation.",
     pastePlaceholder: "Paste product link…", // (design)
   },
   memberActivity: {
@@ -136,11 +136,11 @@ const en = {
     share: "Share",
   },
   create: {
-    title: "Create a link", // (design)
-    linkLabel: "AliExpress product link", // (design)
+    title: "Recommend to friends",
+    linkLabel: "Product link",
     pastePlaceholder: "Paste product link…", // (design)
     hint: "Paste a link — we'll pull the product automatically.", // (design)
-    cta: "Create cashback link", // (design)
+    cta: "Recommend",
     pulling: "Pulling product details…", // (design)
     unsupported: "Only AliExpress product links are supported right now.",
     notConfigured: "Link creation isn't available right now. Please try again later.",
@@ -148,7 +148,7 @@ const en = {
       "AliExpress doesn't offer cashback on this item, so a link can't be created for it.",
     resolveFailed: "We couldn't pull that product. Please try again.",
     linkReady: "Your link is ready", // (design)
-    detailsPulled: "Details pulled from AliExpress", // (design)
+    detailsPulled: "Details pulled from the store",
     youEarnSale: "You earn / sale", // (design)
     theyEarn: "They earn", // (design)
     reviewLabel: "Add your review (optional)", // (design)
@@ -608,7 +608,7 @@ const he: typeof en = {
     recentActivity: "פעילות אחרונה",
     seeAll: "הצג הכל",
     noActivity: "אין פעילות עדיין — קאשבק מהקישורים שלכם יופיע כאן.",
-    createLink: "יצירת קישור",
+    createLink: "המליצו",
     navHome: "בית",
     navActivity: "פעילות",
     setupFaceId: "הגדרת Face ID",
@@ -631,7 +631,7 @@ const he: typeof en = {
       recommendation_created: "המלצתם",
     },
     turnLinkTitle: "הפכו קישור לקאשבק",
-    turnLinkSub: "הדביקו מוצר מ-AliExpress ושתפו קישור תגמול.",
+    turnLinkSub: "הדביקו קישור למוצר ושתפו את ההמלצה שלכם.",
     pastePlaceholder: "הדביקו קישור למוצר…",
   },
   memberActivity: {
@@ -640,18 +640,18 @@ const he: typeof en = {
     share: "שיתוף",
   },
   create: {
-    title: "יצירת קישור",
-    linkLabel: "קישור למוצר ב-AliExpress",
+    title: "המליצו לחברים",
+    linkLabel: "קישור למוצר",
     pastePlaceholder: "הדביקו קישור למוצר…",
     hint: "הדביקו קישור — נשלוף את המוצר אוטומטית.",
-    cta: "צרו קישור קאשבק",
+    cta: "המליצו",
     pulling: "שולפים פרטי מוצר…",
     unsupported: "כרגע נתמכים רק קישורי מוצר מ-AliExpress.",
     notConfigured: "יצירת קישורים אינה זמינה כרגע. נסו שוב מאוחר יותר.",
     notSupported: "AliExpress אינו מציע קאשבק על מוצר זה, לכן לא ניתן ליצור עבורו קישור.",
     resolveFailed: "לא הצלחנו לשלוף את המוצר. נסו שוב.",
     linkReady: "הקישור שלכם מוכן",
-    detailsPulled: "הפרטים נשלפו מ-AliExpress",
+    detailsPulled: "הפרטים נשלפו מהחנות",
     youEarnSale: "אתם מרוויחים / מכירה",
     theyEarn: "הם מרוויחים",
     reviewLabel: "הוסיפו המלצה (לא חובה)",

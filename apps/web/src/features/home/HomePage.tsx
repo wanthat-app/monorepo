@@ -147,12 +147,13 @@ export function HomePage() {
         >
           <h2 className="text-[15px] font-bold text-ink">{t("home.turnLinkTitle")}</h2>
           <p className="mt-0.5 text-[13px] text-muted">{t("home.turnLinkSub")}</p>
-          <span className="mt-3 flex items-center gap-2.5 rounded-field border border-edge bg-page px-4 py-2.5">
-            <span className="min-w-0 flex-1 truncate text-start text-sm text-placeholder">
+          {/* The action sits OUTSIDE the (decorative) paste box, on the same line. */}
+          <span className="mt-3 flex items-center gap-2.5">
+            <span className="min-w-0 flex-1 truncate rounded-field border border-edge bg-page px-4 py-2.5 text-start text-sm text-placeholder">
               {t("home.pastePlaceholder")}
             </span>
-            <span className="shrink-0 rounded-full bg-accent px-3.5 py-1.5 text-xs font-bold text-white">
-              + {t("home.createLink")}
+            <span className="flex h-11 shrink-0 items-center justify-center rounded-button bg-accent px-4 font-display text-sm font-bold text-white">
+              {t("home.createLink")}
             </span>
           </span>
         </button>
