@@ -45,6 +45,16 @@ export function ShareNodesIcon() {
   );
 }
 
+/** Padlock — "skip codes next time" passkey reassurance chip. */
+export function LockIcon() {
+  return (
+    <IconSvg>
+      <rect x="5" y="11" width="14" height="10" rx="2" />
+      <path d="M8 11V7a4 4 0 0 1 8 0v4" />
+    </IconSvg>
+  );
+}
+
 /** Shield — security / trust value prop. */
 export function ShieldIcon() {
   return (

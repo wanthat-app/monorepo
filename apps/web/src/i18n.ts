@@ -4,11 +4,11 @@ import { applyDocumentLanguage } from "./lib/document-language";
 
 // Hebrew-first (RTL), English fallback (ADR-0016).
 const en = {
-  app: { title: "Wanthat" },
+  app: { title: "Wanthat", login: "Log in" },
   // Logged-out app landing at `/` (design: Wallet flow "app-landing"); one CTA — login and
   // signup are the same phone-first flow (ADR-0006), so the landing doesn't split them.
   landing: {
-    headline: "Real cashback on every AliExpress order.",
+    headline: "Real cashback on every order at the most popular stores.",
     sub: "Shop through wanthat, earn money back — and earn again when friends use your links.",
     availableCashback: "Available cashback",
     sample: "Sample",
@@ -19,15 +19,23 @@ const en = {
     earnFromLinksSub: "Friends buy — you both earn.",
     secure: "Secure by design",
     secureSub: "SMS codes + Face ID sign-in.",
-    registerCta: "Count me in",
+    registerCta: "Let me join",
   },
   auth: {
-    tagline: "Cashback on what you recommend",
     heading: "Cashback you can trust.",
     subheading:
-      "Shop AliExpress through Wanthat and earn real money back — and again when friends use your links.",
+      "Shop the most popular stores through wanthat and earn real money back — and earn again when friends use your links.",
     back: "Back",
     phoneLabel: "Phone number",
+    phoneCta: "Send me a code",
+    phoneHelper:
+      "We'll text a one-time code to verify it's you. By continuing you agree to our Terms & Privacy.",
+    otpTitle: "Enter your code",
+    otpSent: "We sent a {{digits}}-digit code to",
+    resendPre: "Didn't get it?",
+    resendIn: "Resend in {{time}}",
+    skipCodes: "Skip codes next time",
+    skipCodesSub: "Turn on Face ID / passkey after sign-in.",
     codeLabel: "Verification code",
     firstName: "First name",
     lastName: "Last name",
@@ -39,11 +47,6 @@ const en = {
     resend: "Resend code",
     channelLabel: "Send the code via",
     channel: { whatsapp: "WhatsApp", sms: "SMS" },
-    sentVia: {
-      whatsapp: "We sent a code to your WhatsApp.",
-      sms: "We sent a code by SMS.",
-    },
-    sentCode: "We sent you a sign-in code.",
     finish: "Create account",
     passkeyCta: "Sign in with {{label}}",
     passkeyFallback: "Biometric sign-in didn't work here — enter your phone and we'll send a code.",
@@ -446,9 +449,9 @@ const en = {
 };
 
 const he: typeof en = {
-  app: { title: "וונטהאט" },
+  app: { title: "וונטהאט", login: "התחברות" },
   landing: {
-    headline: "קאשבק אמיתי על כל הזמנה ב-AliExpress.",
+    headline: "קאשבק אמיתי על כל הזמנה בחנויות הכי פופולריות.",
     sub: "קנו דרך wanthat, קבלו כסף בחזרה — והרוויחו שוב כשחברים משתמשים בקישורים שלכם.",
     availableCashback: "קאשבק זמין",
     sample: "דוגמה",
@@ -459,15 +462,22 @@ const he: typeof en = {
     earnFromLinksSub: "חברים קונים — שניכם מרוויחים.",
     secure: "מאובטח מהיסוד",
     secureSub: "קודי SMS והתחברות ב-Face ID.",
-    registerCta: "הכניסו אותי גם",
+    registerCta: "צרפו אותי",
   },
   auth: {
-    tagline: "קאשבק על מה שאתם ממליצים",
     heading: "קאשבק שאפשר לסמוך עליו.",
     subheading:
-      "קנו ב-AliExpress דרך Wanthat והרוויחו כסף אמיתי בחזרה — והרוויחו שוב כשחברים משתמשים בקישורים שלכם.",
+      "קנו בחנויות הכי פופולריות דרך wanthat והרוויחו כסף אמיתי בחזרה — והרוויחו שוב כשחברים משתמשים בקישורים שלכם.",
     back: "חזרה",
     phoneLabel: "מספר טלפון",
+    phoneCta: "שלחו לי קוד",
+    phoneHelper: "נשלח לכם קוד חד-פעמי לאימות. בהמשך אתם מסכימים לתנאים ולמדיניות הפרטיות.",
+    otpTitle: "הזינו את הקוד",
+    otpSent: "שלחנו קוד בן {{digits}} ספרות אל",
+    resendPre: "לא קיבלתם?",
+    resendIn: "שליחה חוזרת בעוד {{time}}",
+    skipCodes: "דלגו על קודים בפעם הבאה",
+    skipCodesSub: "הפעילו Face ID / מפתח גישה אחרי ההתחברות.",
     codeLabel: "קוד אימות",
     firstName: "שם פרטי",
     lastName: "שם משפחה",
@@ -479,11 +489,6 @@ const he: typeof en = {
     resend: "שליחת קוד מחדש",
     channelLabel: "לאן לשלוח את הקוד",
     channel: { whatsapp: "וואטסאפ", sms: "SMS" },
-    sentVia: {
-      whatsapp: "שלחנו קוד לוואטסאפ שלך.",
-      sms: "שלחנו קוד ב-SMS.",
-    },
-    sentCode: "שלחנו לך קוד כניסה.",
     finish: "יצירת חשבון",
     passkeyCta: "כניסה עם {{label}}",
     passkeyFallback: "הכניסה הביומטרית לא הצליחה כאן — הזינו את מספר הטלפון ונשלח לכם קוד.",

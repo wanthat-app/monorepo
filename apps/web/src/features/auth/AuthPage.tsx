@@ -6,9 +6,8 @@ import { fetchOtpChannelOptions, type OtpChannelOptions } from "../../lib/otp-ch
 import {
   BackButton,
   Button,
-  Card,
   Checkbox,
-  Logo,
+  LockIcon,
   OtpInput,
   Screen,
   Segmented,
@@ -32,6 +31,7 @@ import {
   signUpWithOtp,
   useSession,
 } from "../../user";
+import { AppHeader } from "../shell/AppHeader";
 
 type Step = "phone" | "loginOtp" | "register" | "signupOtp" | "face";
 
@@ -40,6 +40,10 @@ const LOCALE_BY_LANG: Record<string, string> = { he: "he-IL", en: "en-US" };
 // codes are 6 (they come from the verification-message pipeline, not the OTP challenge).
 const LOGIN_CODE_LENGTH = 8;
 const SIGNUP_CODE_LENGTH = 6;
+// Resend cooldown (design: OTP screen counts down before offering a resend).
+const RESEND_COOLDOWN_S = 30;
+
+const formatCountdown = (s: number) => `0:${String(s).padStart(2, "0")}`;
 
 /**
  * UC1 Onboard + UC2 Sign-in — pure consumer of the user module (ADR-0006: the module talks
@@ -104,6 +108,8 @@ export function AuthPage() {
   // A cancelled ceremony changes nothing (the gate is server truth), so the button always
   // survives a dismissed sheet — the member can re-open the OS prompt instead of OTP.
   const [passkeyAvailable, setPasskeyAvailable] = useState(false);
+  // Seconds until a resend is offered on the OTP steps (reset on every send).
+  const [resendLeft, setResendLeft] = useState(0);
 
   // The pending Cognito ceremonies (module flow objects) — refs, not state: they carry no UI.
   const loginFlow = useRef<OtpLoginFlow | null>(null);
@@ -208,8 +214,22 @@ export function AuthPage() {
 
   const goToOtp = (next: Extract<Step, "loginOtp" | "signupOtp">) => {
     setCode("");
+    setResendLeft(RESEND_COOLDOWN_S);
     setStep(next);
   };
+
+  // Tick the resend countdown (re-armed per second; stops at zero).
+  useEffect(() => {
+    if (resendLeft <= 0) return;
+    const timer = setTimeout(() => setResendLeft((s) => s - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [resendLeft]);
+
+  const onResend = () =>
+    run(async () => {
+      await (step === "loginOtp" ? loginFlow : signUpFlow).current?.resend();
+      setResendLeft(RESEND_COOLDOWN_S);
+    });
 
   // The unified branch (ADR-0006): try the phone as a sign-in; user-not-found → registration;
   // an abandoned sign-up (unconfirmed phone) → re-send the confirmation code and resume it.
@@ -316,33 +336,36 @@ export function AuthPage() {
     );
   }
 
+  const codeLength = step === "signupOtp" ? SIGNUP_CODE_LENGTH : LOGIN_CODE_LENGTH;
+  // The OTP screen names the number the code went to (design) — E.164 with a space after
+  // the country code so it reads naturally.
+  const displayPhone = e164 ? e164.replace("+972", "+972 ") : "";
+
   return (
     <Screen>
-      <div className="flex flex-col items-center gap-2">
-        <Logo />
-        <p className="text-muted">{t("auth.tagline")}</p>
-      </div>
-
-      <Card className="flex flex-col gap-4">
+      <div className="flex flex-col">
         {step === "phone" && (
           <>
+            <div className="mb-5">
+              <AppHeader />
+            </div>
             {/* Back to the app landing at `/` — except for referral arrivals, whose landing
                 was the /p/:id product pitch, not the generic one. */}
             {!referral && (
-              <div>
+              <div className="mb-5">
                 <BackButton onClick={() => navigate("/")} label={t("auth.back")} />
               </div>
             )}
-            <div className="flex flex-col gap-3">
-              <h1 className="text-[30px] leading-[1.12] tracking-[-0.03em]">{t("auth.heading")}</h1>
-              <p className="text-[15px] leading-normal text-muted">{t("auth.subheading")}</p>
-            </div>
+            <h1 className="mb-3 mt-4 text-[30px] font-bold leading-[1.12] tracking-[-0.03em]">
+              {t("auth.heading")}
+            </h1>
+            <p className="mb-7 text-[15px] leading-normal text-secondary">{t("auth.subheading")}</p>
             <label htmlFor="phone" className="block">
-              <span className="mb-1.5 block text-sm font-medium text-muted">
+              <span className="mb-2 block text-[13px] font-semibold text-secondary">
                 {t("auth.phoneLabel")}
               </span>
               <div dir="ltr" className="flex gap-2">
-                <span className="inline-flex h-12 shrink-0 items-center gap-1.5 rounded-input border border-line bg-surface px-3.5 font-medium text-ink">
+                <span className="inline-flex h-12 shrink-0 items-center gap-1.5 rounded-field border border-edge bg-surface px-3.5 text-[15px] font-semibold text-ink">
                   🇮🇱 +972
                 </span>
                 {/* "webauthn" in autocomplete opts this field into conditional-UI passkey
@@ -356,18 +379,18 @@ export function AuthPage() {
                   placeholder="50 123 4567"
                   value={phone}
                   onChange={(e) => setPhone(e.target.value)}
-                  className={`h-12 w-full rounded-input border bg-surface px-4 text-ink outline-none transition focus:border-accent ${
-                    error ? "border-rejected" : "border-line"
+                  className={`h-12 w-full rounded-field border bg-surface px-4 text-[15px] font-medium text-ink outline-none transition placeholder:text-placeholder focus:border-accent ${
+                    error ? "border-rejected" : "border-edge"
                   }`}
                 />
               </div>
               {error ? <span className="mt-1 block text-sm text-rejected">{error}</span> : null}
             </label>
-            {notice ? <p className="text-sm text-muted">{notice}</p> : null}
-            <div className="flex gap-2">
+            {notice ? <p className="mt-3 text-sm text-muted">{notice}</p> : null}
+            <div className="mt-3.5 flex gap-2">
               <div className="min-w-0 flex-1">
                 <Button onClick={onSubmitPhone} loading={busy} disabled={!e164}>
-                  {t("auth.continue")}
+                  {t("auth.phoneCta")}
                 </Button>
               </div>
               {/* Manual biometric login — a square icon button per platform convention (FaceID /
@@ -381,158 +404,186 @@ export function AuthPage() {
                   disabled={busy}
                   aria-label={t("auth.passkeyCta", { label: bioLabel })}
                   title={t("auth.passkeyCta", { label: bioLabel })}
-                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-button border border-line bg-surface text-accent transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
+                  className="flex h-12 w-12 shrink-0 items-center justify-center rounded-button border border-edge bg-surface text-accent transition hover:border-accent disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   <BiometricGlyph size={24} />
                 </button>
               )}
             </div>
+            <p className="mx-1 mt-3.5 text-center text-xs leading-normal text-subtle">
+              {t("auth.phoneHelper")}
+            </p>
           </>
         )}
 
-        {step === "loginOtp" && (
+        {(step === "loginOtp" || step === "signupOtp") && (
           <>
-            <div>
-              <BackButton onClick={() => setStep("phone")} label={t("auth.back")} />
+            <div className="mb-7">
+              <BackButton
+                onClick={() => setStep(step === "loginOtp" ? "phone" : "register")}
+                label={t("auth.back")}
+              />
             </div>
-            <p className="text-[15px] leading-normal text-muted">{t("auth.sentCode")}</p>
+            <h1 className="mb-2.5 text-[27px] font-bold tracking-[-0.03em]">
+              {t("auth.otpTitle")}
+            </h1>
+            <p className="mb-7 text-[15px] leading-normal text-secondary">
+              {t("auth.otpSent", { digits: codeLength })}{" "}
+              <span className="tabular font-bold text-ink">{displayPhone}</span>
+            </p>
             <OtpInput
               name="code"
               label={t("auth.codeLabel")}
               value={code}
               onChange={setCode}
               error={error}
-              maxLength={LOGIN_CODE_LENGTH}
+              maxLength={codeLength}
+              placeholder={"–".repeat(codeLength)}
             />
-            <Button
-              onClick={onVerifyLogin}
-              loading={busy}
-              disabled={code.length !== LOGIN_CODE_LENGTH}
-            >
-              {t("auth.verify")}
-            </Button>
-            <Button variant="ghost" onClick={() => run(async () => loginFlow.current?.resend())}>
-              {t("auth.resend")}
-            </Button>
+            <div className="mt-5">
+              <Button
+                onClick={step === "loginOtp" ? onVerifyLogin : onVerifySignup}
+                loading={busy}
+                disabled={code.length !== codeLength}
+              >
+                {t("auth.verify")}
+              </Button>
+            </div>
+            <p className="mt-5 text-center text-sm text-secondary">
+              {t("auth.resendPre")}{" "}
+              {resendLeft > 0 ? (
+                <span className="tabular font-bold text-accent">
+                  {t("auth.resendIn", { time: formatCountdown(resendLeft) })}
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onResend}
+                  disabled={busy}
+                  className="font-bold text-accent disabled:opacity-60"
+                >
+                  {t("auth.resend")}
+                </button>
+              )}
+            </p>
+            {/* Reassurance chip (design): codes are skippable once a passkey exists. */}
+            {passkeysSupported() && (
+              <div className="mt-8 flex items-center gap-3 rounded-chip border border-accent-border bg-accent-soft px-4 py-3.5">
+                <span className="flex h-[34px] w-[34px] shrink-0 items-center justify-center rounded-[10px] bg-accent text-white">
+                  <LockIcon />
+                </span>
+                <span>
+                  <span className="block text-[13.5px] font-bold text-ink">
+                    {t("auth.skipCodes")}
+                  </span>
+                  <span className="block text-[12.5px] text-secondary">
+                    {t("auth.skipCodesSub")}
+                  </span>
+                </span>
+              </div>
+            )}
           </>
         )}
 
         {step === "register" && (
           <>
-            <div>
+            <div className="mb-6">
               <BackButton onClick={() => setStep("phone")} label={t("auth.back")} />
             </div>
-            <div className="flex flex-col gap-1">
-              <h1 className="text-[27px] tracking-[-0.03em]">{t("auth.registerTitle")}</h1>
-              <p className="text-[15px] leading-normal text-muted">{t("auth.registerSubtitle")}</p>
-            </div>
-            <TextField
-              name="firstName"
-              label={t("auth.firstName")}
-              value={firstName}
-              onChange={(e) => setFirstName(e.target.value)}
-            />
-            <TextField
-              name="lastName"
-              label={t("auth.lastName")}
-              value={lastName}
-              onChange={(e) => setLastName(e.target.value)}
-            />
-            <TextField
-              name="email"
-              type="email"
-              dir="ltr"
-              label={t("auth.email")}
-              placeholder={t("auth.emailPlaceholder")}
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              error={error}
-            />
-            <div>
-              <span className="mb-1.5 block text-sm font-medium text-muted">
-                {t("auth.language")}
-              </span>
-              <Segmented
-                value={lang}
-                onChange={(value) => void i18n.changeLanguage(value)}
-                options={[
-                  { value: "en", label: "English" },
-                  { value: "he", label: "עברית" },
-                ]}
+            <h1 className="mb-2 text-[27px] font-bold tracking-[-0.03em]">
+              {t("auth.registerTitle")}
+            </h1>
+            <p className="mb-6 text-[15px] leading-normal text-secondary">
+              {t("auth.registerSubtitle")}
+            </p>
+            <div className="flex flex-col gap-3.5">
+              <div className="flex gap-2.5">
+                <div className="min-w-0 flex-1">
+                  <TextField
+                    name="firstName"
+                    label={t("auth.firstName")}
+                    value={firstName}
+                    onChange={(e) => setFirstName(e.target.value)}
+                  />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <TextField
+                    name="lastName"
+                    label={t("auth.lastName")}
+                    value={lastName}
+                    onChange={(e) => setLastName(e.target.value)}
+                  />
+                </div>
+              </div>
+              <TextField
+                name="email"
+                type="email"
+                dir="ltr"
+                label={t("auth.email")}
+                placeholder={t("auth.emailPlaceholder")}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                error={error}
               />
-            </div>
-            {/* Channel chooser only when there is an actual choice: the options mirror the
-                admin kill switches (public config endpoint; SMS-only when the fetch failed),
-                so a disabled channel is never offered and a single channel needs no UI. */}
-            {channelOptions && channelOptions.channels.length > 1 && (
               <div>
-                <span className="mb-1.5 block text-sm font-medium text-muted">
-                  {t("auth.channelLabel")}
+                <span className="mb-1.5 block text-[13px] font-semibold text-secondary">
+                  {t("auth.language")}
                 </span>
                 <Segmented
-                  value={channel}
-                  onChange={(value) => setChannel(value as OtpChannel)}
-                  options={channelOptions.channels.map((c) => ({
-                    value: c,
-                    label: t(`auth.channel.${c}`),
-                  }))}
+                  value={lang}
+                  onChange={(value) => void i18n.changeLanguage(value)}
+                  options={[
+                    { value: "en", label: "English" },
+                    { value: "he", label: "עברית" },
+                  ]}
                 />
               </div>
-            )}
-            <Checkbox id="agree-terms" checked={agreed} onChange={setAgreed}>
-              {t("auth.agreePre")}{" "}
-              <a
-                href="https://wanthat.co.il/terms"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-semibold text-accent underline"
+              {/* Channel chooser only when there is an actual choice: the options mirror the
+                admin kill switches (public config endpoint; SMS-only when the fetch failed),
+                so a disabled channel is never offered and a single channel needs no UI. */}
+              {channelOptions && channelOptions.channels.length > 1 && (
+                <div>
+                  <span className="mb-1.5 block text-[13px] font-semibold text-secondary">
+                    {t("auth.channelLabel")}
+                  </span>
+                  <Segmented
+                    value={channel}
+                    onChange={(value) => setChannel(value as OtpChannel)}
+                    options={channelOptions.channels.map((c) => ({
+                      value: c,
+                      label: t(`auth.channel.${c}`),
+                    }))}
+                  />
+                </div>
+              )}
+              <Checkbox id="agree-terms" checked={agreed} onChange={setAgreed}>
+                {t("auth.agreePre")}{" "}
+                <a
+                  href="https://wanthat.co.il/terms"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-accent underline"
+                >
+                  {t("auth.terms")}
+                </a>{" "}
+                {t("auth.and")}{" "}
+                <a
+                  href="https://wanthat.co.il/privacy"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="font-semibold text-accent underline"
+                >
+                  {t("auth.privacy")}
+                </a>
+              </Checkbox>
+              <Button
+                onClick={onRegister}
+                loading={busy}
+                disabled={!firstName || !lastName || !agreed}
               >
-                {t("auth.terms")}
-              </a>{" "}
-              {t("auth.and")}{" "}
-              <a
-                href="https://wanthat.co.il/privacy"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="font-semibold text-accent underline"
-              >
-                {t("auth.privacy")}
-              </a>
-            </Checkbox>
-            <Button
-              onClick={onRegister}
-              loading={busy}
-              disabled={!firstName || !lastName || !agreed}
-            >
-              {t("auth.continue")}
-            </Button>
-          </>
-        )}
-
-        {step === "signupOtp" && (
-          <>
-            <div>
-              <BackButton onClick={() => setStep("register")} label={t("auth.back")} />
+                {t("auth.continue")}
+              </Button>
             </div>
-            <p className="text-[15px] leading-normal text-muted">{t(`auth.sentVia.${channel}`)}</p>
-            <OtpInput
-              name="code"
-              label={t("auth.codeLabel")}
-              value={code}
-              onChange={setCode}
-              error={error}
-              maxLength={SIGNUP_CODE_LENGTH}
-            />
-            <Button
-              onClick={onVerifySignup}
-              loading={busy}
-              disabled={code.length !== SIGNUP_CODE_LENGTH}
-            >
-              {t("auth.verify")}
-            </Button>
-            <Button variant="ghost" onClick={() => run(async () => signUpFlow.current?.resend())}>
-              {t("auth.resend")}
-            </Button>
           </>
         )}
 
@@ -540,7 +591,7 @@ export function AuthPage() {
             fingerprint elsewhere); Skip is one tap and goes straight home. Only rendered where
             passkeysSupported() (see onVerifySignup). */}
         {step === "face" && (
-          <div className="flex flex-col items-center gap-4 text-center">
+          <div className="flex flex-col items-center gap-4 pt-6 text-center">
             <div className="flex h-24 w-24 items-center justify-center rounded-3xl border border-line bg-accent-soft text-accent">
               <BiometricGlyph size={46} strokeWidth={1.7} />
             </div>
@@ -559,7 +610,7 @@ export function AuthPage() {
             </div>
           </div>
         )}
-      </Card>
+      </div>
     </Screen>
   );
 }

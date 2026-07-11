@@ -6,11 +6,11 @@ import {
   Button,
   CartIcon,
   FeatureRow,
-  Logo,
   Screen,
   ShareNodesIcon,
   ShieldIcon,
 } from "../../ui";
+import { AppHeader } from "../shell/AppHeader";
 
 // Illustrative "Sample" balance — cycles so no specific number reads as a promise
 // (design: Wallet flow app-landing; amounts + 1.8s cadence from the mock).
@@ -37,7 +37,7 @@ export function AppLandingPage() {
     <Screen>
       <div className="flex flex-col">
         <div className="mb-6 mt-1">
-          <Logo />
+          <AppHeader />
         </div>
         <h1 className="mb-3 text-[30px] font-bold leading-[1.14] tracking-[-0.03em]">
           {t("landing.headline")}
