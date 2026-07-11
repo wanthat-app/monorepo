@@ -105,7 +105,7 @@ const en = {
       consumer_reward: "Your cashback",
       adjustment: "Adjustment",
       withdrawal: "Withdrawal",
-      recommendation_created: "Link created",
+      recommendation_created: "Recommended",
     },
     turnLinkTitle: "Turn a link into cashback", // (design)
     turnLinkSub: "Paste any AliExpress product and share your reward link.", // (design)
@@ -114,6 +114,7 @@ const en = {
   memberActivity: {
     title: "Activity",
     loadMore: "Load more",
+    share: "Share",
   },
   create: {
     title: "Create a link", // (design)
@@ -528,7 +529,7 @@ const he: typeof en = {
       consumer_reward: "הקאשבק שלכם",
       adjustment: "התאמה",
       withdrawal: "משיכה",
-      recommendation_created: "קישור נוצר",
+      recommendation_created: "המלצתם",
     },
     turnLinkTitle: "הפכו קישור לקאשבק",
     turnLinkSub: "הדביקו מוצר מ-AliExpress ושתפו קישור תגמול.",
@@ -537,6 +538,7 @@ const he: typeof en = {
   memberActivity: {
     title: "פעילות",
     loadMore: "טען עוד",
+    share: "שיתוף",
   },
   create: {
     title: "יצירת קישור",

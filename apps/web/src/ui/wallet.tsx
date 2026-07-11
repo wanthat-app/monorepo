@@ -330,6 +330,7 @@ export function ActivityRow({
   meta,
   amount,
   amountSub,
+  action,
   onClick,
   loading = false,
 }: {
@@ -340,6 +341,8 @@ export function ActivityRow({
   meta?: string;
   amount?: string;
   amountSub?: string;
+  /** Trailing interactive slot (e.g. a share button) rendered after the amount column. */
+  action?: ReactNode;
   onClick?: () => void;
   loading?: boolean;
 }) {
@@ -388,6 +391,7 @@ export function ActivityRow({
           </span>
         ) : null}
       </span>
+      {action}
     </>
   );
   if (onClick) {

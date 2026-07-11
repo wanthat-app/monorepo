@@ -220,7 +220,84 @@ export function rowKey(item: ActivityItemWire): string {
   return item.type === "wallet_entry" ? item.id : `rec-${item.recommendationId}`;
 }
 
-/** One merged-feed row — wallet movements as before, creations as a neutral "link created" row. */
+const SHARE_ICON = (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <circle cx="18" cy="5" r="3" />
+    <circle cx="6" cy="12" r="3" />
+    <circle cx="18" cy="19" r="3" />
+    <path d="M8.6 13.5l6.9 4M15.5 6.5l-7 4" />
+  </svg>
+);
+
+const CHECK_ICON = (
+  <svg
+    width="16"
+    height="16"
+    viewBox="0 0 24 24"
+    fill="none"
+    stroke="currentColor"
+    strokeWidth="2"
+    strokeLinecap="round"
+    strokeLinejoin="round"
+    aria-hidden="true"
+  >
+    <path d="M20 6L9 17l-5-5" />
+  </svg>
+);
+
+/** Re-share a recommendation from its activity row: system share sheet, clipboard fallback. */
+function ShareRecommendationButton({
+  recommendationId,
+  title,
+}: {
+  recommendationId: string;
+  title: string;
+}) {
+  const { t } = useTranslation();
+  const [copied, setCopied] = useState(false);
+  const shareUrl = `${globalThis.location.origin}/p/${encodeURIComponent(recommendationId)}`;
+
+  const share = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title, url: shareUrl });
+        return;
+      } catch {
+        return; // share sheet dismissed - nothing to do
+      }
+    }
+    try {
+      await navigator.clipboard.writeText(shareUrl);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      // Clipboard unavailable (permissions) - the landing page remains reachable via the row.
+    }
+  };
+
+  return (
+    <button
+      type="button"
+      aria-label={t("memberActivity.share")}
+      onClick={() => void share()}
+      className="ms-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-edge bg-page text-ink transition hover:border-accent-border"
+    >
+      {copied ? CHECK_ICON : SHARE_ICON}
+    </button>
+  );
+}
+
+/** One merged-feed row — wallet movements as before, creations as re-shareable "Recommended" rows. */
 export function MemberActivityRow({ item, meta }: { item: ActivityItemWire; meta: string }) {
   const { t } = useTranslation();
   if (item.type === "wallet_entry") {
@@ -252,6 +329,9 @@ export function MemberActivityRow({ item, meta }: { item: ActivityItemWire; meta
       }
       title={t("home.kind.recommendation_created")}
       meta={`${item.title.length > 40 ? `${item.title.slice(0, 40)}…` : item.title} · ${meta}`}
+      action={
+        <ShareRecommendationButton recommendationId={item.recommendationId} title={item.title} />
+      }
     />
   );
 }
