@@ -1,11 +1,15 @@
 import type { ActivityItem } from "@wanthat/contracts";
-import { type ReactNode, useCallback, useEffect, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
+import { Link } from "react-router-dom";
 import { adminApi } from "../../lib/admin-api";
 import { formatMoneyMinor } from "../../lib/money";
 import { Skeleton } from "../../ui/components";
 
 const PAGE_SIZE = 20;
+
+/** A wallet_entry row's member, resolved from its sub; null = lookup failed (e.g. deleted). */
+type Member = { name: string; phone: string } | null;
 
 /**
  * Admin activity page: one paged feed over the audit log (registrations, deletions, future
@@ -19,6 +23,29 @@ export function ActivityView({ token }: { token: string | null }) {
   const [data, setData] = useState<{ items: ActivityItem[]; total: number } | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
+  // wallet_entry audit payloads carry only the member's sub (admin-api cannot reach Cognito
+  // from the endpoint-free VPC, ADR-0004) — the SPA resolves name/phone through the non-VPC
+  // users API, once per sub for the component's lifetime; a miss renders the sub itself.
+  const [members, setMembers] = useState<Record<string, Member>>({});
+  const requestedSubs = useRef(new Set<string>());
+
+  const resolveMembers = useCallback((items: ActivityItem[], tok: string) => {
+    const subs = items.flatMap((i) =>
+      i.type === "wallet_entry" && i.cognitoSub ? [i.cognitoSub] : [],
+    );
+    for (const sub of new Set(subs)) {
+      if (requestedSubs.current.has(sub)) continue;
+      requestedSubs.current.add(sub);
+      void adminApi.getUser(tok, sub).then(
+        ({ user }) =>
+          setMembers((m) => ({
+            ...m,
+            [sub]: { name: `${user.firstName} ${user.lastName}`.trim(), phone: user.phone },
+          })),
+        () => setMembers((m) => ({ ...m, [sub]: null })),
+      );
+    }
+  }, []);
 
   const load = useCallback(
     async (pageNo: number) => {
@@ -28,13 +55,14 @@ export function ActivityView({ token }: { token: string | null }) {
       try {
         const res = await adminApi.listActivity(token, { page: pageNo, pageSize: PAGE_SIZE });
         setData({ items: res.items, total: res.total });
+        resolveMembers(res.items, token);
       } catch {
         setLoadFailed(true);
       } finally {
         setLoading(false);
       }
     },
-    [token],
+    [token, resolveMembers],
   );
 
   useEffect(() => {
@@ -125,7 +153,7 @@ export function ActivityView({ token }: { token: string | null }) {
             {t("admin.activityPage.empty")}
           </div>
         ) : (
-          data?.items.map((item) => <ActivityRow key={item.id} item={item} />)
+          data?.items.map((item) => <ActivityRow key={item.id} item={item} members={members} />)
         )}
       </div>
 
@@ -151,7 +179,7 @@ export function ActivityView({ token }: { token: string | null }) {
   );
 }
 
-function ActivityRow({ item }: { item: ActivityItem }) {
+function ActivityRow({ item, members }: { item: ActivityItem; members: Record<string, Member> }) {
   const d = new Date(item.at);
   const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   const date = d.toLocaleDateString([], { month: "short", day: "numeric" });
@@ -168,20 +196,68 @@ function ActivityRow({ item }: { item: ActivityItem }) {
         <EventBadge type={item.type} />
       </span>
       <span className="min-w-0 flex-1 pe-3">
-        {item.name ? (
-          <span className="block truncate text-[13.5px] font-semibold text-ink">{item.name}</span>
-        ) : null}
-        {item.phone ? (
-          <span className="tabular block text-[12.5px] text-muted rtl:text-right" dir="ltr">
-            {item.phone}
-          </span>
-        ) : null}
-        {!item.name && !item.phone ? <span className="text-[13px] text-muted">—</span> : null}
+        <UserCell item={item} members={members} />
       </span>
       <span className="flex min-w-0 flex-[1.3] flex-wrap items-center gap-2 pe-3 text-[13px] text-muted">
         <Details item={item} />
       </span>
     </div>
+  );
+}
+
+/**
+ * The User column. Per event type: config_changed shows the ACTING ADMIN (its payload names no
+ * member); wallet_entry shows the member whose wallet changed (resolved from the payload's sub,
+ * linked to their detail page; an unresolved sub renders shortened, still linked); everything
+ * else shows the payload's own name/phone (user_registered / user_deleted carry the member's).
+ */
+function UserCell({ item, members }: { item: ActivityItem; members: Record<string, Member> }) {
+  if (item.type === "config_changed") {
+    return item.actor ? (
+      <span className="block truncate text-[13.5px] font-semibold text-ink">{item.actor}</span>
+    ) : (
+      <span className="text-[13px] text-muted">—</span>
+    );
+  }
+
+  if (item.type === "wallet_entry" && item.cognitoSub) {
+    const sub = item.cognitoSub;
+    const member = members[sub];
+    return (
+      <Link to={`/admin/users/${encodeURIComponent(sub)}`} className="group block min-w-0">
+        {member ? (
+          <>
+            <span className="block truncate text-[13.5px] font-semibold text-ink group-hover:underline">
+              {member.name || member.phone}
+            </span>
+            <span className="tabular block text-[12.5px] text-muted rtl:text-right" dir="ltr">
+              {member.phone}
+            </span>
+          </>
+        ) : (
+          <span
+            className="tabular block truncate font-mono text-[12.5px] text-muted group-hover:underline rtl:text-right"
+            dir="ltr"
+          >
+            {sub.slice(0, 8)}…
+          </span>
+        )}
+      </Link>
+    );
+  }
+
+  return (
+    <>
+      {item.name ? (
+        <span className="block truncate text-[13.5px] font-semibold text-ink">{item.name}</span>
+      ) : null}
+      {item.phone ? (
+        <span className="tabular block text-[12.5px] text-muted rtl:text-right" dir="ltr">
+          {item.phone}
+        </span>
+      ) : null}
+      {!item.name && !item.phone ? <span className="text-[13px] text-muted">—</span> : null}
+    </>
   );
 }
 
@@ -247,6 +323,7 @@ function Details({ item }: { item: ActivityItem }) {
     );
   }
 
+  // config_changed: the acting admin lives in the User column, so details are just the change.
   if (item.type === "config_changed" && item.key) {
     return (
       <>
@@ -259,11 +336,6 @@ function Details({ item }: { item: ActivityItem }) {
         <span className="tabular" dir="ltr">
           {configValue(item.previous)} → {configValue(item.value)}
         </span>
-        {item.actor ? (
-          <span className="text-[11.5px] text-placeholder">
-            {t("admin.activityPage.byActor", { actor: item.actor })}
-          </span>
-        ) : null}
       </>
     );
   }

@@ -184,6 +184,7 @@ describe("auditEntryToItem — wallet_entry details", () => {
       amountMinor: "62",
       currency: "USD",
       orderId: "112163",
+      cognitoSub: "22222222-2222-2222-2222-222222222222",
     });
   });
 });

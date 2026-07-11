@@ -34,7 +34,8 @@ export function auditEntryToItem(entry: AuditLogEntry): ActivityItem {
     ...(str(p.key) ? { key: str(p.key) } : {}),
     ...(p.value !== undefined ? { value: p.value } : {}),
     ...(p.previous !== undefined ? { previous: p.previous } : {}),
-    // wallet_entry (the conversion writer's chained rows): order + money details.
+    // wallet_entry (the conversion writer's chained rows): the member + order + money details.
+    ...(str(p.cognitoSub) ? { cognitoSub: str(p.cognitoSub) } : {}),
     ...(str(p.orderId) ? { orderId: str(p.orderId) } : {}),
     ...(str(p.kind) ? { kind: str(p.kind) } : {}),
     ...(str(p.status) ? { status: str(p.status) } : {}),
