@@ -94,8 +94,10 @@ export function AuthPage() {
   const [error, setError] = useState<string | undefined>();
   // Friendly (non-alarming) guidance after a failed biometric ceremony — steers to the OTP form.
   const [notice, setNotice] = useState<string | undefined>();
-  // Snapshot of the per-device passkey gate: state (not a render-time call) so a ceremony
-  // failure that clears the device flag also removes the button — never a dead button.
+  // Snapshot of the per-device passkey gate: state (not a render-time call), re-read after
+  // each ceremony so the button always mirrors the gate. A cancelled ceremony keeps the flag
+  // (cancel and no-credential are indistinguishable), so the button survives a dismissed
+  // sheet — the member can re-open the OS prompt instead of being forced onto OTP.
   const [passkeyAvailable, setPasskeyAvailable] = useState(
     () => passkeysSupported() && canLoginWithPasskey(),
   );
@@ -127,7 +129,7 @@ export function AuthPage() {
   // passkey ceremony has succeeded here before (per-device flag). The module waits for document
   // focus internally (iOS rejects an unfocused ceremony), so this fires right after load or at
   // worst on the member's first tap. Cancel/failure leaves the OTP form in charge with a gentle
-  // pointer at it — and re-reads the gate, which the module clears on a no-credential failure.
+  // pointer at it — the biometric button stays available for a manual retry.
   useEffect(() => {
     if (armed.current) return;
     armed.current = true;

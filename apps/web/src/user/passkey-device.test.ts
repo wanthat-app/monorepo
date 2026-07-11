@@ -116,7 +116,7 @@ describe("per-device passkey flag", () => {
     expect(canLoginWithPasskey()).toBe(true);
   });
 
-  it("is CLEARED when the login ceremony fails with NotAllowedError (no credential here)", async () => {
+  it("SURVIVES a NotAllowedError ceremony failure (cancel is indistinguishable from no-credential)", async () => {
     const store = stubStorage();
     store.set("wanthat.phone", PHONE);
     markDevicePasskey();
@@ -126,8 +126,11 @@ describe("per-device passkey flag", () => {
 
     await expect(loginWithPasskey()).rejects.toThrow("op not allowed");
 
-    expect(hasDevicePasskey()).toBe(false);
-    expect(canLoginWithPasskey()).toBe(false); // never a dead button again
+    // A member who dismisses the OS sheet must keep the biometric button — the browser raises
+    // the same NotAllowedError for a cancel as for a missing credential, so clearing here
+    // would strip an enrolled device's button on a single cancelled prompt.
+    expect(hasDevicePasskey()).toBe(true);
+    expect(canLoginWithPasskey()).toBe(true);
   });
 
   it("SURVIVES a non-credential ceremony failure (e.g. a network blip mid-flow)", async () => {
