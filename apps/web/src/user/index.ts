@@ -12,14 +12,15 @@
  * Cognito public API — no backend participates in authentication (ADR-0006).
  */
 export {
-  canLoginWithPasskey,
   enrollPasskey,
   listPasskeys,
+  loginWithDiscoveredPasskey,
   loginWithOtp,
   loginWithPasskey,
   type OtpLoginFlow,
   type PasskeySummary,
   type ProfilePatch,
+  passkeyLoginAvailable,
   refreshProfile,
   removePasskey,
   resumeSignUp,

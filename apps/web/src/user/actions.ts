@@ -18,7 +18,6 @@ import {
   updateUserAttributes,
   verifyUserAttribute,
 } from "./cognito";
-import { hasDevicePasskey, markDevicePasskey } from "./passkey-device";
 import {
   clearSession,
   completeSignIn,
@@ -27,7 +26,13 @@ import {
   rememberedPhone,
   setProfile,
 } from "./store";
-import { createCredential, getAssertion, waitForDocumentFocus } from "./webauthn";
+import {
+  conditionalMediationSupported,
+  createCredential,
+  discoverPasskeyUser,
+  getAssertion,
+  waitForDocumentFocus,
+} from "./webauthn";
 
 /**
  * The module's actions — everything a page may do to the session. All Cognito ceremonies
@@ -200,13 +205,15 @@ export async function resumeSignUp(phone: string): Promise<SignUpFlow> {
 
 /**
  * Native passkey login: `InitiateAuth(USER_AUTH, WEB_AUTHN)` with the REMEMBERED phone
- * (Cognito's challenge is username-gated; userless login is waived — ADR-0006). Waits for
- * document focus before opening the sheet (iOS rejects an unfocused ceremony), so callers
- * may arm it on load and must not block rendering on the promise. Throws on cancel/failure;
- * the caller falls back to OTP.
+ * (Cognito's challenge is username-gated; native userless login is waived — ADR-0006). The
+ * `phone` override accepts anything Cognito resolves as USERNAME: a typed phone, or the
+ * UUID username a discovery ceremony's userHandle names. Waits for document focus before
+ * opening the sheet (iOS rejects an unfocused ceremony), so callers may arm it on load and
+ * must not block rendering on the promise. Throws on cancel/failure; the caller falls back
+ * to OTP.
  */
 export async function loginWithPasskey(opts?: {
-  /** Override the remembered phone (e.g. a just-typed one). */
+  /** Override the remembered phone (a just-typed one, or a discovered UUID username). */
   phone?: string;
   /** Fires after the biometric succeeds, before the Cognito round-trip — "signing you in…". */
   onCredential?: () => void;
@@ -223,11 +230,9 @@ export async function loginWithPasskey(opts?: {
   const raw = JSON.parse(res.ChallengeParameters?.CREDENTIAL_REQUEST_OPTIONS ?? "{}") as {
     publicKey?: unknown;
   };
-  // A ceremony failure (including NotAllowedError) deliberately leaves the per-device flag
-  // alone: the browser raises the SAME NotAllowedError for a dismissed sheet as for a missing
-  // credential, and clearing on it stripped an enrolled member's biometric button after one
-  // cancelled prompt (leaving OTP as the only path). The flag is set only on success, so a
-  // device that never enrolled still never shows the button.
+  // A ceremony failure changes no local state: the browser raises the same NotAllowedError
+  // for a dismissed sheet as for a missing credential, and the gate is Cognito's answer
+  // anyway (passkeyLoginAvailable) — a cancel can never cost the member their button.
   const credential = await getAssertion(raw.publicKey ?? raw);
   opts?.onCredential?.();
   const final = await respondToAuthChallenge({
@@ -239,16 +244,44 @@ export async function loginWithPasskey(opts?: {
     },
   });
   completeSignIn(requireAuthResult(final));
-  markDevicePasskey();
 }
 
 /**
- * Whether the automatic/manual passkey login can work here at all (ADR-0006 gate): a phone is
- * remembered (Cognito's WEB_AUTHN challenge is username-gated) AND a passkey ceremony has
- * actually succeeded on THIS device (per-device flag — see passkey-device.ts).
+ * Whether passkey login can work for this account — COGNITO'S answer, not a local flag:
+ * `InitiateAuth(USER_AUTH)` without a preferred challenge returns the account's
+ * `AvailableChallenges`, listing WEB_AUTHN iff a passkey credential is registered. Nothing is
+ * sent by this call (SELECT_CHALLENGE is inert until answered) and it needs no auth. Server
+ * truth self-heals every localStorage-drift failure mode the old per-device flag had (pre-flag
+ * enrolments, cleared prompts, wiped storage, passkeys synced from another device). Defaults
+ * to the remembered phone; false when no username is known or on any failure.
  */
-export function canLoginWithPasskey(): boolean {
-  return hasDevicePasskey() && !!rememberedPhone();
+export async function passkeyLoginAvailable(phone?: string): Promise<boolean> {
+  const username = phone ?? rememberedPhone();
+  if (!username) return false;
+  try {
+    const res = await initiateUserAuth({ phone: username });
+    return (res.AvailableChallenges ?? []).includes("WEB_AUTHN");
+  } catch {
+    return false; // unknown user / offline / throttled — OTP stays in charge
+  }
+}
+
+/**
+ * Passkey login for a device with NO remembered phone: conditional-UI (autofill) discovery.
+ * The browser shows this site's passkey in the phone field's autofill iff one exists here;
+ * picking it yields the account's userHandle (the pool's UUID username — verified accepted
+ * as USERNAME), which then runs the real, server-verified WEB_AUTHN flow. Two user
+ * verifications on this first recovery (discovery pick + Cognito ceremony); the sign-in
+ * stores the phone, so later visits take the single-prompt path. Resolves false when
+ * unsupported, aborted, or nothing was picked; throws only if the REAL ceremony fails after
+ * a successful discovery (callers show the OTP fallback notice).
+ */
+export async function loginWithDiscoveredPasskey(signal: AbortSignal): Promise<boolean> {
+  if (!(await conditionalMediationSupported())) return false;
+  const username = await discoverPasskeyUser(signal);
+  if (!username) return false;
+  await loginWithPasskey({ phone: username });
+  return true;
 }
 
 /**
@@ -264,8 +297,6 @@ export async function enrollPasskey(): Promise<void> {
   >;
   const credential = await createCredential(options);
   await completeWebAuthnRegistration(token, credential);
-  // A credential now verifiably exists on this device — arm the biometric login gate.
-  markDevicePasskey();
 }
 
 export interface PasskeySummary {
