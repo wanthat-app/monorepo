@@ -1,4 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+
+// Hoisted fake so the vi.mock factory can close over it (vitest hoists vi.mock above imports).
+// Only the piece the presence middleware touches; routers are tested against their own fakes.
+const { fake } = vi.hoisted(() => ({
+  fake: { opsMetrics: { touch: vi.fn() } },
+}));
+vi.mock("./context", () => ({ getContext: () => fake }));
+
 import { app } from "./handler";
 
 /**
@@ -26,5 +34,28 @@ describe("app-core routing after the auth-surface removal", () => {
 
   it("404s unknown paths via the Hono default (no 501 catch-all anymore)", async () => {
     expect((await app.request("/nope")).status).toBe(404);
+  });
+});
+
+describe("presence middleware (dashboard active-member metric)", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("stamps presence for an authenticated call", async () => {
+    await app.request(
+      "/wallet",
+      {},
+      { event: { requestContext: { authorizer: { jwt: { claims: { sub: "sub-1" } } } } } },
+    );
+    expect(fake.opsMetrics.touch).toHaveBeenCalledWith(
+      "sub-1",
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    );
+  });
+
+  it("does not stamp /healthz (no claims)", async () => {
+    await app.request("/healthz", {});
+    expect(fake.opsMetrics.touch).not.toHaveBeenCalled();
   });
 });
