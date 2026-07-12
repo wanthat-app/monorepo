@@ -318,7 +318,8 @@ const en = {
     loadError: "Failed to load configuration.",
     live: "live",
     stats: {
-      users: "Active users",
+      users: "Registered users",
+      active30d: "Active members (30d)",
       pending: "Pending payouts",
       cashback: "Cashback paid",
       conversions: "Link conversion",
@@ -330,12 +331,16 @@ const en = {
       newToday: "New today",
       new7d: "New (7d)",
       new30d: "New (30d)",
-      active: "Active",
+      active7d: "Active (7d)",
+      active30d: "Active (30d)",
       suspended: "Suspended",
       signups30d: "Signups (last 30 days)",
+      activeTrend: "Active members (last 30 days)",
       error: "Couldn't load user stats.",
-      unavailable:
-        "Signup and status metrics aren't available since the move to Cognito — the Users page shows the approximate pool size.",
+    },
+    recs: {
+      title: "Recommendations",
+      createdTrend: "Created (last 30 days)",
     },
     noticePlaceholder: "Empty = no banner",
     sections: {
@@ -840,7 +845,8 @@ const he: typeof en = {
     loadError: "טעינת התצורה נכשלה.",
     live: "חי",
     stats: {
-      users: "משתמשים פעילים",
+      users: "משתמשים רשומים",
+      active30d: "חברים פעילים (30 יום)",
       pending: "תשלומים ממתינים",
       cashback: "קאשבק ששולם",
       conversions: "המרת קישורים",
@@ -852,12 +858,16 @@ const he: typeof en = {
       newToday: "חדשים היום",
       new7d: "חדשים (7 ימים)",
       new30d: "חדשים (30 יום)",
-      active: "פעילים",
+      active7d: "פעילים (7 ימים)",
+      active30d: "פעילים (30 יום)",
       suspended: "מושהים",
       signups30d: "הרשמות (30 הימים האחרונים)",
+      activeTrend: "חברים פעילים (30 הימים האחרונים)",
       error: "טעינת נתוני המשתמשים נכשלה.",
-      unavailable:
-        "מדדי הרשמה וסטטוס אינם זמינים מאז המעבר ל־Cognito — עמוד המשתמשים מציג את גודל המאגר המקורב.",
+    },
+    recs: {
+      title: "המלצות",
+      createdTrend: "נוצרו (30 הימים האחרונים)",
     },
     noticePlaceholder: "ריק = ללא באנר",
     sections: {
