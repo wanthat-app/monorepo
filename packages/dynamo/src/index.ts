@@ -20,6 +20,13 @@ export {
   NotificationOutboxRepo,
   type NotificationStatus,
 } from "./notification-outbox";
+export {
+  type DailyMetric,
+  jerusalemDate,
+  lastNDates,
+  OpsMetricsRepo,
+  PRESENCE_PREFIX,
+} from "./ops-metrics";
 export { type OtpSinkItem, OtpSinkRepo } from "./otp-sink";
 export { type PollerStateItem, PollerStateRepo } from "./poller-state";
 export { PRODUCT_COUNTER_SK, ProductItem, ProductRepo, type ProductUpsert } from "./product";

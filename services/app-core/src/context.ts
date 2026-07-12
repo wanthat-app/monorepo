@@ -2,6 +2,7 @@ import { createDb } from "@wanthat/db";
 import {
   FxRateRepo,
   getDocClient,
+  OpsMetricsRepo,
   RecommendationRepo,
   type RuntimeConfigReader,
   RuntimeConfigRepo,
@@ -25,6 +26,8 @@ export interface CoreContext {
   config: RuntimeConfigReader;
   /** Read-only: the activity feed merges the member's recommendation creations (byOwner). */
   recommendations: Pick<RecommendationRepo, "listByOwner">;
+  /** Dashboard metrics (OpsCounters): presence stamps for the active-member metric. */
+  opsMetrics: OpsMetricsRepo;
 }
 
 let cached: CoreContext | undefined;
@@ -52,6 +55,7 @@ export function getContext(): CoreContext {
     fx: new FxRateRepo(doc, requireEnv("FX_RATE_TABLE")),
     config: new RuntimeConfigRepo(doc, requireEnv("RUNTIME_CONFIG_TABLE")),
     recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
+    opsMetrics: new OpsMetricsRepo(doc, requireEnv("OPS_COUNTERS_TABLE")),
   };
   return cached;
 }

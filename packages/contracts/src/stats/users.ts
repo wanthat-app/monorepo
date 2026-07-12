@@ -1,47 +1,35 @@
 import { z } from "zod";
-
-/** One day of the signup trend: an ISO calendar date (YYYY-MM-DD, Asia/Jerusalem) + how many
- * customers registered that day. The series is dense (zero-filled) so the chart has a fixed axis. */
-export const UsersDailySignup = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "YYYY-MM-DD"),
-  count: z.number().int().nonnegative(),
-});
-export type UsersDailySignup = z.infer<typeof UsersDailySignup>;
+import { DailyCount } from "./daily";
 
 /**
- * GET /admin/stats/users — customer-population metrics for the admin dashboard.
+ * GET /admin/stats/users — the dashboard's population + activity metrics, all served from the
+ * OpsCounters DynamoDB table (in-VPC admin-api needs no cognito-idp — ADR-0004):
  *
- * Since T7 (ADR-0006 decision 4: Aurora is money-only; the `customer` table is dropped) these
- * metrics have NO in-VPC data source: the customer store is Cognito, and admin-api cannot reach
- * cognito-idp from the endpoint-free VPC (ADR-0004). Every field is therefore optional and the
- * endpoint currently returns an empty object; the approximate pool total is served instead by
- * `ListUsersResponse.total` on the users page (admin-credentials, non-VPC —
- * `DescribeUserPool.EstimatedNumberOfUsers`). The fields are kept, optional rather than deleted,
- * so the SPA dashboard keeps compiling until its Cognito-era rework decides what to show here
- * (status split and signup trend would need a `ListUsers`-derived aggregation — deliberately
- * deferred; see ADR-0006 "Admin user views").
+ * - `usersCount` / `suspendedUsersCount`: the EXACT `customerCounter` item (atomic ADD, kept by
+ *   the Post-Confirmation trigger + the admin moderation routes). Counts CONFIRMED customers
+ *   only — deliberately narrower than the users page's approximate whole-pool estimate
+ *   (`ListUsersResponse.total`, includes UNCONFIRMED).
+ * - `newToday` / `new7d` / `new30d` + `dailySignups`: sums of the `signupsDaily#<date>` items.
+ * - `active7d` / `active30d`: DISTINCT members whose `presence#<sub>` stamp falls in the window.
+ *   "Active" means USED THE APP (any authenticated member-API call) — not "signed in recently",
+ *   which refresh-token sessions would undercount.
+ * - `dailyActive`: the `activeDaily#<date>` items (distinct members per single day).
  *
- * `usersCount` / `suspendedUsersCount` (additive) revived the dashboard KPI as an EXACT figure:
- * they read the `customerCounter` item in the OpsCounters table (atomic ADD, kept by
- * the Post-Confirmation trigger + the admin moderation routes). Semantics differ from the legacy
- * fields on purpose — the counter counts CONFIRMED customers only (only PostConfirmation
- * increments), while the users page's `ListUsersResponse.total` stays the approximate WHOLE pool
- * including UNCONFIRMED users.
+ * All windows/dates are Asia/Jerusalem. Counters exist from the 2026-07 dashboard slice onward;
+ * earlier days read as zero (spec 2026-07-12, approach B).
  */
 export const UsersStats = z.object({
-  /** Exact confirmed-customer total from the `customerCounter` item. */
-  usersCount: z.number().int().nonnegative().optional(),
-  /** Exact suspended subset of `usersCount` (counter `disabled`). Active = usersCount - this. */
-  suspendedUsersCount: z.number().int().nonnegative().optional(),
-  total: z.number().int().nonnegative().optional(),
-  active: z.number().int().nonnegative().optional(),
-  suspended: z.number().int().nonnegative().optional(),
-  /** Registered since local midnight today (Asia/Jerusalem). */
-  newToday: z.number().int().nonnegative().optional(),
-  /** Registered in the rolling last 7 / 30 days. */
-  new7d: z.number().int().nonnegative().optional(),
-  new30d: z.number().int().nonnegative().optional(),
-  /** Dense, ascending, exactly 30 entries (oldest → today) for the trend chart. */
-  dailySignups: z.array(UsersDailySignup).length(30).optional(),
+  usersCount: z.number().int().nonnegative(),
+  suspendedUsersCount: z.number().int().nonnegative(),
+  /** Registered since local midnight today / in the rolling last 7 / 30 days. */
+  newToday: z.number().int().nonnegative(),
+  new7d: z.number().int().nonnegative(),
+  new30d: z.number().int().nonnegative(),
+  /** Distinct members active in the rolling last 7 / 30 days (see "active" above). */
+  active7d: z.number().int().nonnegative(),
+  active30d: z.number().int().nonnegative(),
+  /** Dense, ascending, exactly 30 entries (oldest → today). */
+  dailySignups: z.array(DailyCount).length(30),
+  dailyActive: z.array(DailyCount).length(30),
 });
 export type UsersStats = z.infer<typeof UsersStats>;

@@ -11,10 +11,13 @@
  * validated with the shared Zod contracts at the boundary.
  */
 
+import { jerusalemDate } from "@wanthat/dynamo";
 import { Hono } from "hono";
 import type { LambdaEvent } from "hono/aws-lambda";
 import { handle } from "hono/aws-lambda";
+import { subFromClaims } from "./claims";
 import { publicConfigRouter } from "./config/router";
+import { getContext } from "./context";
 import { productsRouter, recommendationsRouter } from "./links/router";
 
 const SERVICE = "app-links";
@@ -26,6 +29,15 @@ app.get("/healthz", (c) => c.json({ ok: true, service: SERVICE }));
 // PUBLIC config projection (allow-listed keys only) — no JWT authorizer at the gateway, like
 // /healthz. The SPA reads it pre-sign-in (e.g. the register screen's OTP channel options).
 app.route("/config", publicConfigRouter());
+
+// Presence stamp (dashboard active-member metric, spec 2026-07-12): any authenticated call
+// marks the member active today. Fire-and-forget - never delays or fails the request; routes
+// without JWT claims (healthz, public config) skip through.
+app.use("*", async (c, next) => {
+  const sub = subFromClaims(c);
+  if (sub) getContext().opsMetrics.touch(sub, jerusalemDate());
+  await next();
+});
 
 // The links module (ADR-0002), behind the JWT authorizer at the gateway.
 app.route("/products", productsRouter());

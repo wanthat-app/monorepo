@@ -19,7 +19,7 @@ import {
   UpdateRecommendationResponse,
 } from "@wanthat/contracts";
 import { buildEstimate } from "@wanthat/domain";
-import type { ProductItem, RecommendationItem } from "@wanthat/dynamo";
+import { jerusalemDate, type ProductItem, type RecommendationItem } from "@wanthat/dynamo";
 import type { Context } from "hono";
 import { Hono } from "hono";
 import { type Bindings, subFromClaims } from "../claims";
@@ -238,6 +238,13 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
     ) {
       console.error("recommendation id collision", { recommendationId: item.recommendationId });
       return c.json({ error: "internal_error" }, 500);
+    }
+    // Daily-created counter (dashboard trend): stats-grade, fire-and-forget - a counter miss
+    // never fails the member's create. Replays (created=false) don't recount.
+    if (created) {
+      void ctx.opsMetrics.incrementDaily("recsDaily", jerusalemDate()).catch((err) => {
+        console.error("recs_daily_count_failed", err);
+      });
     }
     return moneyJson(
       c,

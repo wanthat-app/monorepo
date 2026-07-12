@@ -6,12 +6,23 @@ const { ctx } = vi.hoisted(() => ({
     products: { count: vi.fn().mockResolvedValue(0) },
     recommendations: { count: vi.fn().mockResolvedValue(0) },
     customerCounter: { get: vi.fn().mockResolvedValue({ total: 0, disabled: 0 }) },
+    opsMetrics: {
+      // Default: every daily metric reads as a zero-filled map; window counts read 0.
+      getDailyCounts: vi.fn(
+        async (_metric: string, dates: string[]) => new Map(dates.map((d) => [d, 0])),
+      ),
+      countActiveSince: vi.fn().mockResolvedValue(0),
+    },
     db: {},
   } as {
     config: { getAll: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
     products: { count: ReturnType<typeof vi.fn> };
     recommendations: { count: ReturnType<typeof vi.fn> };
     customerCounter: { get: ReturnType<typeof vi.fn> };
+    opsMetrics: {
+      getDailyCounts: ReturnType<typeof vi.fn>;
+      countActiveSince: ReturnType<typeof vi.fn>;
+    };
     db: object;
     otpSink?: { scanAll: ReturnType<typeof vi.fn> };
   },
@@ -55,12 +66,56 @@ describe("admin catalog stats", () => {
     ctx.recommendations.count.mockResolvedValue(97);
     const res = await app.request("/admin/stats/catalog", {}, adminEnv);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ products: 41, recommendations: 97 });
+    expect(await res.json()).toEqual(
+      expect.objectContaining({ products: 41, recommendations: 97 }),
+    );
     expect(ctx.products.count).toHaveBeenCalledWith("aliexpress");
+  });
+
+  it("includes the dense 30-day created trend", async () => {
+    ctx.products.count.mockResolvedValue(1);
+    ctx.recommendations.count.mockResolvedValue(2);
+    const res = await app.request("/admin/stats/catalog", {}, adminEnv);
+    const body = (await res.json()) as { dailyCreated: { date: string; count: number }[] };
+    expect(body.dailyCreated.length).toBe(30);
+    expect(ctx.opsMetrics.getDailyCounts).toHaveBeenCalledWith("recsDaily", expect.any(Array));
   });
 
   it("403s a non-admin", async () => {
     expect((await app.request("/admin/stats/catalog", {}, memberEnv)).status).toBe(403);
+  });
+});
+
+describe("admin users stats", () => {
+  it("aggregates counters, windows and dense 30-day series", async () => {
+    ctx.customerCounter.get.mockResolvedValue({ total: 12, disabled: 2 });
+    // signups: 2 today (last date), 3 on the oldest date; active: 1 every day.
+    ctx.opsMetrics.getDailyCounts.mockImplementation(
+      async (metric: string, dates: string[]) =>
+        new Map(
+          dates.map((d, i) => [
+            d,
+            metric === "signupsDaily" ? (i === dates.length - 1 ? 2 : i === 0 ? 3 : 0) : 1,
+          ]),
+        ),
+    );
+    ctx.opsMetrics.countActiveSince.mockResolvedValueOnce(4).mockResolvedValueOnce(9);
+    const res = await app.request("/admin/stats/users", {}, adminEnv);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.usersCount).toBe(12);
+    expect(body.suspendedUsersCount).toBe(2);
+    expect(body.newToday).toBe(2);
+    expect(body.new7d).toBe(2); // the oldest-day 3 falls outside the 7-day window
+    expect(body.new30d).toBe(5);
+    expect(body.active7d).toBe(4);
+    expect(body.active30d).toBe(9);
+    expect((body.dailySignups as unknown[]).length).toBe(30);
+    expect((body.dailyActive as unknown[]).length).toBe(30);
+  });
+
+  it("403s a non-admin", async () => {
+    expect((await app.request("/admin/stats/users", {}, memberEnv)).status).toBe(403);
   });
 });
 
@@ -199,7 +254,9 @@ describe("admin user stats (exact customer counter - the customerCounter item in
     ctx.customerCounter.get.mockResolvedValue({ total: 41, disabled: 3 });
     const res = await app.request("/admin/stats/users", {}, adminEnv);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ usersCount: 41, suspendedUsersCount: 3 });
+    expect(await res.json()).toEqual(
+      expect.objectContaining({ usersCount: 41, suspendedUsersCount: 3 }),
+    );
   });
 
   it("overview reports the EXACT usersCount alongside the other placeholders", async () => {
@@ -218,7 +275,9 @@ describe("admin user stats (exact customer counter - the customerCounter item in
     ctx.customerCounter.get.mockResolvedValue({ total: 0, disabled: 0 });
     const res = await app.request("/admin/stats/users", {}, adminEnv);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ usersCount: 0, suspendedUsersCount: 0 });
+    expect(await res.json()).toEqual(
+      expect.objectContaining({ usersCount: 0, suspendedUsersCount: 0 }),
+    );
   });
 });
 

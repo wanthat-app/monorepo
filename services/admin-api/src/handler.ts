@@ -26,6 +26,7 @@ import {
   UsersStats,
 } from "@wanthat/contracts";
 import { appendConfigChangeAudit, listAuditLog } from "@wanthat/db";
+import { lastNDates } from "@wanthat/dynamo";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { auditEntryToItem, mergeByAtDesc, otpSinkToItems, outboxToItems } from "./activity";
@@ -129,24 +130,58 @@ app.get("/admin/stats/overview", async (c) => {
   });
 });
 
-// GET /admin/stats/users — the exact counter figures (`usersCount` / `suspendedUsersCount`; the
-// contract documents the confirmed-only semantics). The Aurora-era population metrics (status
-// split, signup trend) stayed unavailable since T7 — a ListUsers-derived aggregation remains
-// deliberately deferred (see the contract's doc).
+// GET /admin/stats/users — population + activity metrics, all DynamoDB (ADR-0004: no
+// cognito-idp in the endpoint-free VPC). Counters per the 2026-07-12 dashboard spec:
+// exact customerCounter totals, signupsDaily/activeDaily 30-day series (dense, zero-filled,
+// Asia/Jerusalem), and DISTINCT active-in-window counts from the presence stamps (which daily
+// counters cannot express - repeat visitors would double-count).
 app.get("/admin/stats/users", async (c) => {
-  const { total, disabled } = await getContext().customerCounter.get();
-  return c.json(UsersStats.parse({ usersCount: total, suspendedUsersCount: disabled }));
+  const ctx = getContext();
+  const dates = lastNDates(30);
+  const [counter, signups, active, active7d, active30d] = await Promise.all([
+    ctx.customerCounter.get(),
+    ctx.opsMetrics.getDailyCounts("signupsDaily", dates),
+    ctx.opsMetrics.getDailyCounts("activeDaily", dates),
+    ctx.opsMetrics.countActiveSince(dates[dates.length - 7] as string),
+    ctx.opsMetrics.countActiveSince(dates[0] as string),
+  ]);
+  const series = (m: Map<string, number>) =>
+    dates.map((date) => ({ date, count: m.get(date) ?? 0 }));
+  const sumLast = (m: Map<string, number>, n: number) =>
+    dates.slice(-n).reduce((acc, d) => acc + (m.get(d) ?? 0), 0);
+  return c.json(
+    UsersStats.parse({
+      usersCount: counter.total,
+      suspendedUsersCount: counter.disabled,
+      newToday: sumLast(signups, 1),
+      new7d: sumLast(signups, 7),
+      new30d: sumLast(signups, 30),
+      active7d,
+      active30d,
+      dailySignups: series(signups),
+      dailyActive: series(active),
+    }),
+  );
 });
 
 // GET /admin/stats/catalog — exact product + recommendation totals from the transactional
-// counters (incremented atomically with each conditional create; sentinel items in the tables).
+// counters (incremented atomically with each conditional create; sentinel items in the tables),
+// plus the 30-day recommendations-created trend (recsDaily items, dense/zero-filled).
 app.get("/admin/stats/catalog", async (c) => {
   const ctx = getContext();
-  const [products, recommendations] = await Promise.all([
+  const dates = lastNDates(30);
+  const [products, recommendations, created] = await Promise.all([
     ctx.products.count("aliexpress"),
     ctx.recommendations.count(),
+    ctx.opsMetrics.getDailyCounts("recsDaily", dates),
   ]);
-  return c.json(CatalogStats.parse({ products, recommendations }));
+  return c.json(
+    CatalogStats.parse({
+      products,
+      recommendations,
+      dailyCreated: dates.map((date) => ({ date, count: created.get(date) ?? 0 })),
+    }),
+  );
 });
 
 // NOTE: GET /admin/users (list/search) and the ban tooling (disable / enable / global-signout)

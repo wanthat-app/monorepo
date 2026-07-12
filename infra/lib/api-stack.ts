@@ -38,6 +38,8 @@ export interface ApiStackProps extends StackProps {
   readonly recommendationTable: dynamodb.ITable;
   readonly fxRateTable: dynamodb.ITable;
   readonly runtimeConfigTable: dynamodb.ITable;
+  /** Dashboard metrics: daily counters + presence stamps (see packages/dynamo ops-metrics). */
+  readonly opsCountersTable: dynamodb.ITable;
   // In-VPC placement + Aurora (ADR-0004/0003) — app-core only.
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
@@ -97,6 +99,8 @@ export class ApiStack extends Stack {
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
         RETAILER_PROXY_FUNCTION: `wanthat-${wanthatEnv.name}-retailer-proxy`,
         FX_RATE_TABLE: props.fxRateTable.tableName,
+        // Dashboard metrics (spec 2026-07-12): presence stamps + daily counters in OpsCounters.
+        OPS_COUNTERS_TABLE: props.opsCountersTable.tableName,
         APP_URL: appUrl(wanthatEnv),
       },
       bundling: { minify: true, sourceMap: true },
@@ -110,6 +114,8 @@ export class ApiStack extends Stack {
     props.recommendationTable.grantReadWriteData(appLinksFn);
     props.fxRateTable.grantReadData(appLinksFn);
     props.runtimeConfigTable.grantReadData(appLinksFn);
+    // Write-only on OpsCounters: presence stamps + daily counter ADDs are UpdateItems.
+    props.opsCountersTable.grantWriteData(appLinksFn);
     // Synchronous generateLink invoke — free from a non-VPC function (ADR-0004 asymmetry). ARN
     // constructed from the deterministic function name so no CloudFormation export ties this
     // stack to EdgeServices.
@@ -156,6 +162,8 @@ export class ApiStack extends Stack {
         // The member activity feed merges recommendation creations (byOwner, read-only)
         // into the wallet movements - over the free DynamoDB gateway endpoint (ADR-0004).
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
+        // Dashboard metrics (spec 2026-07-12): presence stamps in OpsCounters.
+        OPS_COUNTERS_TABLE: props.opsCountersTable.tableName,
         ...RDS_CA_ENV,
       },
       bundling: rdsCaBundling,
@@ -167,6 +175,8 @@ export class ApiStack extends Stack {
     props.fxRateTable.grantReadData(appCoreFn);
     props.recommendationTable.grantReadData(appCoreFn);
     props.runtimeConfigTable.grantReadData(appCoreFn);
+    // Write-only on OpsCounters: presence stamps + the activeDaily ADD are UpdateItems.
+    props.opsCountersTable.grantWriteData(appCoreFn);
 
     // --- One HTTP API fronting both functions ---
     const linksIntegration = new HttpLambdaIntegration("AppLinksIntegration", appLinksFn);

@@ -205,23 +205,8 @@ function DashboardView({ token }: { token: string | null }) {
 
   return (
     <div className="flex flex-col gap-[18px]">
+      {/* Headline KPIs (spec 2026-07-12): registered, active, recommendations, products. */}
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
-        <KpiCard
-          label={t("admin.stats.cashback")}
-          value="—"
-          icon={<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />}
-        />
-        <KpiCard
-          label={t("admin.stats.pending")}
-          value="—"
-          tone="pending"
-          icon={
-            <>
-              <circle cx="12" cy="12" r="9" />
-              <path d="M12 7v5l3 2" />
-            </>
-          }
-        />
         <KpiCard
           label={t("admin.stats.users")}
           value={
@@ -243,12 +228,13 @@ function DashboardView({ token }: { token: string | null }) {
           }
         />
         <KpiCard
-          label={t("admin.stats.conversions")}
-          value="—"
+          label={t("admin.stats.active30d")}
+          value={failed ? "—" : num(users?.active30d)}
+          live
           icon={
             <>
-              <path d="M3 17l6-6 4 4 7-7" />
-              <path d="M14 8h6v6" />
+              <circle cx="12" cy="12" r="9" />
+              <path d="M8 12l3 3 5-6" />
             </>
           }
         />
@@ -276,7 +262,38 @@ function DashboardView({ token }: { token: string | null }) {
         />
       </div>
 
+      {/* Money KPIs: still placeholders — the wallet-aggregation slice's job, not deleted. */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+        <KpiCard
+          label={t("admin.stats.cashback")}
+          value="—"
+          icon={<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />}
+        />
+        <KpiCard
+          label={t("admin.stats.pending")}
+          value="—"
+          tone="pending"
+          icon={
+            <>
+              <circle cx="12" cy="12" r="9" />
+              <path d="M12 7v5l3 2" />
+            </>
+          }
+        />
+        <KpiCard
+          label={t("admin.stats.conversions")}
+          value="—"
+          icon={
+            <>
+              <path d="M3 17l6-6 4 4 7-7" />
+              <path d="M14 8h6v6" />
+            </>
+          }
+        />
+      </div>
+
       <UsersPanel users={failed ? null : users} failed={failed} />
+      <RecsPanel catalog={catalog} />
     </div>
   );
 }
@@ -285,33 +302,54 @@ function UsersPanel({ users, failed }: { users: UsersStats | null; failed: boole
   const { t } = useTranslation();
   const num = (v: number | undefined) =>
     v === undefined ? <Skeleton className="h-[22px] w-12" /> : v.toLocaleString("en-US");
-  // Since T7 the endpoint answers with an empty object (no in-VPC customer store to aggregate) —
-  // a loaded-but-fieldless response means "metrics unavailable", not "still loading".
-  const unavailable =
-    users !== null && users.newToday === undefined && users.dailySignups === undefined;
   return (
     <div className="rounded-card border border-line bg-surface p-5">
       <h2 className="mb-4 font-display text-lg font-semibold text-ink">{t("admin.users.title")}</h2>
       {failed ? (
         <div className="py-10 text-center text-sm text-muted">{t("admin.users.error")}</div>
-      ) : unavailable ? (
-        <div className="py-10 text-center text-sm text-muted">{t("admin.users.unavailable")}</div>
       ) : (
         <>
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             <StatTile label={t("admin.users.newToday")} value={num(users?.newToday)} />
             <StatTile label={t("admin.users.new7d")} value={num(users?.new7d)} />
             <StatTile label={t("admin.users.new30d")} value={num(users?.new30d)} />
-            <StatTile label={t("admin.users.active")} value={num(users?.active)} />
-            <StatTile label={t("admin.users.suspended")} value={num(users?.suspended)} />
+            <StatTile label={t("admin.users.active7d")} value={num(users?.active7d)} />
+            <StatTile label={t("admin.users.active30d")} value={num(users?.active30d)} />
+            <StatTile label={t("admin.users.suspended")} value={num(users?.suspendedUsersCount)} />
           </div>
           <div className="mt-5">
             <div className="mb-2 text-[12.5px] font-semibold text-muted">
               {t("admin.users.signups30d")}
             </div>
-            <SignupTrend data={users?.dailySignups ?? null} />
+            <DailyTrend data={users?.dailySignups ?? null} />
+          </div>
+          <div className="mt-5">
+            <div className="mb-2 text-[12.5px] font-semibold text-muted">
+              {t("admin.users.activeTrend")}
+            </div>
+            <DailyTrend data={users?.dailyActive ?? null} />
           </div>
         </>
+      )}
+    </div>
+  );
+}
+
+/** The recommendations panel: the 30-day created trend (catalog stats' dailyCreated). */
+function RecsPanel({ catalog }: { catalog: CatalogStats | null | undefined }) {
+  const { t } = useTranslation();
+  return (
+    <div className="rounded-card border border-line bg-surface p-5">
+      <h2 className="mb-4 font-display text-lg font-semibold text-ink">{t("admin.recs.title")}</h2>
+      {catalog === null ? (
+        <div className="py-10 text-center text-sm text-muted">{t("admin.users.error")}</div>
+      ) : (
+        <div>
+          <div className="mb-2 text-[12.5px] font-semibold text-muted">
+            {t("admin.recs.createdTrend")}
+          </div>
+          <DailyTrend data={catalog?.dailyCreated ?? null} />
+        </div>
       )}
     </div>
   );
@@ -326,8 +364,8 @@ function StatTile({ label, value }: { label: string; value: ReactNode }) {
   );
 }
 
-/** A compact 30-bar daily-signup trend. LTR regardless of page direction so time reads left→right. */
-function SignupTrend({ data }: { data: UsersStats["dailySignups"] | null }) {
+/** A compact 30-bar daily trend. LTR regardless of page direction so time reads left→right. */
+function DailyTrend({ data }: { data: { date: string; count: number }[] | null }) {
   if (!data) return <Skeleton className="h-24" />;
   const max = Math.max(1, ...data.map((d) => d.count));
   return (

@@ -11,10 +11,12 @@
  */
 
 import { waitForDb } from "@wanthat/db";
+import { jerusalemDate } from "@wanthat/dynamo";
 import { Hono } from "hono";
 import type { LambdaEvent } from "hono/aws-lambda";
 import { handle } from "hono/aws-lambda";
 import { activityRouter } from "./activity/router";
+import { subFromClaims } from "./claims";
 import { getContext } from "./context";
 import { walletRouter } from "./wallet/router";
 
@@ -32,6 +34,15 @@ app.get("/healthz/db", async (c) => {
   const started = Date.now();
   await waitForDb(getContext().db, { attempts: 1 });
   return c.json({ ok: true, service: SERVICE, ms: Date.now() - started });
+});
+
+// Presence stamp (dashboard active-member metric, spec 2026-07-12): any authenticated call
+// marks the member active today. Fire-and-forget - never delays or fails the request; the
+// public healthz probes carry no claims and skip through.
+app.use("*", async (c, next) => {
+  const sub = subFromClaims(c);
+  if (sub) getContext().opsMetrics.touch(sub, jerusalemDate());
+  await next();
 });
 
 // `/wallet` sits behind the JWT authorizer at the gateway and reads the verified claims.
