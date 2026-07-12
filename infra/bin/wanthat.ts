@@ -74,6 +74,8 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   recommendationTable: data.recommendationTable,
   fxRateTable: data.fxRateTable,
   runtimeConfigTable: data.runtimeConfigTable,
+  // Dashboard metrics: app-core + app-links stamp presence / bump daily counters.
+  opsCountersTable: data.opsCountersTable,
   vpc: network.vpc,
   lambdaSg: network.lambdaSg,
   cluster: data.cluster,
