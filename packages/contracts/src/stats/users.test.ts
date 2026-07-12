@@ -29,9 +29,7 @@ describe("UsersStats contract", () => {
   });
 
   it("rejects a series that is not exactly 30 entries", () => {
-    expect(UsersStats.safeParse({ ...FULL, dailySignups: dense.slice(0, 29) }).success).toBe(
-      false,
-    );
+    expect(UsersStats.safeParse({ ...FULL, dailySignups: dense.slice(0, 29) }).success).toBe(false);
     expect(UsersStats.safeParse({ ...FULL, dailyActive: dense.slice(0, 29) }).success).toBe(false);
   });
 
