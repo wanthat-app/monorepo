@@ -3,6 +3,7 @@ import {
   CustomerCounterRepo,
   getDocClient,
   NotificationOutboxRepo,
+  OpsMetricsRepo,
   OtpSinkRepo,
   ProductRepo,
   RecommendationRepo,
@@ -26,6 +27,8 @@ export interface AdminContext {
   recommendations: RecommendationRepo;
   /** Read-only (stats): the exact customer counter (`customerCounter` in OpsCounters). */
   customerCounter: CustomerCounterRepo;
+  /** Read-only (stats): daily counters + presence items in OpsCounters (dashboard trends). */
+  opsMetrics: OpsMetricsRepo;
   /** The unattributed-order claim queue (list + claim/dismiss intents; the proxy settles). */
   unattributedOrders: UnattributedOrderRepo;
   /** Parked OTP codes for the activity feed (docs/otp-sink.md) — present in every env. */
@@ -60,6 +63,7 @@ export function getContext(): AdminContext {
       getDocClient(region),
       requireEnv("OPS_COUNTERS_TABLE"),
     ),
+    opsMetrics: new OpsMetricsRepo(getDocClient(region), requireEnv("OPS_COUNTERS_TABLE")),
     products: new ProductRepo(getDocClient(region), requireEnv("PRODUCT_TABLE")),
     recommendations: new RecommendationRepo(
       getDocClient(region),
