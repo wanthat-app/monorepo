@@ -4,6 +4,7 @@ import {
   GuestAttributionRepo,
   getDocClient,
   NotificationOutboxRepo,
+  OpsMetricsRepo,
 } from "@wanthat/dynamo";
 import { type ConfirmDeps, handleConfirmation, type PostConfirmationEvent } from "./confirm";
 
@@ -25,6 +26,7 @@ function getDeps(): ConfirmDeps {
     outbox: new NotificationOutboxRepo(doc, requireEnv("NOTIFICATION_OUTBOX_TABLE")),
     guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
     counter: new CustomerCounterRepo(doc, requireEnv("OPS_COUNTERS_TABLE")),
+    metrics: new OpsMetricsRepo(doc, requireEnv("OPS_COUNTERS_TABLE")),
     appUrl: requireEnv("APP_URL"),
     log: {
       info: (msg, ctx) => logger.info(msg, ctx ?? {}),

@@ -5,6 +5,7 @@ const deps = {
   outbox: { put: vi.fn().mockResolvedValue(undefined) },
   guests: { claim: vi.fn().mockResolvedValue(true) },
   counter: { incrementTotal: vi.fn().mockResolvedValue(undefined) },
+  metrics: { incrementDaily: vi.fn().mockResolvedValue(undefined) },
   appUrl: "https://dev.wanthat.app",
   log: { info: vi.fn(), error: vi.fn() },
 } satisfies ConfirmDeps;
@@ -38,6 +39,7 @@ beforeEach(() => {
   deps.outbox.put.mockResolvedValue(undefined);
   deps.guests.claim.mockResolvedValue(true);
   deps.counter.incrementTotal.mockResolvedValue(undefined);
+  deps.metrics.incrementDaily.mockResolvedValue(undefined);
 });
 
 afterEach(() => {
@@ -178,6 +180,29 @@ describe("handleConfirmation — exact customer counter", () => {
   });
 });
 
+describe("handleConfirmation — daily signup counter", () => {
+  it("bumps the daily signup counter with the Jerusalem date", async () => {
+    await handleConfirmation(deps, event(ATTRS));
+    // NOW is 10:00 UTC = 13:00 in Jerusalem, same calendar day.
+    expect(deps.metrics.incrementDaily).toHaveBeenCalledWith("signupsDaily", "2026-07-09");
+  });
+
+  it("swallows a daily-counter failure — logs, never blocks confirmation", async () => {
+    deps.metrics.incrementDaily.mockRejectedValue(new Error("dynamo down"));
+    await expect(handleConfirmation(deps, event(ATTRS))).resolves.toBeUndefined();
+    expect(deps.log.error).toHaveBeenCalledWith("signup_daily_count_failed", {
+      sub: "sub-1234",
+      error: "dynamo down",
+    });
+  });
+
+  it("still counts the day when the earlier steps failed (steps are independent)", async () => {
+    deps.counter.incrementTotal.mockRejectedValue(new Error("dynamo down"));
+    await handleConfirmation(deps, event(ATTRS));
+    expect(deps.metrics.incrementDaily).toHaveBeenCalledTimes(1);
+  });
+});
+
 describe("handleConfirmation — foreign trigger sources", () => {
   it("no-ops on PostConfirmation_ConfirmForgotPassword", async () => {
     await handleConfirmation(
@@ -187,6 +212,7 @@ describe("handleConfirmation — foreign trigger sources", () => {
     expect(deps.outbox.put).not.toHaveBeenCalled();
     expect(deps.guests.claim).not.toHaveBeenCalled();
     expect(deps.counter.incrementTotal).not.toHaveBeenCalled();
+    expect(deps.metrics.incrementDaily).not.toHaveBeenCalled();
     expect(deps.log.info).not.toHaveBeenCalled();
     expect(deps.log.error).not.toHaveBeenCalled();
   });

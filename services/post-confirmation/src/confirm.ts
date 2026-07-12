@@ -1,5 +1,5 @@
 import { randomUUID } from "node:crypto";
-import type { NotificationOutboxItem } from "@wanthat/dynamo";
+import { jerusalemDate, type NotificationOutboxItem } from "@wanthat/dynamo";
 
 /** The slice of Cognito's Post Confirmation event we consume. */
 export interface PostConfirmationEvent {
@@ -19,6 +19,8 @@ export interface ConfirmDeps {
   };
   /** The exact customer counter (`customerCounter` in the OpsCounters table). */
   counter: { incrementTotal(): Promise<void> };
+  /** Daily signup counter (`signupsDaily#<date>`, OpsCounters) — the dashboard's signup trend. */
+  metrics: { incrementDaily(metric: "signupsDaily", date: string): Promise<void> };
   /** Canonical SPA origin for links in outbound messages (env APP_URL). */
   appUrl: string;
   /** Structured log sink; `outboxId` correlates with the whatsapp-dispatcher's notification_* lines. */
@@ -116,6 +118,17 @@ export async function handleConfirmation(
   } catch (err) {
     deps.log.error("customer_counter_drift", {
       op: "incrementTotal",
+      sub,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // Daily signup counter (dashboard trend): same best-effort contract — a miss only dents a
+  // chart, never a confirmation.
+  try {
+    await deps.metrics.incrementDaily("signupsDaily", jerusalemDate());
+  } catch (err) {
+    deps.log.error("signup_daily_count_failed", {
       sub,
       error: err instanceof Error ? err.message : String(err),
     });
