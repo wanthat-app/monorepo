@@ -15,6 +15,7 @@ const { fake } = vi.hoisted(() => ({
     config: { get: vi.fn() },
     retailerProxy: { generateLink: vi.fn() },
     fx: { get: vi.fn() },
+    opsMetrics: { incrementDaily: vi.fn(), touch: vi.fn() },
     appUrl: "https://dev.wanthat.app",
   },
 }));
@@ -96,6 +97,7 @@ const json = async <T>(res: Response) => (await res.json()) as T;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  fake.opsMetrics.incrementDaily.mockResolvedValue(undefined);
   fake.config.get.mockImplementation(async (key: string) => {
     if (key === "cashback.referrerBps") return 5000;
     if (key === "fx.conversionCommissionBps") return 200;
@@ -233,6 +235,43 @@ describe("POST /recommendations", () => {
     const res = await req("/recommendations", "POST", body);
     expect(res.status).toBe(404);
     expect(await res.json()).toEqual({ error: "product_not_resolved" });
+  });
+
+  it("bumps the daily recommendations counter on a NEW create (fire-and-forget)", async () => {
+    fake.products.get.mockResolvedValue(PRODUCT_ITEM);
+    fake.opsMetrics.incrementDaily.mockResolvedValue(undefined);
+    fake.recommendations.create.mockImplementation(async (item: unknown) => ({
+      item,
+      created: true,
+    }));
+    const res = await req("/recommendations", "POST", body);
+    expect(res.status).toBe(201);
+    expect(fake.opsMetrics.incrementDaily).toHaveBeenCalledWith(
+      "recsDaily",
+      expect.stringMatching(/^\d{4}-\d{2}-\d{2}$/),
+    );
+  });
+
+  it("does NOT bump the counter on an idempotent replay (created=false)", async () => {
+    fake.products.get.mockResolvedValue(PRODUCT_ITEM);
+    fake.recommendations.create.mockResolvedValue({ item: REC_ITEM, created: false });
+    const res = await req("/recommendations", "POST", body);
+    expect(res.status).toBe(200);
+    expect(fake.opsMetrics.incrementDaily).not.toHaveBeenCalled();
+  });
+
+  it("a counter failure does not fail the create", async () => {
+    fake.products.get.mockResolvedValue(PRODUCT_ITEM);
+    fake.opsMetrics.incrementDaily.mockRejectedValue(new Error("dynamo down"));
+    fake.recommendations.create.mockImplementation(async (item: unknown) => ({
+      item,
+      created: true,
+    }));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await req("/recommendations", "POST", body);
+    expect(res.status).toBe(201);
+    await new Promise((r) => setTimeout(r, 0)); // let the floating counter promise settle
+    error.mockRestore();
   });
 
   it("500s (never leaks) if a conditional-write hit belongs to another owner (id collision)", async () => {

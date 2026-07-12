@@ -1,6 +1,7 @@
 import {
   FxRateRepo,
   getDocClient,
+  OpsMetricsRepo,
   ProductRepo,
   RecommendationRepo,
   type RuntimeConfigBatchReader,
@@ -25,6 +26,8 @@ export interface LinksContext {
   recommendations: RecommendationRepo;
   retailerProxy: RetailerProxyClient;
   fx: FxRateRepo;
+  /** Dashboard metrics (OpsCounters): presence stamps + the daily recommendations counter. */
+  opsMetrics: OpsMetricsRepo;
   /** Canonical SPA origin for shareUrl (env APP_URL). */
   appUrl: string;
 }
@@ -47,6 +50,7 @@ export function getContext(): LinksContext {
     recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
     retailerProxy: new RetailerProxyClient(requireEnv("RETAILER_PROXY_FUNCTION")),
     fx: new FxRateRepo(doc, requireEnv("FX_RATE_TABLE")),
+    opsMetrics: new OpsMetricsRepo(doc, requireEnv("OPS_COUNTERS_TABLE")),
     appUrl: requireEnv("APP_URL"),
   };
   return cached;
