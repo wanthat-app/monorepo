@@ -14,6 +14,12 @@
  */
 import type { CashbackEstimate, CashbackSplit } from "@wanthat/contracts";
 
+export {
+  type DerivedMoneyStats,
+  deriveMoneyStats,
+  type MoneyCurrencyTotals,
+  type MoneyStatsRow,
+} from "./money-stats";
 export { deriveBalances, type LedgerRow } from "./wallet";
 
 const BPS_DENOMINATOR = 10_000n;
