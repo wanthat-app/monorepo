@@ -1,6 +1,7 @@
 import { createDb } from "@wanthat/db";
 import {
   CustomerCounterRepo,
+  FxRateRepo,
   getDocClient,
   NotificationOutboxRepo,
   OpsMetricsRepo,
@@ -29,6 +30,8 @@ export interface AdminContext {
   customerCounter: CustomerCounterRepo;
   /** Read-only (stats): daily counters + presence items in OpsCounters (dashboard trends). */
   opsMetrics: OpsMetricsRepo;
+  /** Cached FX rates (read-only): the money KPIs' display-only ILS estimate (ADR-0017). */
+  fx: FxRateRepo;
   /** The unattributed-order claim queue (list + claim/dismiss intents; the proxy settles). */
   unattributedOrders: UnattributedOrderRepo;
   /** Parked OTP codes for the activity feed (docs/otp-sink.md) — present in every env. */
@@ -64,6 +67,7 @@ export function getContext(): AdminContext {
       requireEnv("OPS_COUNTERS_TABLE"),
     ),
     opsMetrics: new OpsMetricsRepo(getDocClient(region), requireEnv("OPS_COUNTERS_TABLE")),
+    fx: new FxRateRepo(getDocClient(region), requireEnv("FX_RATE_TABLE")),
     products: new ProductRepo(getDocClient(region), requireEnv("PRODUCT_TABLE")),
     recommendations: new RecommendationRepo(
       getDocClient(region),

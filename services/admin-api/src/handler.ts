@@ -12,6 +12,7 @@
  * (defence in depth).
  */
 import {
+  Bps,
   CatalogStats,
   CONFIG_DEFAULTS,
   CONFIG_KEYS,
@@ -21,16 +22,19 @@ import {
   ListActivityQuery,
   ListActivityResponse,
   ListConfigResponse,
+  MoneyStats,
   PutConfigBody,
   PutConfigResponse,
   UsersStats,
 } from "@wanthat/contracts";
-import { appendConfigChangeAudit, listAuditLog } from "@wanthat/db";
-import { lastNDates } from "@wanthat/dynamo";
+import { appendConfigChangeAudit, listAuditLog, listRewardRows } from "@wanthat/db";
+import { convertMinor, deriveMoneyStats } from "@wanthat/domain";
+import { jerusalemDate, lastNDates } from "@wanthat/dynamo";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { auditEntryToItem, mergeByAtDesc, otpSinkToItems, outboxToItems } from "./activity";
 import { getContext } from "./context";
+import { moneyJson } from "./http";
 import { actorFrom, type Bindings, requireAdmin } from "./guard";
 import { unattributedRouter } from "./unattributed";
 import { userDetailRouter } from "./user-detail";
@@ -180,6 +184,67 @@ app.get("/admin/stats/catalog", async (c) => {
       products,
       recommendations,
       dailyCreated: dates.map((date) => ({ date, count: created.get(date) ?? 0 })),
+    }),
+  );
+});
+
+// GET /admin/stats/money — the dashboard money KPIs, derived per request from the wallet_entry
+// ledger (spec 2026-07-13, approach A: money is derived, never stored). Aurora read as app_ro;
+// the SPA fetches this separately so a scale-to-zero resume delays only the money cards.
+// Rewards settle in USD (ADR-0017); the ILS figures are display-only estimates off the cached
+// rate minus the conversion commission - the member wallet's exact semantics.
+app.get("/admin/stats/money", async (c) => {
+  const ctx = getContext();
+  const dates = lastNDates(30);
+  const [rows, active30d, rate, commissionBps] = await Promise.all([
+    listRewardRows(ctx.db),
+    ctx.opsMetrics.countActiveSince(dates[0] as string),
+    ctx.fx.get("USD", "ILS"),
+    ctx.config.get("fx.conversionCommissionBps"),
+  ]);
+  const stats = deriveMoneyStats(
+    rows.map((r) => ({
+      kind: r.kind,
+      amountMinor: r.amountMinor,
+      currency: r.currency,
+      orderId: r.orderId,
+      status: r.status,
+      date: jerusalemDate(r.createdAt),
+    })),
+    dates,
+  );
+
+  const bps = Bps.parse(commissionBps);
+  const ils = (amountMinor: bigint) =>
+    rate ? { amountMinor: convertMinor(amountMinor, rate.rate, bps), currency: "ILS" } : null;
+  const ZERO_ILS = { amountMinor: 0n, currency: "ILS" };
+  const usd = stats.totals.find((t) => t.currency === "USD");
+
+  // Wallet-contract fallbacks: no USD held anywhere = hard zeros (nothing converts to nothing
+  // at any rate); USD held but no cached rate = null (genuinely unknowable).
+  const ilsEstimate = !usd
+    ? { confirmed: ZERO_ILS, pending: ZERO_ILS }
+    : rate
+      ? { confirmed: ils(usd.confirmedMinor), pending: ils(usd.pendingMinor) }
+      : null;
+  const windowIls = !usd ? ZERO_ILS : ils(usd.confirmedInWindowMinor);
+  const cashbackPerActive30d =
+    windowIls === null || active30d === 0
+      ? null
+      : { amountMinor: windowIls.amountMinor / BigInt(active30d), currency: "ILS" };
+
+  return moneyJson(
+    c,
+    MoneyStats.parse({
+      totals: stats.totals.map((t) => ({
+        currency: t.currency,
+        confirmed: { amountMinor: t.confirmedMinor, currency: t.currency },
+        pending: { amountMinor: t.pendingMinor, currency: t.currency },
+      })),
+      ilsEstimate,
+      conversions30d: stats.conversionsInWindow,
+      dailyConversions: stats.dailyConversions,
+      cashbackPerActive30d,
     }),
   );
 });
