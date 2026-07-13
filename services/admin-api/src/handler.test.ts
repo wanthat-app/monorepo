@@ -355,7 +355,9 @@ describe("admin money stats", () => {
     currency: "USD",
     orderId: "order-1",
     status: "confirmed",
-    createdAt: new Date("2026-07-12T10:00:00Z"),
+    // Relative to the real clock: the route windows on `new Date()`, so a fixed
+    // date would age out of lastNDates(30) and start failing a month from now.
+    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
     ...over,
   });
 
@@ -369,7 +371,7 @@ describe("admin money stats", () => {
     ctx.opsMetrics.countActiveSince.mockResolvedValue(2);
     const res = await app.request("/admin/stats/money", {}, adminEnv);
     expect(res.status).toBe(200);
-    const body = (await res.json()) as Record<string, never>;
+    const body = (await res.json()) as Record<string, unknown>;
     expect(body.totals).toEqual([
       {
         currency: "USD",

@@ -47,6 +47,21 @@ export interface AdminUserWalletWire {
   entries: { items: WalletEntryWire[]; nextCursor: string | null };
 }
 
+/** Money on the admin wire: minor units as a decimal string (the moneyJson rule). */
+export interface MoneyWire {
+  amountMinor: string;
+  currency: string;
+}
+
+/** GET /admin/stats/money — see @wanthat/contracts MoneyStats for the full semantics. */
+export interface MoneyStatsWire {
+  totals: { currency: string; confirmed: MoneyWire; pending: MoneyWire }[];
+  ilsEstimate: { confirmed: MoneyWire; pending: MoneyWire } | null;
+  conversions30d: number;
+  dailyConversions: { date: string; count: number }[];
+  cashbackPerActive30d: MoneyWire | null;
+}
+
 async function adminRequest<T>(
   path: string,
   token: string,
@@ -117,6 +132,9 @@ export const adminApi = {
       body: { value },
     }),
   statsOverview: (token: string) => adminRequest<StatsOverview>("/admin/stats/overview", token),
+  // Ledger-derived money KPIs; its own call so a scale-to-zero Aurora resume delays only the
+  // money cards (the DynamoDB stats above render immediately).
+  moneyStats: (token: string) => adminRequest<MoneyStatsWire>("/admin/stats/money", token),
   usersStats: (token: string) => adminRequest<UsersStats>("/admin/stats/users", token),
   catalogStats: (token: string) => adminRequest<CatalogStats>("/admin/stats/catalog", token),
   // Activity page: paged audit-log feed (+ dev OTP codes merged server-side on page 1 in dev).

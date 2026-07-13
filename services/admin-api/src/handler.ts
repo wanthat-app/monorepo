@@ -34,8 +34,8 @@ import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { auditEntryToItem, mergeByAtDesc, otpSinkToItems, outboxToItems } from "./activity";
 import { getContext } from "./context";
-import { moneyJson } from "./http";
 import { actorFrom, type Bindings, requireAdmin } from "./guard";
+import { moneyJson } from "./http";
 import { unattributedRouter } from "./unattributed";
 import { userDetailRouter } from "./user-detail";
 

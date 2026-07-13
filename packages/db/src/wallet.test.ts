@@ -1,9 +1,9 @@
 import type { Kysely } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createMigrator } from "./migrator";
+import { listRewardRows } from "./money-stats";
 import type { Database } from "./schema";
 import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
-import { listRewardRows } from "./money-stats";
 import { listEntriesForSub, listWalletHistory } from "./wallet";
 
 /**
@@ -141,9 +141,9 @@ describe("listRewardRows", () => {
     // Every seeded reward row across all subs (3 for SUB + 1 for OTHER_SUB); the adjustment
     // row is excluded, and no cognito_sub travels on the result (platform stats are anonymous).
     expect(rows).toHaveLength(4);
-    expect(
-      rows.every((r) => r.kind === "referrer_cashback" || r.kind === "consumer_reward"),
-    ).toBe(true);
+    expect(rows.every((r) => r.kind === "referrer_cashback" || r.kind === "consumer_reward")).toBe(
+      true,
+    );
     expect(rows.every((r) => typeof r.amountMinor === "bigint")).toBe(true);
     expect(rows.every((r) => r.createdAt instanceof Date)).toBe(true);
     expect(rows.some((r) => Object.hasOwn(r, "cognito_sub"))).toBe(false);
