@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createMigrator } from "./migrator";
 import type { Database } from "./schema";
 import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
+import { listRewardRows } from "./money-stats";
 import { listEntriesForSub, listWalletHistory } from "./wallet";
 
 /**
@@ -75,6 +76,17 @@ beforeAll(async () => {
         status: "pending",
         created_at: AT,
       },
+      // A non-reward movement: listRewardRows must exclude it (it is not platform cashback).
+      {
+        cognito_sub: "sub-wallet-3",
+        kind: "adjustment",
+        amount_minor: 50n,
+        currency: "USD",
+        order_id: null,
+        recommendation_id: null,
+        status: "confirmed",
+        created_at: AT,
+      },
     ])
     .execute();
 }, 180_000);
@@ -120,5 +132,21 @@ describe("listWalletHistory", () => {
     const page = await listWalletHistory(db, SUB, 3);
     expect(page.items).toHaveLength(3);
     expect(page.nextCursor).toBeNull();
+  });
+});
+
+describe("listRewardRows", () => {
+  it("returns reward rows for ALL members, excluding non-reward movements", async () => {
+    const rows = await listRewardRows(db);
+    // Every seeded reward row across all subs (3 for SUB + 1 for OTHER_SUB); the adjustment
+    // row is excluded, and no cognito_sub travels on the result (platform stats are anonymous).
+    expect(rows).toHaveLength(4);
+    expect(
+      rows.every((r) => r.kind === "referrer_cashback" || r.kind === "consumer_reward"),
+    ).toBe(true);
+    expect(rows.every((r) => typeof r.amountMinor === "bigint")).toBe(true);
+    expect(rows.every((r) => r.createdAt instanceof Date)).toBe(true);
+    expect(rows.some((r) => Object.hasOwn(r, "cognito_sub"))).toBe(false);
+    expect(rows.filter((r) => r.orderId === "order-b")).toHaveLength(1);
   });
 });

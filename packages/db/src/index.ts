@@ -11,6 +11,7 @@ export {
   type WalletEntryInsert,
 } from "./conversion-writer";
 export { createMigrator } from "./migrator";
+export { listRewardRows, type RewardRow } from "./money-stats";
 export { createDb, type DbConfig, waitForDb } from "./pool";
 export type { AuditLogTable, Database, WalletEntryTable } from "./schema";
 export {
