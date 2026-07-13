@@ -10,6 +10,7 @@ import {
   type AdminUserRecommendationItem,
   AdminUserWalletResponse,
   ListAdminUserRecommendationsResponse,
+  moneyJson,
   Uuid,
 } from "@wanthat/contracts";
 import { listEntriesForSub, listWalletHistory } from "@wanthat/db";
@@ -18,7 +19,6 @@ import type { RecommendationItem } from "@wanthat/dynamo";
 import { Hono } from "hono";
 import { getContext } from "./context";
 import type { Bindings } from "./guard";
-import { moneyJson } from "./http";
 
 const RECOMMENDATIONS_PAGE = 20;
 const WALLET_ENTRIES_PAGE = 20;
@@ -85,7 +85,6 @@ export function userDetailRouter(): Hono<{ Bindings: Bindings }> {
       listWalletHistory(ctx.db, sub.data, WALLET_ENTRIES_PAGE),
     ]);
     return moneyJson(
-      c,
       AdminUserWalletResponse.parse({
         balances: deriveBalances(rows),
         entries: {

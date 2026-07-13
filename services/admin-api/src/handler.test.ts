@@ -266,16 +266,11 @@ describe("admin user stats (exact customer counter - the customerCounter item in
     );
   });
 
-  it("overview reports the EXACT usersCount alongside the other placeholders", async () => {
+  it("overview reports the EXACT usersCount", async () => {
     ctx.customerCounter.get.mockResolvedValue({ total: 41, disabled: 3 });
     const res = await app.request("/admin/stats/overview", {}, adminEnv);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      usersCount: 41,
-      pendingApprovals: null,
-      totalCashbackMinor: null,
-      conversions30d: null,
-    });
+    expect(await res.json()).toEqual({ usersCount: 41 });
   });
 
   it("an empty pool (missing counter item) reads as zero, not an error", async () => {

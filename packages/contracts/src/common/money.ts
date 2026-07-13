@@ -24,3 +24,16 @@ export type Money = z.infer<typeof Money>;
 /** Basis points — 1/100 of a percent. `0`–`10000` spans 0–100%. Used for commission/cashback rates. */
 export const Bps = z.number().int().min(0).max(10000);
 export type Bps = z.infer<typeof Bps>;
+
+/**
+ * Serialise a contract-parsed value as an HTTP response with Money's wire rule (bigint minor
+ * units → decimal string; `JSON.stringify`/`c.json` throw on bigint). Every response that
+ * carries a `Money` (directly or nested) must go through this. Framework-free on purpose —
+ * hono handlers return the `Response` as-is — so the wire rule has exactly one home.
+ */
+export function moneyJson(value: unknown, status = 200): Response {
+  return new Response(
+    JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v)),
+    { status, headers: { "content-type": "application/json" } },
+  );
+}

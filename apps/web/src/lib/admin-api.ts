@@ -23,7 +23,13 @@ import type {
   UsersStats,
 } from "@wanthat/contracts";
 import { beginAdminLogin, clearAdminTokens, refreshAdminTokens } from "./admin-login";
-import { ApiError, type WalletBalanceWire, type WalletEntryWire } from "./api";
+import {
+  ApiError,
+  type MoneyWire,
+  type WalletBalanceWire,
+  type WalletEarningsWire,
+  type WalletEntryWire,
+} from "./api";
 import { getConfig } from "./config";
 
 /**
@@ -36,9 +42,6 @@ export interface StatsOverview {
    * the Post-Confirmation trigger + the admin moderation routes. Narrower than the users page's
    * approximate whole-pool total (which includes UNCONFIRMED) on purpose. */
   usersCount: number;
-  pendingApprovals: number | null;
-  totalCashbackMinor: number | null;
-  conversions30d: number | null;
 }
 
 /** The wallet wire (Money travels as decimal strings — the contract types are the bigint code side). */
@@ -47,16 +50,10 @@ export interface AdminUserWalletWire {
   entries: { items: WalletEntryWire[]; nextCursor: string | null };
 }
 
-/** Money on the admin wire: minor units as a decimal string (the moneyJson rule). */
-export interface MoneyWire {
-  amountMinor: string;
-  currency: string;
-}
-
 /** GET /admin/stats/money — see @wanthat/contracts MoneyStats for the full semantics. */
 export interface MoneyStatsWire {
-  totals: { currency: string; confirmed: MoneyWire; pending: MoneyWire }[];
-  ilsEstimate: { confirmed: MoneyWire; pending: MoneyWire } | null;
+  totals: ({ currency: string } & WalletEarningsWire)[];
+  ilsEstimate: WalletEarningsWire | null;
   conversions30d: number;
   dailyConversions: { date: string; count: number }[];
   cashbackPerActive30d: MoneyWire | null;

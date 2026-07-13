@@ -321,8 +321,17 @@ function DashboardView({ token }: { token: string | null }) {
       </div>
 
       <UsersPanel users={failed ? null : users} failed={failed} />
-      <RecsPanel catalog={catalog} />
-      <ConversionsPanel money={money} />
+      {/* null (failed) must survive the mapping — optional chaining would erase it to undefined. */}
+      <TrendPanel
+        title={t("admin.recs.title")}
+        trendLabel={t("admin.recs.createdTrend")}
+        data={catalog === null ? null : catalog?.dailyCreated}
+      />
+      <TrendPanel
+        title={t("admin.conversionsPanel.title")}
+        trendLabel={t("admin.conversionsPanel.trend")}
+        data={money === null ? null : money?.dailyConversions}
+      />
     </div>
   );
 }
@@ -381,20 +390,26 @@ function UsersPanel({ users, failed }: { users: UsersStats | null; failed: boole
   );
 }
 
-/** The recommendations panel: the 30-day created trend (catalog stats' dailyCreated). */
-function RecsPanel({ catalog }: { catalog: CatalogStats | null | undefined }) {
+/** A card with one 30-day DailyTrend: `data` undefined = loading skeleton, null = fetch failed. */
+function TrendPanel({
+  title,
+  trendLabel,
+  data,
+}: {
+  title: string;
+  trendLabel: string;
+  data: { date: string; count: number }[] | null | undefined;
+}) {
   const { t } = useTranslation();
   return (
     <div className="rounded-card border border-line bg-surface p-5">
-      <h2 className="mb-4 font-display text-lg font-semibold text-ink">{t("admin.recs.title")}</h2>
-      {catalog === null ? (
+      <h2 className="mb-4 font-display text-lg font-semibold text-ink">{title}</h2>
+      {data === null ? (
         <div className="py-10 text-center text-sm text-muted">{t("admin.users.error")}</div>
       ) : (
         <div>
-          <div className="mb-2 text-[12.5px] font-semibold text-muted">
-            {t("admin.recs.createdTrend")}
-          </div>
-          <DailyTrend data={catalog?.dailyCreated ?? null} />
+          <div className="mb-2 text-[12.5px] font-semibold text-muted">{trendLabel}</div>
+          <DailyTrend data={data ?? null} />
         </div>
       )}
     </div>
@@ -406,28 +421,6 @@ function StatTile({ label, value }: { label: string; value: ReactNode }) {
     <div className="rounded-[14px] border border-line px-3.5 py-3">
       <div className="text-[22px] font-semibold tabular-nums text-ink">{value}</div>
       <div className="mt-0.5 text-[11.5px] text-muted">{label}</div>
-    </div>
-  );
-}
-
-/** The conversions panel: 30-day attributed-order trend from the money stats. */
-function ConversionsPanel({ money }: { money: MoneyStatsWire | null | undefined }) {
-  const { t } = useTranslation();
-  return (
-    <div className="rounded-card border border-line bg-surface p-5">
-      <h2 className="mb-4 font-display text-lg font-semibold text-ink">
-        {t("admin.conversionsPanel.title")}
-      </h2>
-      {money === null ? (
-        <div className="py-10 text-center text-sm text-muted">{t("admin.users.error")}</div>
-      ) : (
-        <div>
-          <div className="mb-2 text-[12.5px] font-semibold text-muted">
-            {t("admin.conversionsPanel.trend")}
-          </div>
-          <DailyTrend data={money?.dailyConversions ?? null} />
-        </div>
-      )}
     </div>
   );
 }

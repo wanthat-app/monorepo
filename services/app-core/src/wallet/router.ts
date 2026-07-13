@@ -3,15 +3,20 @@ import {
   GetWalletResponse,
   ListWalletEntriesQuery,
   ListWalletEntriesResponse,
+  moneyJson,
   type WalletBalance,
   type WalletEstimate,
 } from "@wanthat/contracts";
 import { listEntriesForSub, listWalletHistory, type WalletHistoryCursor } from "@wanthat/db";
-import { convertMinor, deriveBalances } from "@wanthat/domain";
+import {
+  DISPLAY_CURRENCY,
+  deriveBalances,
+  ilsDisplayEstimate,
+  SETTLEMENT_CURRENCY,
+} from "@wanthat/domain";
 import { Hono } from "hono";
 import { type Bindings, subFromClaims } from "../claims";
 import { getContext } from "../context";
-import { moneyJson } from "../http";
 
 /**
  * Wallet reads for the member home (spec 2026-07-10-conversion-poller-wallet §5). Balances are
@@ -21,41 +26,29 @@ import { moneyJson } from "../http";
  * currency, convert at display/withdrawal) and is null until a rate is cached.
  */
 
-/** Rewards settle in USD (ADR-0017); ILS is the Israeli MVP's display currency. */
-const SETTLEMENT_CURRENCY = "USD";
-const DISPLAY_CURRENCY = "ILS";
-
-/** A held amount of exactly nothing, in the display currency. */
-const ZERO_ILS = { amountMinor: 0n, currency: DISPLAY_CURRENCY };
-
 /**
- * The display estimate for the USD balance: available and total-pending (both roles) converted
- * with `convertMinor` (cached rate minus the CONFIG conversion commission). No USD held (the
- * empty ledger included) estimates to a hard zero — nothing converts to nothing at any rate —
- * so the SPA hero always has a number to render. Null ONLY when USD is held but no rate is
- * cached yet: the amount is genuinely unknowable and the SPA falls back to per-currency figures.
+ * The display estimate for the USD balance: available and total-pending (both roles), per the
+ * shared `ilsDisplayEstimate` rule (`@wanthat/domain` — hard zero when no USD held, null when
+ * USD is held but no rate is cached; the SPA falls back to per-currency figures on null).
+ * The fx/config reads are skipped entirely when no USD is held.
  */
 async function ilsEstimate(balances: WalletBalance[]): Promise<WalletEstimate | null> {
   const usd = balances.find((b) => b.available.currency === SETTLEMENT_CURRENCY);
-  if (!usd) return { available: ZERO_ILS, pending: ZERO_ILS };
+  if (!usd) return ilsDisplayEstimate(false, { available: 0n, pending: 0n }, null, 0);
   const ctx = getContext();
   const [rate, commissionBps] = await Promise.all([
     ctx.fx.get(SETTLEMENT_CURRENCY, DISPLAY_CURRENCY),
     ctx.config.get("fx.conversionCommissionBps"),
   ]);
-  if (!rate) return null;
-  const bps = Bps.parse(commissionBps);
-  const pendingTotal = usd.asRecommender.pending.amountMinor + usd.asBuyer.pending.amountMinor;
-  return {
-    available: {
-      amountMinor: convertMinor(usd.available.amountMinor, rate.rate, bps),
-      currency: DISPLAY_CURRENCY,
+  return ilsDisplayEstimate(
+    true,
+    {
+      available: usd.available.amountMinor,
+      pending: usd.asRecommender.pending.amountMinor + usd.asBuyer.pending.amountMinor,
     },
-    pending: {
-      amountMinor: convertMinor(pendingTotal, rate.rate, bps),
-      currency: DISPLAY_CURRENCY,
-    },
-  };
+    rate?.rate ?? null,
+    Bps.parse(commissionBps),
+  );
 }
 
 const cursorOf = (cursor: WalletHistoryCursor | null): string | null =>
@@ -88,10 +81,7 @@ export function walletRouter(): Hono<{ Bindings: Bindings }> {
     if (!sub) return c.json({ error: "unauthorized" }, 401);
     const ctx = getContext();
     const balances = deriveBalances(await listEntriesForSub(ctx.db, sub));
-    return moneyJson(
-      c,
-      GetWalletResponse.parse({ balances, estimated: await ilsEstimate(balances) }),
-    );
+    return moneyJson(GetWalletResponse.parse({ balances, estimated: await ilsEstimate(balances) }));
   });
 
   // GET /wallet/entries — the member's ledger history, newest first (cursor-paginated). The
@@ -107,7 +97,6 @@ export function walletRouter(): Hono<{ Bindings: Bindings }> {
     const ctx = getContext();
     const page = await listWalletHistory(ctx.db, sub, query.data.limit, keyOf(query.data.cursor));
     return moneyJson(
-      c,
       ListWalletEntriesResponse.parse({
         items: page.items.map((e) => ({
           id: e.id,
