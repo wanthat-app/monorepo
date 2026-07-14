@@ -1,5 +1,5 @@
 import type { Kysely } from "kysely";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { createMigrator } from "./migrator";
 import { listRewardRows } from "./money-stats";
 import type { Database } from "./schema";
@@ -148,5 +148,20 @@ describe("listRewardRows", () => {
     expect(rows.every((r) => r.createdAt instanceof Date)).toBe(true);
     expect(rows.some((r) => Object.hasOwn(r, "cognito_sub"))).toBe(false);
     expect(rows.filter((r) => r.orderId === "order-b")).toHaveLength(1);
+  });
+
+  it("caps the platform-wide fetch and warns loudly when the cap bites", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      const rows = await listRewardRows(db, 2);
+      expect(rows).toHaveLength(2);
+      expect(warn).toHaveBeenCalledWith(expect.stringContaining("hit the row cap"));
+      warn.mockClear();
+      // Under the cap: no warning.
+      await listRewardRows(db);
+      expect(warn).not.toHaveBeenCalled();
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

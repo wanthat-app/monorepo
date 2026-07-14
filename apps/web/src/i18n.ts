@@ -347,6 +347,12 @@ const en = {
       title: "Conversions",
       trend: "Attributed orders (last 30 days)",
     },
+    moneyTotals: {
+      title: "Ledger totals",
+      earned: "earned",
+      pending: "pending",
+      empty: "No reward rows yet",
+    },
     noticePlaceholder: "Empty = no banner",
     sections: {
       siteTitle: "Site notice",
@@ -878,6 +884,12 @@ const he: typeof en = {
     conversionsPanel: {
       title: "המרות",
       trend: "הזמנות משויכות (30 הימים האחרונים)",
+    },
+    moneyTotals: {
+      title: "סכומים לפי מטבע",
+      earned: "נצבר",
+      pending: "ממתין",
+      empty: "אין עדיין שורות תגמול",
     },
     noticePlaceholder: "ריק = ללא באנר",
     sections: {

@@ -319,6 +319,7 @@ function DashboardView({ token }: { token: string | null }) {
           }
         />
       </div>
+      <TotalsByCurrency money={money} />
 
       <UsersPanel users={failed ? null : users} failed={failed} />
       {/* null (failed) must survive the mapping — optional chaining would erase it to undefined. */}
@@ -351,6 +352,40 @@ function ilsOrTotals(m: MoneyStatsWire, bucket: "confirmed" | "pending"): string
   if (m.ilsEstimate) return formatMoneyMinor(m.ilsEstimate[bucket].amountMinor, "ILS");
   const first = m.totals[0];
   return first ? formatMoneyMinor(first[bucket].amountMinor, first.currency) : "—";
+}
+
+/**
+ * The raw per-currency ledger totals, always visible under the money cards: the ₪ figures are
+ * estimates with wallet-contract fallbacks (a hard-zero estimate hides non-USD money; the
+ * no-rate fallback shows one currency), so the admin can eyeball the cards against the source
+ * amounts. Decision 2026-07-14: inspect, don't change the estimate semantics.
+ */
+function TotalsByCurrency({ money }: { money: MoneyStatsWire | null | undefined }) {
+  const { t } = useTranslation();
+  if (money === null) return null; // the cards already show the failure em-dashes
+  return (
+    <div
+      dir="ltr"
+      className="flex flex-wrap items-baseline gap-x-5 gap-y-1 px-1 text-[12.5px] text-muted"
+    >
+      <span className="font-semibold">{t("admin.moneyTotals.title")}</span>
+      {money === undefined ? (
+        <Skeleton className="h-[19px] w-56" />
+      ) : money.totals.length === 0 ? (
+        <span>{t("admin.moneyTotals.empty")}</span>
+      ) : (
+        money.totals.map((tot) => (
+          <span key={tot.currency} className="tabular-nums">
+            <span className="font-semibold text-ink">{tot.currency}</span>{" "}
+            {formatMoneyMinor(tot.confirmed.amountMinor, tot.currency)}{" "}
+            {t("admin.moneyTotals.earned")} ·{" "}
+            {formatMoneyMinor(tot.pending.amountMinor, tot.currency)}{" "}
+            {t("admin.moneyTotals.pending")}
+          </span>
+        ))
+      )}
+    </div>
+  );
 }
 
 function UsersPanel({ users, failed }: { users: UsersStats | null; failed: boolean }) {

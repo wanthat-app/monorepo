@@ -15,9 +15,9 @@
 import type { CashbackEstimate, CashbackSplit } from "@wanthat/contracts";
 
 export {
+  type DerivedCurrencyTotals,
   type DerivedMoneyStats,
   deriveMoneyStats,
-  type MoneyCurrencyTotals,
   type MoneyStatsRow,
 } from "./money-stats";
 export { deriveBalances, type LedgerRow } from "./wallet";

@@ -20,7 +20,7 @@ export interface MoneyStatsRow {
   date: string;
 }
 
-export interface MoneyCurrencyTotals {
+export interface DerivedCurrencyTotals {
   currency: string;
   /** All-time Σ of collapsed rewards at `confirmed`. */
   confirmedMinor: bigint;
@@ -32,7 +32,7 @@ export interface MoneyCurrencyTotals {
 
 export interface DerivedMoneyStats {
   /** Per-currency totals, sorted by currency (deterministic wire order). */
-  totals: MoneyCurrencyTotals[];
+  totals: DerivedCurrencyTotals[];
   /** Distinct orders (any reward row) first seen inside the window. */
   conversionsInWindow: number;
   /** Dense daily distinct-order counts over exactly the given dates. */
@@ -56,8 +56,8 @@ export function deriveMoneyStats(rows: MoneyStatsRow[], dates: string[]): Derive
     if (!first || row.date < first) orderFirstSeen.set(row.orderId, row.date);
   }
 
-  const perCurrency = new Map<string, MoneyCurrencyTotals>();
-  const totalsFor = (currency: string): MoneyCurrencyTotals => {
+  const perCurrency = new Map<string, DerivedCurrencyTotals>();
+  const totalsFor = (currency: string): DerivedCurrencyTotals => {
     let totals = perCurrency.get(currency);
     if (!totals) {
       totals = { currency, confirmedMinor: 0n, pendingMinor: 0n, confirmedInWindowMinor: 0n };
