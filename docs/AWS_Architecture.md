@@ -283,8 +283,7 @@ Three HTTP APIs (API Gateway v2), each throttled on `$default`:
 - **Secrets Manager** — one runtime secret: the retailer credential
   `wanthat/{env}/retailer/aliexpress` (created empty; populated via the admin panel;
   **retailer-proxy is the only principal that can read it**). The Aurora master secret exists
-  for bootstrap only — nothing reads it at runtime. *(The Ed25519 ticket key of the pre-0027
-  design no longer exists.)*
+  for bootstrap only — nothing reads it at runtime.
 
 ### 3.6 Network (NAT-free — ADR-0004)
 Only Aurora and the four functions that touch it (`app-core`, `admin-api`,
