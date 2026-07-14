@@ -1,40 +1,47 @@
 # infra/lib — CDK stacks
 
 Stacks sliced per ADR-0002 (compute), ADR-0003 (data), ADR-0004 (network), ADR-0005 (DR).
-Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices → Edge → Observability`.
+Dependency order: `Network → Data → Identity → Api / Admin / EdgeServices / WhatsApp → Edge →
+Observability` (+ a prod-only `Dns` stack). The consolidated overview with the full diagram is
+[`docs/AWS_Architecture.md`](../../docs/AWS_Architecture.md).
 
-> **Status.** All of `Network`, `Data`, `Identity`, `Api`, `Admin`, `EdgeServices`, and the
-> us-east-1 `Edge` stack are implemented and deploy as `wanthat-{env}-*` (dev/prod, selected by
-> `WANTHAT_ENV`; account resolved from the deploy credentials, not pinned in the repo). The auth
-> slice (UC1/UC2, ADR-0006) added **`NetworkStack` (the VPC) + Aurora Serverless v2** to `DataStack`
-> and a one-shot in-VPC migration runner; `app-api`/`admin` move in-VPC with their auth backends.
-> `ObservabilityStack` is now wired (starter scope; see its row). Still deferred: **Firehose/Athena +
-> cross-region backup** in `DataStack`.
-> The custom domain (ACM + Route 53 alias) is wired in both environments — the apex in prod
-> (`wanthat.app`) and a subdomain in dev (`dev.wanthat.app`), both in the same `wanthat.app` zone. The
-> SPA learns its backend URLs + Cognito client ids from a runtime `/config.json` the EdgeStack writes
-> into the S3 bucket (no build-time env needed on the hosted site). Service handlers return `501` until
-> their feature slices land.
+> **Status (2026-07-14).** Every stack below is deployed and current in **dev and prod**
+> (`wanthat-{env}-*`, selected by `WANTHAT_ENV`; account resolved from the deploy credentials,
+> not pinned in the repo). The create-link, landing `/p/`, conversion, wallet, and admin
+> slices are **live** — the retailer-proxy speaks to the real AliExpress API and the order
+> poll heartbeat is enabled in every env. Funnel analytics (Firehose → S3 → Glue/Athena) is
+> live via the `FunnelAnalytics` construct in `ObservabilityStack`. Still deferred:
+> **cross-region backup** (ADR-0005). The custom domain (ACM + Route 53 alias) serves the
+> apex in prod (`wanthat.app`) and `dev.wanthat.app` in dev; the SPA learns its backend URLs +
+> Cognito client ids from a runtime `/config.json` the EdgeStack writes into the S3 bucket.
 
 | Stack | Owns | ADR |
 |---|---|---|
-| `NetworkStack` | VPC, subnets, SGs scoped to Aurora + the in-VPC functions only; **no NAT Gateway** | 0004 |
-| `DataStack` | Aurora Serverless v2 (scale-to-zero, **IAM auth, no RDS Proxy**) + per-function Postgres roles; **DynamoDB** (`short_id→url` projection + `guest_attribution`); Firehose→S3 + Athena; Secrets Manager; PITR + cross-region backup | 0003, 0005, 0002 |
-| `IdentityStack` | Cognito (native SMS OTP + passkeys, Essentials); Post-Confirmation provisioning trigger | 0006 |
-| `ApiStack` | HTTP API + JWT authorizer; app-api Lambdalith (**in-VPC**, IAM DB auth, reserved-concurrency cap); regional WAF + per-phone/IP rate limits; SMS kill-switch flag | 0002, 0006 |
-| `AdminStack` | admin Lambda (**in-VPC**, own role/exposure) | 0002 |
-| `EdgeServicesStack` | landing Lambda (**non-VPC** → DynamoDB); conversion poller as a **non-VPC fetcher + in-VPC writer**; retailer fetcher(s) (non-VPC, secret-scoped); EventBridge Scheduler (configurable period) | 0007, 0009, 0008, 0004 |
-| `EdgeStack` (**us-east-1**) | One CloudFront distribution: **default → S3 SPA** (OAC, private), **`/p/*` → landing HTTP API** (cross-region origin); CloudFront WAF web ACL; ACM cert + Route 53 alias (apex in prod, `dev.` subdomain in dev); runtime **`/config.json`** written into the SPA bucket (backend URLs + Cognito client ids, cross-region from il-central-1); **edge CloudWatch dashboard** (`wanthat-{env}-edge`: CloudFront requests/error-rate + WAF allowed/blocked, us-east-1). app-api/admin reached directly via Bearer, not fronted | 0019, 0016, 0007 |
-| `ObservabilityStack` (**deploys last**) | SNS alarm topic (`wanthat-{env}-alarms`, optional email sub); alarms for SMS month-to-date spend (80% of the IdentityStack cap), per-Lambda errors, per-HTTP-API 5xx, Aurora connections (80% of the 50 cap); per-surface CloudWatch dashboard (API count/5xx/p95, Lambda errors/throttles/p95, Aurora ACU+connections, SMS spend vs cap). Also sets **X-Ray tracing + retention-bounded log groups** on every application Lambda (via `config.serviceLogGroup`). Follow-ups: CloudTrail alarm on retailer-secret reads (own issue — needs a single account-level trail, since dev/prod share one account), business/funnel metrics (needs the deferred Firehose/Athena). The CloudFront/WAF dashboard is on the `EdgeStack` (us-east-1) | 0006, 0002 |
+| `NetworkStack` | VPC (2 AZs, isolated subnets, **no NAT**), SGs scoped Lambda→Aurora:5432, free DynamoDB gateway endpoint; **zero interface endpoints** | 0004 |
+| `DataStack` | Aurora Serverless v2 (PG 16.13, 0–2 ACU, **IAM auth, no RDS Proxy**, `max_connections=50`) + per-function Postgres roles (`app_rw`, `app_ro`, `poller_writer`, `wanthat_migrator`); the in-VPC **db-migrator** + deploy Trigger; **all 10 DynamoDB tables** (product, recommendation, guest_attribution, poller_state, unattributed_order, runtime_config, ops_counters, fx_rate, notification_outbox, otp_sink); the retailer secret (sole reader: retailer-proxy) | 0003, 0005, 0002 |
+| `IdentityStack` | Cognito **customer pool** (ESSENTIALS, phone+email aliases, SMS-OTP + native passkeys via `USER_AUTH`, PII in attributes) + **employee pool** (email + mandatory TOTP, Managed Login + PKCE, branded); `message-sender` (custom SMS sender, KMS key) + `post-confirmation` triggers; **REGIONAL WAF on the customer pool** (rate-limits the unauth Cognito ops); SNS monthly SMS spend cap (account-wide, $1 while in the SMS sandbox) | 0006, 0019 |
+| `ApiStack` | App HTTP API + customer-pool JWT authorizer; **app-links** (non-VPC: products.resolve, recommendations, invokes retailer-proxy) + **app-core** (in-VPC: wallet + activity, Aurora as `app_rw`); throttling on `$default` | 0002, 0006 |
+| `AdminStack` | Admin HTTP API + employee-pool JWT authorizer; **admin-api** (in-VPC: stats/config/orders, Aurora as `app_ro`, sole runtime_config writer) + **admin-credentials** (non-VPC: Cognito user moderation, retailer-secret rotation — write-only) | 0002, 0006 |
+| `EdgeServicesStack` | Landing HTTP API (public) + **landing** (non-VPC: OG shell + attributed redirect); **retailer-proxy** (non-VPC, sole retailer egress + order-poll fetcher) → **conversion-poller** (in-VPC writer, `poller_writer` — the only money writer); **fx-rates**; EventBridge schedules `OrderPollHeartbeat` (15 min) + `FxRatesSchedule` (12 h) | 0007, 0009, 0008, 0004, 0017 |
+| `WhatsAppStack` | **whatsapp-dispatcher** consuming the notification_outbox DynamoDB stream (batch 10, retries + bisect, SQS DLQ); sends via End User Messaging Social (`eu-central-1`), kill-switched | 0019 |
+| `EdgeStack` (**us-east-1**) | One CloudFront distribution: **default → S3 SPA** (OAC, private, 403/404 → index.html), **`/p/*` → landing HTTP API** (cross-region origin, caching disabled); CLOUDFRONT WAF web ACL; ACM cert + Route 53 alias; runtime **`/config.json`** into the SPA bucket; edge CloudWatch dashboard (`wanthat-{env}-edge`). app/admin APIs reached directly via Bearer, not fronted | 0019, 0016, 0007 |
+| `ObservabilityStack` (**deploys last**) | SNS alarm topic (email subs); alarms: per-Lambda errors, per-HTTP-API 5xx, Aurora connections (80% of the 50 cap), SMS month-to-date spend (80% of cap); per-surface CloudWatch dashboard; X-Ray + retention-bounded log groups on every Lambda; **FunnelAnalytics** — CloudWatch Logs subscription filters (landing, retailer-proxy, conversion-poller) → Firehose `wanthat-{env}-funnel` → S3 → Glue `wanthat_{env}_analytics.funnel_events` (Athena, partition projection). Follow-up: CloudTrail alarm on retailer-secret reads (needs one account-level trail — dev/prod share an account) | 0006, 0002 |
+| `DnsStack` (**prod only**) | Zoho mail records in the `wanthat.app` zone (MX, SPF, DKIM, DMARC, verification TXT) | — |
 
 Notes:
-- **No NAT Gateway and no RDS Proxy** (ADR-0003/0004). The only functions in the VPC are the ones
-  that touch Aurora (Lambdalith, admin, poller-writer); they reach DynamoDB via a free gateway
-  endpoint and log out-of-band. The landing service and the retailer fetchers run outside the VPC, so nothing
-  in-VPC needs internet egress; the IPv4-only retailer APIs are reached only from the non-VPC
-  fetchers.
-- The `EdgeStack` resources (ACM cert + CloudFront WAF) must live in **us-east-1** — control-plane
-  only; traffic still terminates at the edge near the user. Everything else is `il-central-1`.
+- **No NAT Gateway and no RDS Proxy** (ADR-0003/0004). The only functions in the VPC are the
+  four that touch Aurora (`app-core`, `admin-api`, `conversion-poller`, `db-migrator`); they
+  reach DynamoDB via the free gateway endpoint. Everything else — landing, app-links,
+  admin-credentials, retailer-proxy, fx-rates, message-sender, post-confirmation,
+  whatsapp-dispatcher — runs outside the VPC, so nothing in-VPC needs internet egress; the
+  IPv4-only retailer APIs are reached only from retailer-proxy. In-VPC functions cannot invoke
+  outward: the conversion chain is always proxy → writer.
+- The `EdgeStack` resources (ACM cert + CloudFront WAF) must live in **us-east-1** —
+  control-plane only; traffic still terminates at the edge near the user. WhatsApp sends go
+  through **eu-central-1** (End User Messaging Social is not in il-central-1). Everything
+  else is `il-central-1`.
+- **No reserved concurrency anywhere** — the account limit (10) is the cap until the quota
+  is raised; re-introduce per-function caps after that.
 
 ## Runbook — first-admin bootstrap (employee pool)
 
