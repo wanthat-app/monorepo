@@ -388,6 +388,10 @@ const en = {
       trackingIdSave: "Save tracking ID",
       trackingIdSaved: "Tracking ID updated.",
       trackingIdError: "Failed to update the tracking ID.",
+      debugPayloads: "Log raw retailer answers",
+      debugPayloadsDesc:
+        "Diagnostics: when a retailer API answers an unrecognized payload, log it raw (capped) so the failure can be investigated. Applies on the next request. Keep off outside investigations.",
+      debugPayloadsError: "Failed to update the diagnostics switch.",
     },
     save: {
       unsaved: "You have unsaved changes.",
@@ -925,6 +929,10 @@ const he: typeof en = {
       trackingIdSave: "שמירת Tracking ID",
       trackingIdSaved: "ה-Tracking ID עודכן.",
       trackingIdError: "עדכון ה-Tracking ID נכשל.",
+      debugPayloads: "תיעוד תשובות גולמיות מהקמעונאי",
+      debugPayloadsDesc:
+        "אבחון: כאשר ה-API של הקמעונאי מחזיר תשובה לא מזוהה, היא תתועד כפי שהיא (מוגבלת באורך) כדי שאפשר יהיה לחקור את הכשל. חל מהבקשה הבאה. יש להשאיר כבוי מחוץ לחקירות.",
+      debugPayloadsError: "עדכון מתג האבחון נכשל.",
     },
     save: {
       unsaved: "יש לך שינויים שלא נשמרו.",

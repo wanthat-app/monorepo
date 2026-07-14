@@ -20,13 +20,18 @@ function fakeFetch(body: unknown, capture?: { params?: URLSearchParams }): typeo
   }) as typeof fetch;
 }
 
-function client(body: unknown, capture?: { params?: URLSearchParams }): AliExpressClient {
+function client(
+  body: unknown,
+  capture?: { params?: URLSearchParams },
+  options?: { debugPayloads?: boolean },
+): AliExpressClient {
   return new AliExpressClient({
     appKey: "512345",
     appSecret: "test-secret",
     trackingId: "wanthat",
     fetchFn: fakeFetch(body, capture),
     now: () => 1700000000000,
+    ...options,
   });
 }
 
@@ -141,6 +146,25 @@ describe("getProductDetail", () => {
     await expect(garbage.getProductDetail("1")).rejects.toMatchObject({
       code: "malformed_result",
     });
+  });
+
+  it("carries the unrecognized payload in the malformed_result message when debug is ON", async () => {
+    const garbage = client({ something: "else entirely" }, undefined, { debugPayloads: true });
+    await expect(garbage.getProductDetail("1")).rejects.toThrowError(/"something":"else entirely"/);
+  });
+
+  it("omits the payload by default (third-party data stays out of logs unless investigating)", async () => {
+    const garbage = client({ something: "else entirely" });
+    const err = await garbage.getProductDetail("1").catch((e: Error) => e);
+    expect(err).toMatchObject({ code: "malformed_result" });
+    expect((err as Error).message).not.toContain("else entirely");
+  });
+
+  it("truncates a huge unrecognized payload instead of blowing up the log line", async () => {
+    const huge = client({ blob: "x".repeat(10_000) }, undefined, { debugPayloads: true });
+    const err = await huge.getProductDetail("1").catch((e: Error) => e);
+    expect(err).toBeInstanceOf(AliExpressApiError);
+    expect((err as Error).message.length).toBeLessThan(3_000);
   });
 
   it("surfaces resp_code/resp_msg/record count in the empty-result error", async () => {

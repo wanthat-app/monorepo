@@ -100,6 +100,15 @@ export const NotificationsWhatsappEnabled = z.boolean();
  */
 export const RetailerAliexpressTrackingId = z.string().trim().min(1).max(64);
 
+/**
+ * Diagnostic switch: when ON, an unrecognized retailer-API payload (`malformed_result`) carries
+ * the raw payload (capped) in the error message, so the proxy's ERROR log shows exactly what the
+ * platform answered — the 2026-07-14 link-creation failure was undiagnosable without it. OFF by
+ * default: retailer payloads are third-party data and belong in logs only while investigating.
+ * Read by the retailer-proxy per invoke (admin panel, next to the credentials) — no redeploy.
+ */
+export const RetailerDebugLogPayloads = z.boolean();
+
 /** The member home's recent-activity strip: how many merged items GET /activity answers by default. */
 export const HomeRecentActivityLimit = z.number().int().min(1).max(50);
 
@@ -129,6 +138,7 @@ export const CONFIG_KEYS = [
   "whatsapp.phoneNumberId",
   "notifications.whatsappEnabled",
   "retailer.aliexpressTrackingId",
+  "retailer.debugLogPayloads",
   "home.recentActivityLimit",
   "site.noticeEn",
   "site.noticeHe",
@@ -155,6 +165,7 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "whatsapp.phoneNumberId": WhatsappPhoneNumberId,
   "notifications.whatsappEnabled": NotificationsWhatsappEnabled,
   "retailer.aliexpressTrackingId": RetailerAliexpressTrackingId,
+  "retailer.debugLogPayloads": RetailerDebugLogPayloads,
   "home.recentActivityLimit": HomeRecentActivityLimit,
   "site.noticeEn": SiteNotice,
   "site.noticeHe": SiteNotice,
@@ -189,6 +200,8 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   "notifications.whatsappEnabled": false,
   // The AliExpress portal's auto-created tracking id; replace via admin once a named one exists.
   "retailer.aliexpressTrackingId": "default",
+  // Payload diagnostics ship OFF; flip on from the admin panel only while investigating.
+  "retailer.debugLogPayloads": false,
   "home.recentActivityLimit": 10,
   // Site-wide notice banner — empty means no banner (the shipped state).
   "site.noticeEn": "",
