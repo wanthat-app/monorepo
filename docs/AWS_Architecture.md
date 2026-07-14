@@ -2,9 +2,11 @@
 
 *The authoritative source for architecture decisions is [`../adrs/`](../adrs) (see
 [`adrs/README.md`](../adrs/README.md) for the index). This document is the consolidated overview;
-where it and an ADR differ, the ADR wins. Last verified against code on **2026-07-14**
-(every stack, function, table, route, and schedule below was read from `infra/lib/` +
-`services/*/src` + `packages/db/migrations/`).*
+where it and an ADR differ, the ADR wins. Last verified on **2026-07-14** against both the
+code (`infra/lib/`, `services/*/src`, `packages/db/migrations/`) and the **live AWS account**:
+every stack, function (incl. VPC placement), table, route, schedule, Cognito trigger, WAF ACL,
+secret, and the Firehose/Glue pipeline below was confirmed deployed and matching in **dev and
+prod** (17 stacks in il-central-1 + 2 edge stacks in us-east-1).*
 
 Architecture diagram: inline **Mermaid** in §2 below (renders on GitHub and in most Markdown
 viewers).
@@ -180,7 +182,8 @@ append-only ledger + hash-chained audit log.
   web ACL on the customer pool rate-limits the unauthenticated Cognito operations
   (SignUp / ConfirmSignUp / ResendConfirmationCode / InitiateAuth / RespondToAuthChallenge,
   100 req/IP/5 min, plus a 500 req/IP backstop) + Cognito's own quotas + the **SNS monthly SMS
-  spend hard cap** ($1 in both envs today — the SMS-sandbox ceiling; raise after AWS lifts it).
+  spend hard cap** ($1 today — an account-wide setting shared by dev and prod, capped at the
+  SMS-sandbox ceiling; raise after AWS lifts it).
 
 ### 3.3 APIs
 Three HTTP APIs (API Gateway v2), each throttled on `$default`:
