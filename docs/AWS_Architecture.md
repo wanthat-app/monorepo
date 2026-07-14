@@ -39,7 +39,7 @@ flowchart TB
   subgraph region["AWS il-central-1"]
     cognito["Cognito x 2 pools - ESSENTIALS<br>customers: phone OTP + passkeys, PII in attributes<br>employees: email + TOTP, Managed Login"]
     sender["message-sender<br>custom SMS sender, kill-switched"]
-    postconf["post-confirmation<br>welcome outbox + guest attribution"]
+    postconf["post-confirmation<br>welcome + attribution + counters"]
 
     appgw["App HTTP API<br>JWT authorizer - customer pool"]
     admingw["Admin HTTP API<br>JWT authorizer - employee pool"]
@@ -53,16 +53,31 @@ flowchart TB
     dispatcher["whatsapp-dispatcher - non-VPC<br>outbox stream consumer + DLQ"]
     sched["EventBridge Scheduler<br>orders 15 min + FX 12 h"]
 
-    ddb[("DynamoDB - 10 tables, on-demand<br>product, recommendation, guest_attribution,<br>poller_state, unattributed_order, runtime_config,<br>ops_counters, fx_rate, notification_outbox, otp_sink")]
     secrets["Secrets Manager<br>retailer credential"]
     funnel[("Firehose -> S3 -> Glue/Athena<br>impression, click, conversion, order_untracked")]
+
+    subgraph dynamo["DynamoDB - on-demand, PITR. Logical view: one node per table - NO cross-table transactions"]
+      t_prod[("product<br>+ counter row - same-table tx")]
+      t_rec[("recommendation<br>+ counter row - same-table tx<br>byOwner GSI")]
+      t_guest[("guest_attribution")]
+      t_state[("poller_state")]
+      t_unattr[("unattributed_order<br>byState GSI")]
+      t_cfg[("runtime_config")]
+      t_ops[("ops_counters")]
+      t_fx[("fx_rate")]
+      t_outbox[("notification_outbox<br>TTL 30 d + stream")]
+      t_otp[("otp_sink<br>TTL 5 min")]
+    end
 
     subgraph vpc["VPC - isolated subnets, no NAT, no RDS Proxy, no interface endpoints"]
       appcore["app-core<br>wallet + activity"]
       adminsvc["admin-api<br>stats, config, unattributed orders"]
       writer["conversion-poller<br>the ONLY money writer"]
       migrator["db-migrator - deploy-time"]
-      aurora[("Aurora Serverless v2 - PG 16.13<br>0 to 2 ACU, IAM auth<br>wallet_entry + audit_log ONLY")]
+      subgraph aurora["Aurora Serverless v2 - PG 16.13, 0 to 2 ACU, IAM auth. Sequential idempotent appends - NOT one tx"]
+        t_wallet[("wallet_entry<br>append-only ledger, keyed by sub<br>unique order_id+kind+status")]
+        t_audit[("audit_log<br>hash-chained, SECURITY DEFINER only")]
+      end
     end
   end
 
@@ -75,9 +90,12 @@ flowchart TB
   member -- "browser-direct: SignUp,<br>InitiateAuth, WEB_AUTHN" --> cognito
   cognito -. "custom SMS sender" .-> sender
   sender -- "WhatsApp default, SMS fallback" --> meta
+  sender -- "park every code" --> t_otp
   cognito -. "post confirmation" .-> postconf
-  postconf -- "optin_welcome" --> ddb
-  ddb -. "outbox stream" .-> dispatcher
+  postconf -- "optin_welcome" --> t_outbox
+  postconf -- "guest -> member" --> t_guest
+  postconf -- "customer counter" --> t_ops
+  t_outbox -. "stream" .-> dispatcher
   dispatcher -- "template send" --> meta
 
   member -- "Bearer JWT" --> appgw
@@ -90,25 +108,35 @@ flowchart TB
   admingw --> admincred
   admincred -- "ListUsers, disable, enable,<br>sign-out, delete" --> cognito
   admincred -- "PutSecretValue - write only" --> secrets
+  admincred -- "delete by owner + counter" --> t_rec
 
-  applinks -- "products + recommendations" --> ddb
+  applinks -- "create: put + counter - one tx" --> t_rec
+  applinks -- "cache read" --> t_prod
   applinks -- "invoke generateLink" --> proxy
-  appcore -- "app_rw - wallet reads by sub" --> aurora
-  adminsvc -- "app_ro - reads + config audit fn" --> aurora
-  adminsvc -- "runtime_config sole writer" --> ddb
-  landing -- "short id -> product + owner" --> ddb
+  appcore -- "app_rw - balance + history reads" --> t_wallet
+  adminsvc -- "app_ro - money KPIs" --> t_wallet
+  adminsvc -- "config audit fn - app_ro" --> t_audit
+  adminsvc -- "sole writer" --> t_cfg
+  adminsvc -- "claim / dismiss" --> t_unattr
+  landing -- "short id -> product + owner" --> t_rec
   landing -- "impression / click log lines" --> funnel
   landing -. "302 to store with custom_parameters" .-> ali
 
   sched -- "listOrders heartbeat" --> proxy
   sched --> fx
-  fx -- "USD-ILS rate" --> ddb
+  fx -- "USD-ILS rate" --> t_fx
   proxy -- "HMAC: getProductDetail,<br>generatePromotionLink, listOrdersByIndex" --> ali
   proxy -- "read credential" --> secrets
+  proxy -- "cache put + counter - one tx" --> t_prod
+  proxy -- "poll cursor" --> t_state
+  proxy -- "park unmatched orders" --> t_unattr
+  proxy -- "attribution reads" --> t_guest
   proxy -- "invoke WriteConversions" --> writer
   proxy -- "order_untracked log line" --> funnel
-  writer -- "poller_writer - append-only" --> aurora
-  migrator -- "wanthat_migrator - deploy" --> aurora
+  writer -- "poller_writer - append rows" --> t_wallet
+  writer -- "audit_append per row" --> t_audit
+  writer -- "per-link stats" --> t_rec
+  migrator -- "wanthat_migrator - DDL" --> aurora
 
   classDef invpc fill:#e6f0ff,stroke:#3b6fb3,color:#0b2545
   classDef novpc fill:#eafaf1,stroke:#2e8b57,color:#0b3d2e
@@ -116,14 +144,20 @@ flowchart TB
   classDef ext fill:#f3f0f7,stroke:#7a5fa3,color:#33235c
   class appcore,adminsvc,writer,migrator invpc
   class applinks,admincred,landing,proxy,fx,dispatcher,sender,postconf novpc
-  class aurora,ddb,s3site,funnel data
+  class t_prod,t_rec,t_guest,t_state,t_unattr,t_cfg,t_ops,t_fx,t_outbox,t_otp,t_wallet,t_audit,s3site,funnel data
   class ali,meta,cognito ext
   style vpc fill:#f3f0f7
 ```
 
 *Legend: blue = in-VPC Lambdas, green = non-VPC Lambdas, orange = data stores, purple =
 external/managed. Solid arrows are synchronous data/HTTP, dotted arrows are async (triggers,
-streams, redirects).*
+streams, redirects). The datastores are drawn **one node per table** (logical view): no two
+tables ever share a transaction — every DynamoDB `TransactWriteItems` is single-table (the
+item plus its counter row live in the same table by design), and the Aurora ledger + audit
+writes are sequential idempotent statements, not one SQL transaction. Read edges for
+`runtime_config` (read by almost every function), `fx_rate` (read by app-links, app-core,
+admin-api, landing), and admin-api's read-only taps on ops_counters / otp_sink /
+notification_outbox / product / recommendation are omitted to keep the diagram legible.*
 
 Compute is sliced by real seams (ADR-0002, reshaped by ADR-0006): the member surface is split
 into the non-VPC **app-links** (catalog + recommendations, no database) and the in-VPC
@@ -275,6 +309,14 @@ Three HTTP APIs (API Gateway v2), each throttled on `$default`:
   | `notification_outbox` | outboxId; TTL ~30 d; **stream** | WhatsApp outbox → dispatcher |
   | `otp_sink` | phone; TTL 5 min | every OTP parked pre-send; admin activity feed |
 
+- **Transaction boundaries (why the diagram draws one node per table):** no two tables ever
+  participate in the same transaction. Exact counters are kept transactional by co-locating
+  the counter row **inside the counted table** (`product` and `recommendation` each pair the
+  conditional put/delete with an `ADD itemCount` on their own counter item in one
+  single-table `TransactWriteItems`). The Aurora pair is **not** atomic either: the writer
+  appends a `wallet_entry` row, then chains `audit_append` as a second statement — replay
+  safety comes from the ledger's unique `(order_id, kind, status)` index, not from a wrapping
+  transaction.
 - **Funnel analytics** (ObservabilityStack construct — live): CloudWatch Logs subscription
   filters on landing / retailer-proxy / conversion-poller pick out
   `impression | click | conversion | order_untracked` events → Firehose
