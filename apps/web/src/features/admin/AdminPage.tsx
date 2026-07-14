@@ -873,6 +873,7 @@ function IntegrationsCard({ token }: { token: string | null }) {
         ) : null}
       </div>
       <TrackingIdRow token={token} />
+      <DebugPayloadsRow token={token} />
     </SectionCard>
   );
 }
@@ -961,6 +962,69 @@ function TrackingIdRow({ token }: { token: string | null }) {
           {t("admin.integrations.trackingIdError")}
         </div>
       ) : null}
+    </div>
+  );
+}
+
+/**
+ * The retailer payload-diagnostics switch (`retailer.debugLogPayloads`): when ON, the proxy logs
+ * the raw (capped) retailer answer on unrecognized-payload failures. A diagnostic, not a policy
+ * value, so it saves on toggle instead of joining the dirty-batch save bar; ships OFF.
+ */
+function DebugPayloadsRow({ token }: { token: string | null }) {
+  const { t } = useTranslation();
+  // null = still loading the stored value.
+  const [value, setValue] = useState<boolean | null>(null);
+  const [state, setState] = useState<"idle" | "saving" | "error">("idle");
+
+  useEffect(() => {
+    if (!token) return;
+    adminApi
+      .getConfig(token, "retailer.debugLogPayloads")
+      .then((res) => setValue(Boolean(res.item.value)))
+      .catch(() => setValue(false));
+  }, [token]);
+
+  const toggle = async (next: boolean) => {
+    if (!token || value === null || state === "saving") return;
+    setState("saving");
+    setValue(next); // optimistic; reverted on failure
+    try {
+      const res = await adminApi.putConfig(token, "retailer.debugLogPayloads", next);
+      setValue(Boolean(res.item.value));
+      setState("idle");
+    } catch {
+      setValue(!next);
+      setState("error");
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-3 border-t border-[#eef2f0] py-5 sm:flex-row sm:items-center sm:gap-5">
+      <div className="flex-1">
+        <div className="text-sm font-semibold text-ink">
+          {t("admin.integrations.debugPayloads")}
+        </div>
+        <div className="mt-0.5 text-[12.5px] text-muted">
+          {t("admin.integrations.debugPayloadsDesc")}
+        </div>
+        {state === "error" ? (
+          <div className="mt-1 text-[12.5px] font-semibold text-rejected">
+            {t("admin.integrations.debugPayloadsError")}
+          </div>
+        ) : null}
+      </div>
+      <div className="sm:w-[300px] sm:flex-shrink-0">
+        {value === null ? (
+          <Skeleton className="h-6 w-11" />
+        ) : (
+          <Switch
+            checked={value}
+            onChange={(next) => void toggle(next)}
+            label={t("admin.integrations.debugPayloads")}
+          />
+        )}
+      </div>
     </div>
   );
 }

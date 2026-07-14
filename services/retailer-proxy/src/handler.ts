@@ -17,6 +17,7 @@ import {
   GenerateLinkRequest,
   type PollOrdersResponse,
   RetailerAliexpressTrackingId,
+  RetailerDebugLogPayloads,
   type WriteConversionsRequest,
   WriteConversionsResponse,
 } from "@wanthat/contracts";
@@ -63,10 +64,13 @@ function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps; claims: Sett
     // Admin-tunable (runtime config, next to the credentials): must name a tracking id that
     // exists in the AliExpress portal. Read per client build — an admin change applies on the
     // next invoke, no redeploy.
-    const trackingId = RetailerAliexpressTrackingId.parse(
-      await config.get("retailer.aliexpressTrackingId"),
-    );
-    return new AliExpressClient({ ...creds, trackingId });
+    const [trackingId, debugPayloads] = await Promise.all([
+      config
+        .get("retailer.aliexpressTrackingId")
+        .then((v) => RetailerAliexpressTrackingId.parse(v)),
+      config.get("retailer.debugLogPayloads").then((v) => RetailerDebugLogPayloads.parse(v)),
+    ]);
+    return new AliExpressClient({ ...creds, trackingId, debugPayloads });
   };
 
   // Dry mode until the writer ships/wires: resolved conversions are logged, never written.

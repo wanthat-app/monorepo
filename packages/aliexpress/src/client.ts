@@ -28,6 +28,12 @@ export interface AliExpressClientOptions {
   fetchFn?: typeof fetch;
   /** Injectable clock for deterministic signing tests. */
   now?: () => number;
+  /**
+   * When true, malformed_result errors carry the raw (capped) payload so the caller's ERROR log
+   * shows what the platform actually answered. Admin-tunable via `retailer.debugLogPayloads`
+   * (contracts config); ships OFF — third-party payloads stay out of logs unless investigating.
+   */
+  debugPayloads?: boolean;
 }
 
 /** A platform-level error answered by the gateway (`error_response`) or a malformed payload. */
@@ -46,6 +52,22 @@ const ErrorResponse = z.object({
     msg: z.string().optional(),
   }),
 });
+
+/**
+ * The raw payload, capped, for malformed_result messages: an unrecognized shape is exactly the
+ * case where the error text is the ONLY evidence of what the platform answered (bit us on
+ * 2026-07-14 — product 1005008735450412 failed as "unrecognized payload" with nothing to
+ * diagnose from). The proxy logs error messages server-side only; callers get generic codes.
+ */
+function payloadSnippet(data: unknown, cap = 2_000): string {
+  let json: string;
+  try {
+    json = JSON.stringify(data) ?? String(data);
+  } catch {
+    json = String(data);
+  }
+  return json.length > cap ? `${json.slice(0, cap)}…[truncated ${json.length} chars]` : json;
+}
 
 const LinkGenerateResponse = z.object({
   aliexpress_affiliate_link_generate_response: z.object({
@@ -278,7 +300,7 @@ export class AliExpressClient {
     if (!parsed.success)
       throw new AliExpressApiError(
         "malformed_result",
-        "productdetail.get answered an unrecognized payload",
+        `productdetail.get answered an unrecognized payload${this.diagnostic(data)}`,
       );
     const respResult = parsed.data.aliexpress_affiliate_productdetail_get_response.resp_result;
     const product = respResult.result?.products?.product[0];
@@ -329,7 +351,7 @@ export class AliExpressClient {
     if (!parsed.success)
       throw new AliExpressApiError(
         "malformed_result",
-        "order.listbyindex answered an unrecognized payload",
+        `order.listbyindex answered an unrecognized payload${this.diagnostic(data)}`,
       );
     const result = parsed.data.aliexpress_affiliate_order_listbyindex_response.resp_result.result;
     const orders = (result?.orders?.order ?? []).flatMap((o): AliExpressOrder[] => {
@@ -363,6 +385,11 @@ export class AliExpressClient {
     });
     const cursor = result?.next_query_index_id;
     return { orders, nextQueryIndexId: cursor === undefined ? null : String(cursor) };
+  }
+
+  /** The payload snippet for a malformed_result message — empty unless debugPayloads is on. */
+  private diagnostic(data: unknown): string {
+    return this.options.debugPayloads ? `: ${payloadSnippet(data)}` : "";
   }
 
   /** Sign + POST one gateway method; throws AliExpressApiError on platform errors. */
