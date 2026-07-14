@@ -23,7 +23,13 @@ import type {
   UsersStats,
 } from "@wanthat/contracts";
 import { beginAdminLogin, clearAdminTokens, refreshAdminTokens } from "./admin-login";
-import { ApiError, type WalletBalanceWire, type WalletEntryWire } from "./api";
+import {
+  ApiError,
+  type MoneyWire,
+  type WalletBalanceWire,
+  type WalletEarningsWire,
+  type WalletEntryWire,
+} from "./api";
 import { getConfig } from "./config";
 
 /**
@@ -36,15 +42,21 @@ export interface StatsOverview {
    * the Post-Confirmation trigger + the admin moderation routes. Narrower than the users page's
    * approximate whole-pool total (which includes UNCONFIRMED) on purpose. */
   usersCount: number;
-  pendingApprovals: number | null;
-  totalCashbackMinor: number | null;
-  conversions30d: number | null;
 }
 
 /** The wallet wire (Money travels as decimal strings — the contract types are the bigint code side). */
 export interface AdminUserWalletWire {
   balances: WalletBalanceWire[];
   entries: { items: WalletEntryWire[]; nextCursor: string | null };
+}
+
+/** GET /admin/stats/money — see @wanthat/contracts MoneyStats for the full semantics. */
+export interface MoneyStatsWire {
+  totals: ({ currency: string } & WalletEarningsWire)[];
+  ilsEstimate: WalletEarningsWire | null;
+  conversions30d: number;
+  dailyConversions: { date: string; count: number }[];
+  cashbackPerActive30d: MoneyWire | null;
 }
 
 async function adminRequest<T>(
@@ -117,6 +129,9 @@ export const adminApi = {
       body: { value },
     }),
   statsOverview: (token: string) => adminRequest<StatsOverview>("/admin/stats/overview", token),
+  // Ledger-derived money KPIs; its own call so a scale-to-zero Aurora resume delays only the
+  // money cards (the DynamoDB stats above render immediately).
+  moneyStats: (token: string) => adminRequest<MoneyStatsWire>("/admin/stats/money", token),
   usersStats: (token: string) => adminRequest<UsersStats>("/admin/stats/users", token),
   catalogStats: (token: string) => adminRequest<CatalogStats>("/admin/stats/catalog", token),
   // Activity page: paged audit-log feed (+ dev OTP codes merged server-side on page 1 in dev).

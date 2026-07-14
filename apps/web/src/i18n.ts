@@ -320,9 +320,10 @@ const en = {
     stats: {
       users: "Registered users",
       active30d: "Active members (30d)",
-      pending: "Pending payouts",
-      cashback: "Cashback paid",
-      conversions: "Link conversion",
+      pending: "Pending cashback",
+      cashback: "Cashback earned",
+      conversions: "Conversions (30d)",
+      perActive30d: "Per active member (30d)",
       links: "Links created",
       products: "Products",
     },
@@ -341,6 +342,16 @@ const en = {
     recs: {
       title: "Recommendations",
       createdTrend: "Created (last 30 days)",
+    },
+    conversionsPanel: {
+      title: "Conversions",
+      trend: "Attributed orders (last 30 days)",
+    },
+    moneyTotals: {
+      title: "Ledger totals",
+      earned: "earned",
+      pending: "pending",
+      empty: "No reward rows yet",
     },
     noticePlaceholder: "Empty = no banner",
     sections: {
@@ -847,9 +858,10 @@ const he: typeof en = {
     stats: {
       users: "משתמשים רשומים",
       active30d: "חברים פעילים (30 יום)",
-      pending: "תשלומים ממתינים",
-      cashback: "קאשבק ששולם",
-      conversions: "המרת קישורים",
+      pending: "קאשבק ממתין",
+      cashback: "קאשבק שנצבר",
+      conversions: "המרות (30 יום)",
+      perActive30d: "לחבר פעיל (30 יום)",
       links: "קישורים שנוצרו",
       products: "מוצרים",
     },
@@ -868,6 +880,16 @@ const he: typeof en = {
     recs: {
       title: "המלצות",
       createdTrend: "נוצרו (30 הימים האחרונים)",
+    },
+    conversionsPanel: {
+      title: "המרות",
+      trend: "הזמנות משויכות (30 הימים האחרונים)",
+    },
+    moneyTotals: {
+      title: "סכומים לפי מטבע",
+      earned: "נצבר",
+      pending: "ממתין",
+      empty: "אין עדיין שורות תגמול",
     },
     noticePlaceholder: "ריק = ללא באנר",
     sections: {

@@ -12,6 +12,7 @@
  * (defence in depth).
  */
 import {
+  Bps,
   CatalogStats,
   CONFIG_DEFAULTS,
   CONFIG_KEYS,
@@ -21,12 +22,20 @@ import {
   ListActivityQuery,
   ListActivityResponse,
   ListConfigResponse,
+  MoneyStats,
+  moneyJson,
   PutConfigBody,
   PutConfigResponse,
   UsersStats,
 } from "@wanthat/contracts";
-import { appendConfigChangeAudit, listAuditLog } from "@wanthat/db";
-import { lastNDates } from "@wanthat/dynamo";
+import { appendConfigChangeAudit, listAuditLog, listRewardRows } from "@wanthat/db";
+import {
+  DISPLAY_CURRENCY,
+  deriveMoneyStats,
+  ilsDisplayEstimate,
+  SETTLEMENT_CURRENCY,
+} from "@wanthat/domain";
+import { jerusalemDate, lastNDates } from "@wanthat/dynamo";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
 import { auditEntryToItem, mergeByAtDesc, otpSinkToItems, outboxToItems } from "./activity";
@@ -114,20 +123,14 @@ app.put("/admin/config/:key", async (c) => {
 // admin-credentials function on this same HTTP API — Secrets Manager is unreachable from the
 // endpoint-free VPC this function runs in (ADR-0004).
 
-// GET /admin/stats/overview — `usersCount` is EXACT again: the `customerCounter` item in the
+// GET /admin/stats/overview — `usersCount` is EXACT: the `customerCounter` item in the
 // OpsCounters table (a DynamoDB read, so this in-VPC function can serve it without
 // cognito-idp — ADR-0004). The counter counts CONFIRMED customers (only the Post-Confirmation
-// trigger increments); the users page's approximate whole-pool total keeps its wider scope. The
-// wallet figures (totalCashbackMinor, conversions30d) become real Aurora reads with the
-// conversion slice.
+// trigger increments); the users page's approximate whole-pool total keeps its wider scope.
+// Money figures live on /admin/stats/money (their own fetch: Aurora cold-resume isolation).
 app.get("/admin/stats/overview", async (c) => {
   const { total } = await getContext().customerCounter.get();
-  return c.json({
-    usersCount: total,
-    pendingApprovals: null,
-    totalCashbackMinor: null,
-    conversions30d: null,
-  });
+  return c.json({ usersCount: total });
 });
 
 // GET /admin/stats/users — population + activity metrics, all DynamoDB (ADR-0004: no
@@ -180,6 +183,70 @@ app.get("/admin/stats/catalog", async (c) => {
       products,
       recommendations,
       dailyCreated: dates.map((date) => ({ date, count: created.get(date) ?? 0 })),
+    }),
+  );
+});
+
+// GET /admin/stats/money — the dashboard money KPIs, derived per request from the wallet_entry
+// ledger (spec 2026-07-13, approach A: money is derived, never stored). Aurora read as app_ro;
+// the SPA fetches this separately so a scale-to-zero resume delays only the money cards.
+// Rewards settle in USD (ADR-0017); the ILS figures are display-only estimates off the cached
+// rate minus the conversion commission - the member wallet's exact semantics.
+app.get("/admin/stats/money", async () => {
+  const ctx = getContext();
+  const dates = lastNDates(30);
+  const [rows, active30d, rate, commissionBps] = await Promise.all([
+    listRewardRows(ctx.db),
+    ctx.opsMetrics.countActiveSince(dates[0] as string),
+    ctx.fx.get(SETTLEMENT_CURRENCY, DISPLAY_CURRENCY),
+    ctx.config.get("fx.conversionCommissionBps"),
+  ]);
+  const stats = deriveMoneyStats(
+    // The explicit pick (not a spread) is the domain boundary: `createdAt` stays out of the
+    // timezone-free module; only its pre-stamped Jerusalem bucket crosses.
+    rows.map((r) => ({
+      kind: r.kind,
+      amountMinor: r.amountMinor,
+      currency: r.currency,
+      orderId: r.orderId,
+      status: r.status,
+      date: jerusalemDate(r.createdAt),
+    })),
+    dates,
+  );
+
+  // The member wallet's exact ≈₪ semantics — one shared rule (`ilsDisplayEstimate`): hard
+  // zeros when no USD is held, null when USD is held but no rate is cached.
+  const usd = stats.totals.find((t) => t.currency === SETTLEMENT_CURRENCY);
+  const est = ilsDisplayEstimate(
+    Boolean(usd),
+    {
+      confirmed: usd?.confirmedMinor ?? 0n,
+      pending: usd?.pendingMinor ?? 0n,
+      confirmedInWindow: usd?.confirmedInWindowMinor ?? 0n,
+    },
+    rate?.rate ?? null,
+    Bps.parse(commissionBps),
+  );
+  const cashbackPerActive30d =
+    est === null || active30d === 0
+      ? null
+      : {
+          amountMinor: est.confirmedInWindow.amountMinor / BigInt(active30d),
+          currency: DISPLAY_CURRENCY,
+        };
+
+  return moneyJson(
+    MoneyStats.parse({
+      totals: stats.totals.map((t) => ({
+        currency: t.currency,
+        confirmed: { amountMinor: t.confirmedMinor, currency: t.currency },
+        pending: { amountMinor: t.pendingMinor, currency: t.currency },
+      })),
+      ilsEstimate: est && { confirmed: est.confirmed, pending: est.pending },
+      conversions30d: stats.conversionsInWindow,
+      dailyConversions: stats.dailyConversions,
+      cashbackPerActive30d,
     }),
   );
 });

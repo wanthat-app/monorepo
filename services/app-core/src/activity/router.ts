@@ -3,12 +3,12 @@ import {
   ListMemberActivityQuery,
   ListMemberActivityResponse,
   type MemberActivityItem,
+  moneyJson,
 } from "@wanthat/contracts";
 import { listWalletHistory } from "@wanthat/db";
 import { Hono } from "hono";
 import { type Bindings, subFromClaims } from "../claims";
 import { getContext } from "../context";
-import { moneyJson } from "../http";
 
 /**
  * The member activity feed (GET /activity): recommendation creations (DynamoDB `byOwner`) and
@@ -148,7 +148,7 @@ export function activityRouter(): Hono<{ Bindings: Bindings }> {
       nextCursor = encodeCursor({ ...rPart, ...wPart });
     }
 
-    return moneyJson(c, ListMemberActivityResponse.parse({ items, nextCursor }));
+    return moneyJson(ListMemberActivityResponse.parse({ items, nextCursor }));
   });
 
   return activity;

@@ -13,6 +13,7 @@ import {
   GetRecommendationResponse,
   ListRecommendationsQuery,
   ListRecommendationsResponse,
+  moneyJson,
   ResolveProductBody,
   ResolveProductResponse,
   UpdateRecommendationBody,
@@ -24,7 +25,6 @@ import type { Context } from "hono";
 import { Hono } from "hono";
 import { type Bindings, subFromClaims } from "../claims";
 import { getContext } from "../context";
-import { moneyJson } from "../http";
 import { recommendationIdFor } from "./rec-id";
 import { referrerFirstName } from "./referrer-name";
 
@@ -176,7 +176,6 @@ export function productsRouter(): Hono<{ Bindings: Bindings }> {
       updatedAt: item.updatedAt,
     };
     return moneyJson(
-      c,
       ResolveProductResponse.parse({
         product,
         estimate: buildEstimate(item.price, item.commissionBps, split),
@@ -247,7 +246,6 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
       });
     }
     return moneyJson(
-      c,
       CreateRecommendationResponse.parse({ recommendation: toRecommendation(item, ctx.appUrl) }),
       created ? 201 : 200,
     );
@@ -270,7 +268,6 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
       keyOf(query.data.cursor),
     );
     return moneyJson(
-      c,
       ListRecommendationsResponse.parse({
         items: page.items.map((item) => ({
           recommendationId: item.recommendationId,
@@ -293,7 +290,6 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
     const item = await ctx.recommendations.get(c.req.param("recommendationId"));
     if (!item || item.ownerId !== sub) return c.json({ error: "not_found" }, 404);
     return moneyJson(
-      c,
       GetRecommendationResponse.parse({ recommendation: toRecommendation(item, ctx.appUrl) }),
     );
   });
@@ -315,7 +311,6 @@ export function recommendationsRouter(): Hono<{ Bindings: Bindings }> {
     );
     if (!item) return c.json({ error: "not_found" }, 404);
     return moneyJson(
-      c,
       UpdateRecommendationResponse.parse({ recommendation: toRecommendation(item, ctx.appUrl) }),
     );
   });

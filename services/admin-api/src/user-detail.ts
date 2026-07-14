@@ -10,27 +10,18 @@ import {
   type AdminUserRecommendationItem,
   AdminUserWalletResponse,
   ListAdminUserRecommendationsResponse,
+  moneyJson,
   Uuid,
 } from "@wanthat/contracts";
 import { listEntriesForSub, listWalletHistory } from "@wanthat/db";
 import { deriveBalances } from "@wanthat/domain";
 import type { RecommendationItem } from "@wanthat/dynamo";
-import type { Context } from "hono";
 import { Hono } from "hono";
 import { getContext } from "./context";
 import type { Bindings } from "./guard";
 
 const RECOMMENDATIONS_PAGE = 20;
 const WALLET_ENTRIES_PAGE = 20;
-
-/** Money's wire rule (bigint minor units → decimal string); `c.json` throws on bigint. */
-function moneyJson(c: Context<{ Bindings: Bindings }>, value: unknown): Response {
-  return c.body(
-    JSON.stringify(value, (_k, v) => (typeof v === "bigint" ? v.toString() : v)),
-    200,
-    { "content-type": "application/json" },
-  );
-}
 
 /** The admin view of a stored recommendation — everything EXCEPT the affiliate URL and owner. */
 const toRecommendationView = (item: RecommendationItem): AdminUserRecommendationItem => ({
@@ -94,7 +85,6 @@ export function userDetailRouter(): Hono<{ Bindings: Bindings }> {
       listWalletHistory(ctx.db, sub.data, WALLET_ENTRIES_PAGE),
     ]);
     return moneyJson(
-      c,
       AdminUserWalletResponse.parse({
         balances: deriveBalances(rows),
         entries: {

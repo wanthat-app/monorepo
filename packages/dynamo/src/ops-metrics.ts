@@ -21,9 +21,13 @@ export type DailyMetric = "signupsDaily" | "recsDaily" | "activeDaily";
 
 export const PRESENCE_PREFIX = "presence#";
 
+// Hoisted: constructing a DateTimeFormat is ~40x the cost of format(), and admin money
+// stats calls jerusalemDate once per ledger row. format() itself is stateless.
+const JERUSALEM_DATE_FORMAT = new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" });
+
 /** The Asia/Jerusalem calendar date of an instant, as YYYY-MM-DD (en-CA gives ISO order). */
 export function jerusalemDate(now: Date = new Date()): string {
-  return new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Jerusalem" }).format(now);
+  return JERUSALEM_DATE_FORMAT.format(now);
 }
 
 /**

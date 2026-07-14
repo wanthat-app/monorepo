@@ -20,6 +20,37 @@ export interface LedgerRow {
 /** Lifecycle order (ADR-0009): the furthest status wins; clawback supersedes and contributes 0. */
 const STATUS_RANK: Record<WalletEntryStatus, number> = { pending: 0, confirmed: 1, clawback: 2 };
 
+/** The reward `wallet_entry` kinds — the rows that live the pending→confirmed→clawback lifecycle. */
+export type RewardKind = Extract<WalletEntryKind, "referrer_cashback" | "consumer_reward">;
+
+/**
+ * Collapse each reward's lifecycle rows to its furthest-advanced row, keyed per
+ * `(currency, orderId, kind)`. A reward row with no orderId cannot be collapsed against
+ * anything, so it stands alone. THE ledger collapse rule — every money derivation
+ * (member balances, platform money stats) must count rewards through this, never ad hoc.
+ */
+export function collapseRewards<
+  T extends {
+    kind: RewardKind;
+    currency: string;
+    orderId: string | null;
+    status: WalletEntryStatus;
+  },
+>(rows: readonly T[]): T[] {
+  const rewards = new Map<string, T>();
+  let orphan = 0;
+  for (const row of rows) {
+    const key =
+      row.orderId === null ? `orphan#${orphan++}` : `${row.currency}#${row.orderId}#${row.kind}`;
+    const seen = rewards.get(key);
+    if (!seen || STATUS_RANK[row.status] > STATUS_RANK[seen.status]) rewards.set(key, row);
+  }
+  return [...rewards.values()];
+}
+
+const isReward = (kind: WalletEntryKind): kind is RewardKind =>
+  kind === "referrer_cashback" || kind === "consumer_reward";
+
 interface CurrencyTotals {
   recommender: { confirmed: bigint; pending: bigint };
   buyer: { confirmed: bigint; pending: bigint };
@@ -48,32 +79,15 @@ export function deriveBalances(rows: LedgerRow[]): WalletBalance[] {
     return totals;
   };
 
-  // Collapse each reward's lifecycle rows to its furthest-advanced row, keyed per (orderId, kind).
-  // A reward row with no orderId cannot be collapsed against anything, so it stands alone.
-  const rewards = new Map<string, LedgerRow>();
-  let orphan = 0;
   for (const row of rows) {
-    switch (row.kind) {
-      case "referrer_cashback":
-      case "consumer_reward": {
-        const key =
-          row.orderId === null
-            ? `orphan#${orphan++}`
-            : `${row.currency}#${row.orderId}#${row.kind}`;
-        const seen = rewards.get(key);
-        if (!seen || STATUS_RANK[row.status] > STATUS_RANK[seen.status]) rewards.set(key, row);
-        break;
-      }
-      case "adjustment":
-        totalsFor(row.currency).movements += row.amountMinor;
-        break;
-      case "withdrawal":
-        totalsFor(row.currency).movements -= row.amountMinor;
-        break;
-    }
+    if (row.kind === "adjustment") totalsFor(row.currency).movements += row.amountMinor;
+    else if (row.kind === "withdrawal") totalsFor(row.currency).movements -= row.amountMinor;
   }
 
-  for (const reward of rewards.values()) {
+  const rewards = collapseRewards(
+    rows.filter((row): row is LedgerRow & { kind: RewardKind } => isReward(row.kind)),
+  );
+  for (const reward of rewards) {
     if (reward.status === "clawback") continue; // clawed back: contributes 0 everywhere
     const totals = totalsFor(reward.currency);
     const bucket = reward.kind === "referrer_cashback" ? totals.recommender : totals.buyer;

@@ -14,6 +14,12 @@
  */
 import type { CashbackEstimate, CashbackSplit } from "@wanthat/contracts";
 
+export {
+  type DerivedCurrencyTotals,
+  type DerivedMoneyStats,
+  deriveMoneyStats,
+  type MoneyStatsRow,
+} from "./money-stats";
 export { deriveBalances, type LedgerRow } from "./wallet";
 
 const BPS_DENOMINATOR = 10_000n;
@@ -103,6 +109,34 @@ export function convertMinor(amountMinor: bigint, rate: string, commissionBps: n
   const scaledRate = BigInt(whole + frac); // rate × scale, exact
   const gross = (amountMinor * scaledRate) / scale;
   return (gross * BigInt(10_000 - commissionBps)) / BPS_DENOMINATOR;
+}
+
+/** Rewards settle in USD (ADR-0017); ILS is the Israeli MVP's display currency. */
+export const SETTLEMENT_CURRENCY = "USD";
+export const DISPLAY_CURRENCY = "ILS";
+
+/**
+ * The `≈₪` display-estimate rule (ADR-0017), shared by the member wallet and the admin money
+ * stats so the two can never disagree on the same ledger. Converts a record of USD minor-unit
+ * amounts to ILS `Money`s per `convertMinor` (cached rate minus the conversion commission).
+ * No USD held (`usdHeld` false; the empty ledger included) estimates to hard zeros — nothing
+ * converts to nothing at any rate — so the UI always has a number to render. Null ONLY when
+ * USD is held but no rate is cached yet: the amount is genuinely unknowable.
+ */
+export function ilsDisplayEstimate<K extends string>(
+  usdHeld: boolean,
+  usdMinor: Record<K, bigint>,
+  rate: string | null,
+  commissionBps: number,
+): Record<K, { amountMinor: bigint; currency: string }> | null {
+  if (usdHeld && rate === null) return null;
+  const toIls = (amountMinor: bigint) => ({
+    amountMinor: usdHeld && rate !== null ? convertMinor(amountMinor, rate, commissionBps) : 0n,
+    currency: DISPLAY_CURRENCY,
+  });
+  const out = {} as Record<K, { amountMinor: bigint; currency: string }>;
+  for (const key of Object.keys(usdMinor) as K[]) out[key] = toIls(usdMinor[key]);
+  return out;
 }
 
 /** Who a click resolves to (ADR-0008): a member's Cognito sub or a guest's opaque localStorage id. */

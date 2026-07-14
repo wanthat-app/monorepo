@@ -10,6 +10,7 @@ import { useLocation, useNavigate } from "react-router-dom";
 import {
   adminApi,
   type CatalogStats,
+  type MoneyStatsWire,
   type StatsOverview,
   type UsersStats,
 } from "../../lib/admin-api";
@@ -21,6 +22,7 @@ import {
   isAdminSession,
 } from "../../lib/admin-login";
 import { identityFromIdToken } from "../../lib/jwt";
+import { formatMoneyMinor } from "../../lib/money";
 import { Button, RangeSlider, Segmented, Skeleton, Spinner, Switch } from "../../ui/components";
 import { ActivityView } from "./ActivityView";
 import { AdminI18nProvider } from "./AdminI18nProvider";
@@ -180,6 +182,9 @@ function DashboardView({ token }: { token: string | null }) {
   // customers only. The users PAGE header deliberately keeps the other, approximate semantic:
   // `ListUsersResponse.total` estimates the WHOLE pool, including UNCONFIRMED signups.
   const [overview, setOverview] = useState<StatsOverview | null | undefined>(undefined);
+  // undefined = loading, null = fetch failed. Fetched independently: this one wakes
+  // scale-to-zero Aurora (~20s cold), so only the money cards wait on it.
+  const [money, setMoney] = useState<MoneyStatsWire | null | undefined>(undefined);
   useEffect(() => {
     if (!token) return;
     adminApi
@@ -197,6 +202,10 @@ function DashboardView({ token }: { token: string | null }) {
       .statsOverview(token)
       .then(setOverview)
       .catch(() => setOverview(null));
+    adminApi
+      .moneyStats(token)
+      .then(setMoney)
+      .catch(() => setMoney(null));
   }, [token]);
 
   // Skeleton placeholder while the stats request is in flight, so the module doesn't flash "…".
@@ -262,17 +271,19 @@ function DashboardView({ token }: { token: string | null }) {
         />
       </div>
 
-      {/* Money KPIs: still placeholders — the wallet-aggregation slice's job, not deleted. */}
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3">
+      {/* Money KPIs (spec 2026-07-13): ledger-derived, own fetch + skeleton (Aurora cold start). */}
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4">
         <KpiCard
           label={t("admin.stats.cashback")}
-          value="—"
+          value={moneyValue(money, (m) => ilsOrTotals(m, "confirmed"))}
+          live
           icon={<path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6" />}
         />
         <KpiCard
           label={t("admin.stats.pending")}
-          value="—"
+          value={moneyValue(money, (m) => ilsOrTotals(m, "pending"))}
           tone="pending"
+          live
           icon={
             <>
               <circle cx="12" cy="12" r="9" />
@@ -282,7 +293,8 @@ function DashboardView({ token }: { token: string | null }) {
         />
         <KpiCard
           label={t("admin.stats.conversions")}
-          value="—"
+          value={moneyValue(money, (m) => m.conversions30d.toLocaleString("en-US"))}
+          live
           icon={
             <>
               <path d="M3 17l6-6 4 4 7-7" />
@@ -290,10 +302,88 @@ function DashboardView({ token }: { token: string | null }) {
             </>
           }
         />
+        <KpiCard
+          label={t("admin.stats.perActive30d")}
+          value={moneyValue(money, (m) =>
+            m.cashbackPerActive30d
+              ? formatMoneyMinor(m.cashbackPerActive30d.amountMinor, "ILS")
+              : "—",
+          )}
+          live
+          icon={
+            <>
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+            </>
+          }
+        />
       </div>
+      <TotalsByCurrency money={money} />
 
       <UsersPanel users={failed ? null : users} failed={failed} />
-      <RecsPanel catalog={catalog} />
+      {/* null (failed) must survive the mapping — optional chaining would erase it to undefined. */}
+      <TrendPanel
+        title={t("admin.recs.title")}
+        trendLabel={t("admin.recs.createdTrend")}
+        data={catalog === null ? null : catalog?.dailyCreated}
+      />
+      <TrendPanel
+        title={t("admin.conversionsPanel.title")}
+        trendLabel={t("admin.conversionsPanel.trend")}
+        data={money === null ? null : money?.dailyConversions}
+      />
+    </div>
+  );
+}
+
+/** Skeleton while loading, em-dash on failure, formatted value once loaded. */
+function moneyValue(
+  money: MoneyStatsWire | null | undefined,
+  format: (m: MoneyStatsWire) => ReactNode,
+): ReactNode {
+  if (money === undefined) return <Skeleton className="h-[30px] w-16" />;
+  if (money === null) return "—";
+  return format(money);
+}
+
+/** The ₪ estimate when a rate is cached; falls back to the first raw currency total. */
+function ilsOrTotals(m: MoneyStatsWire, bucket: "confirmed" | "pending"): string {
+  if (m.ilsEstimate) return formatMoneyMinor(m.ilsEstimate[bucket].amountMinor, "ILS");
+  const first = m.totals[0];
+  return first ? formatMoneyMinor(first[bucket].amountMinor, first.currency) : "—";
+}
+
+/**
+ * The raw per-currency ledger totals, always visible under the money cards: the ₪ figures are
+ * estimates with wallet-contract fallbacks (a hard-zero estimate hides non-USD money; the
+ * no-rate fallback shows one currency), so the admin can eyeball the cards against the source
+ * amounts. Decision 2026-07-14: inspect, don't change the estimate semantics.
+ */
+function TotalsByCurrency({ money }: { money: MoneyStatsWire | null | undefined }) {
+  const { t } = useTranslation();
+  if (money === null) return null; // the cards already show the failure em-dashes
+  return (
+    <div
+      dir="ltr"
+      className="flex flex-wrap items-baseline gap-x-5 gap-y-1 px-1 text-[12.5px] text-muted"
+    >
+      <span className="font-semibold">{t("admin.moneyTotals.title")}</span>
+      {money === undefined ? (
+        <Skeleton className="h-[19px] w-56" />
+      ) : money.totals.length === 0 ? (
+        <span>{t("admin.moneyTotals.empty")}</span>
+      ) : (
+        money.totals.map((tot) => (
+          <span key={tot.currency} className="tabular-nums">
+            <span className="font-semibold text-ink">{tot.currency}</span>{" "}
+            {formatMoneyMinor(tot.confirmed.amountMinor, tot.currency)}{" "}
+            {t("admin.moneyTotals.earned")} ·{" "}
+            {formatMoneyMinor(tot.pending.amountMinor, tot.currency)}{" "}
+            {t("admin.moneyTotals.pending")}
+          </span>
+        ))
+      )}
     </div>
   );
 }
@@ -335,20 +425,26 @@ function UsersPanel({ users, failed }: { users: UsersStats | null; failed: boole
   );
 }
 
-/** The recommendations panel: the 30-day created trend (catalog stats' dailyCreated). */
-function RecsPanel({ catalog }: { catalog: CatalogStats | null | undefined }) {
+/** A card with one 30-day DailyTrend: `data` undefined = loading skeleton, null = fetch failed. */
+function TrendPanel({
+  title,
+  trendLabel,
+  data,
+}: {
+  title: string;
+  trendLabel: string;
+  data: { date: string; count: number }[] | null | undefined;
+}) {
   const { t } = useTranslation();
   return (
     <div className="rounded-card border border-line bg-surface p-5">
-      <h2 className="mb-4 font-display text-lg font-semibold text-ink">{t("admin.recs.title")}</h2>
-      {catalog === null ? (
+      <h2 className="mb-4 font-display text-lg font-semibold text-ink">{title}</h2>
+      {data === null ? (
         <div className="py-10 text-center text-sm text-muted">{t("admin.users.error")}</div>
       ) : (
         <div>
-          <div className="mb-2 text-[12.5px] font-semibold text-muted">
-            {t("admin.recs.createdTrend")}
-          </div>
-          <DailyTrend data={catalog?.dailyCreated ?? null} />
+          <div className="mb-2 text-[12.5px] font-semibold text-muted">{trendLabel}</div>
+          <DailyTrend data={data ?? null} />
         </div>
       )}
     </div>

@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 
 const { ctx } = vi.hoisted(() => ({
   ctx: {
-    config: { getAll: vi.fn().mockResolvedValue([]), put: vi.fn() },
+    config: { getAll: vi.fn().mockResolvedValue([]), put: vi.fn(), get: vi.fn() },
     products: { count: vi.fn().mockResolvedValue(0) },
     recommendations: { count: vi.fn().mockResolvedValue(0) },
     customerCounter: { get: vi.fn().mockResolvedValue({ total: 0, disabled: 0 }) },
@@ -13,9 +13,14 @@ const { ctx } = vi.hoisted(() => ({
       ),
       countActiveSince: vi.fn().mockResolvedValue(0),
     },
+    fx: { get: vi.fn().mockResolvedValue(undefined) },
     db: {},
   } as {
-    config: { getAll: ReturnType<typeof vi.fn>; put: ReturnType<typeof vi.fn> };
+    config: {
+      getAll: ReturnType<typeof vi.fn>;
+      put: ReturnType<typeof vi.fn>;
+      get: ReturnType<typeof vi.fn>;
+    };
     products: { count: ReturnType<typeof vi.fn> };
     recommendations: { count: ReturnType<typeof vi.fn> };
     customerCounter: { get: ReturnType<typeof vi.fn> };
@@ -23,6 +28,7 @@ const { ctx } = vi.hoisted(() => ({
       getDailyCounts: ReturnType<typeof vi.fn>;
       countActiveSince: ReturnType<typeof vi.fn>;
     };
+    fx: { get: ReturnType<typeof vi.fn> };
     db: object;
     otpSink?: { scanAll: ReturnType<typeof vi.fn> };
   },
@@ -33,6 +39,7 @@ const { dbFns } = vi.hoisted(() => ({
   dbFns: {
     listAuditLog: vi.fn(),
     appendConfigChangeAudit: vi.fn().mockResolvedValue(undefined),
+    listRewardRows: vi.fn().mockResolvedValue([]),
   },
 }));
 vi.mock("@wanthat/db", () => dbFns);
@@ -259,16 +266,11 @@ describe("admin user stats (exact customer counter - the customerCounter item in
     );
   });
 
-  it("overview reports the EXACT usersCount alongside the other placeholders", async () => {
+  it("overview reports the EXACT usersCount", async () => {
     ctx.customerCounter.get.mockResolvedValue({ total: 41, disabled: 3 });
     const res = await app.request("/admin/stats/overview", {}, adminEnv);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      usersCount: 41,
-      pendingApprovals: null,
-      totalCashbackMinor: null,
-      conversions30d: null,
-    });
+    expect(await res.json()).toEqual({ usersCount: 41 });
   });
 
   it("an empty pool (missing counter item) reads as zero, not an error", async () => {
@@ -338,5 +340,75 @@ describe("admin activity", () => {
     expect(res.status).toBe(200);
     expect(ctx.otpSink.scanAll).not.toHaveBeenCalled();
     delete ctx.otpSink;
+  });
+});
+
+describe("admin money stats", () => {
+  const reward = (over: Record<string, unknown>) => ({
+    kind: "referrer_cashback",
+    amountMinor: 500n,
+    currency: "USD",
+    orderId: "order-1",
+    status: "confirmed",
+    // Relative to the real clock: the route windows on `new Date()`, so a fixed
+    // date would age out of lastNDates(30) and start failing a month from now.
+    createdAt: new Date(Date.now() - 24 * 60 * 60 * 1000),
+    ...over,
+  });
+
+  it("serves ledger-derived totals with the ILS estimate and per-active figure", async () => {
+    dbFns.listRewardRows.mockResolvedValue([
+      reward({}),
+      reward({ kind: "consumer_reward", amountMinor: 200n, status: "pending" }),
+    ]);
+    ctx.fx.get.mockResolvedValue({ base: "USD", quote: "ILS", rate: "3.38" });
+    ctx.config.get.mockResolvedValue(0); // 0 bps commission -> pure rate conversion
+    ctx.opsMetrics.countActiveSince.mockResolvedValue(2);
+    const res = await app.request("/admin/stats/money", {}, adminEnv);
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.totals).toEqual([
+      {
+        currency: "USD",
+        confirmed: { amountMinor: "500", currency: "USD" },
+        pending: { amountMinor: "200", currency: "USD" },
+      },
+    ]);
+    // 500 minor USD * 3.38 = 1690 minor ILS (0 bps commission).
+    expect(body.ilsEstimate).toMatchObject({
+      confirmed: { amountMinor: "1690", currency: "ILS" },
+    });
+    expect(body.conversions30d).toBe(1);
+    expect((body.dailyConversions as unknown[]).length).toBe(30);
+    // 1690 / 2 active members = 845.
+    expect(body.cashbackPerActive30d).toEqual({ amountMinor: "845", currency: "ILS" });
+  });
+
+  it("empty ledger: hard-zero ILS estimate even with no rate cached", async () => {
+    dbFns.listRewardRows.mockResolvedValue([]);
+    ctx.fx.get.mockResolvedValue(undefined);
+    ctx.config.get.mockResolvedValue(0);
+    ctx.opsMetrics.countActiveSince.mockResolvedValue(0);
+    const res = await app.request("/admin/stats/money", {}, adminEnv);
+    const body = (await res.json()) as Record<string, never>;
+    expect(body.ilsEstimate).toMatchObject({
+      confirmed: { amountMinor: "0", currency: "ILS" },
+    });
+    expect(body.cashbackPerActive30d).toBeNull(); // 0 actives -> null
+  });
+
+  it("USD held but no rate: ilsEstimate and per-active are null", async () => {
+    dbFns.listRewardRows.mockResolvedValue([reward({})]);
+    ctx.fx.get.mockResolvedValue(undefined);
+    ctx.config.get.mockResolvedValue(0);
+    ctx.opsMetrics.countActiveSince.mockResolvedValue(5);
+    const res = await app.request("/admin/stats/money", {}, adminEnv);
+    const body = (await res.json()) as Record<string, never>;
+    expect(body.ilsEstimate).toBeNull();
+    expect(body.cashbackPerActive30d).toBeNull();
+  });
+
+  it("403s a non-admin", async () => {
+    expect((await app.request("/admin/stats/money", {}, memberEnv)).status).toBe(403);
   });
 });

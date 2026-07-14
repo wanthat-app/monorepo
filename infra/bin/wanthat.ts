@@ -93,6 +93,8 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   runtimeConfigTable: data.runtimeConfigTable,
   // Exact customer counter: admin-api reads the stats; admin-credentials writes moderation moves.
   opsCountersTable: data.opsCountersTable,
+  // Cached FX rates: the money KPIs' display-only ILS estimate (ADR-0017).
+  fxRateTable: data.fxRateTable,
   productTable: data.productTable,
   recommendationTable: data.recommendationTable,
   // The unattributed-order claim queue (list + claim/dismiss; the retailer-proxy settles).

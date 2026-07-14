@@ -40,6 +40,8 @@ export interface AdminStackProps extends StackProps {
   // Exact operational counters (customerCounter): admin-api READS the dashboard figures;
   // admin-credentials WRITES the moderation moves (decrement / suspend / lift).
   readonly opsCountersTable: dynamodb.ITable;
+  /** Cached FX rates: the money KPIs' display-only ILS estimate (ADR-0017). */
+  readonly fxRateTable: dynamodb.ITable;
   readonly unattributedOrderTable: dynamodb.ITable;
   readonly productTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
@@ -97,6 +99,8 @@ export class AdminStack extends Stack {
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
         // The exact customer counter (customerCounter in OpsCounters) - dashboard stats reads.
         OPS_COUNTERS_TABLE: props.opsCountersTable.tableName,
+        // Cached FX rate for the money KPIs' display-only ILS estimate (ADR-0017).
+        FX_RATE_TABLE: props.fxRateTable.tableName,
         UNATTRIBUTED_ORDER_TABLE: props.unattributedOrderTable.tableName,
         PRODUCT_TABLE: props.productTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
@@ -121,6 +125,7 @@ export class AdminStack extends Stack {
     props.runtimeConfigTable.grantReadWriteData(fn);
     // Stats reads (the transactional counters live in these tables).
     props.opsCountersTable.grantReadData(fn);
+    props.fxRateTable.grantReadData(fn);
     // The claim queue: list + claim/dismiss intents (the retailer-proxy settles them).
     props.unattributedOrderTable.grantReadWriteData(fn);
     props.productTable.grantReadData(fn);
