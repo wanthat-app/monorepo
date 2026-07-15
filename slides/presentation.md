@@ -115,12 +115,11 @@ money-safety won.
 Layout: full-slide diagram. Render the mermaid below (or restyle it) — keep the color code.
 
 ```mermaid
+%%{init: {"flowchart": {"nodeSpacing": 26, "rankSpacing": 40}}}%%
 flowchart TB
   member(["Member SPA - browser"])
   friend(["Friend / guest - browser"])
   adminUser(["Admin - browser"])
-  ali[("AliExpress affiliate API<br>IPv4-only, HMAC")]
-  meta[("Meta WhatsApp / SNS SMS")]
 
   subgraph edge["Edge - cert + WAF in us-east-1"]
     cf["CloudFront + WAF<br>default -> SPA, /p/* -> landing API"]
@@ -130,12 +129,23 @@ flowchart TB
   subgraph region["AWS il-central-1"]
     custpool["Cognito CUSTOMER pool<br>phone OTP + passkeys<br>PII in attributes"]
     emppool["Cognito EMPLOYEE pool<br>email + mandatory TOTP<br>Managed Login + PKCE"]
-    sender["message-sender<br>custom SMS sender, kill-switched"]
-    applinks["app-links - non-VPC<br>products + recommendations"]
-    landing["landing - non-VPC<br>OG shell + attributed redirect"]
-    proxy["retailer-proxy - non-VPC<br>sole retailer egress + credential"]
-    fx["fx-rates - non-VPC"]
     sched["EventBridge Scheduler<br>orders 15 min + FX 12 h"]
+
+    subgraph svc["Non-VPC services"]
+      applinks["app-links<br>products + recommendations"]
+      landing["landing<br>OG shell + attributed redirect"]
+      proxy["retailer-proxy<br>sole retailer egress + credential"]
+      fx["fx-rates"]
+      sender["message-sender<br>custom SMS sender, kill-switched"]
+    end
+
+    subgraph vpc["VPC - no NAT, no RDS Proxy"]
+      appcore["app-core - wallet"]
+      adminsvc["admin-api - stats + config"]
+      writer["conversion-poller<br>the ONLY money writer"]
+      aurora[("Aurora Serverless v2<br>money only - 0 to 2 ACU")]
+    end
+
     subgraph dynamo["DynamoDB - one node per table, no cross-table transactions.<br>* = exact counter row lives IN the table - the only same-tx pair"]
       t_rec[("recommendation *")]
       t_prod[("product *")]
@@ -148,15 +158,13 @@ flowchart TB
       t_outbox[("notification_outbox")]
       t_otp[("otp_sink")]
     end
-    funnel[("Funnel analytics: CW logs -> Firehose<br>-> S3 -> Glue/Athena")]
 
-    subgraph vpc["VPC - no NAT, no RDS Proxy"]
-      appcore["app-core - wallet"]
-      adminsvc["admin-api - stats + config"]
-      writer["conversion-poller<br>the ONLY money writer"]
-      aurora[("Aurora Serverless v2<br>money only - 0 to 2 ACU")]
-    end
+    funnel[("Funnel analytics: CW logs -> Firehose<br>-> S3 -> Glue/Athena")]
   end
+
+  ali[("AliExpress affiliate API<br>IPv4-only, HMAC")]
+  meta[("Meta WhatsApp / SNS SMS")]
+  obscw["CloudWatch + X-Ray<br>dashboards + alarms -> SNS -> ops email"]
 
   member -- "assets + config.json" --> cf
   friend -- "GET /p/:id" --> cf
@@ -165,35 +173,36 @@ flowchart TB
   member -- "browser-direct auth:<br>SignUp, InitiateAuth, WEB_AUTHN" --> custpool
   custpool -. "OTP" .-> sender
   sender -- "WhatsApp / SMS" --> meta
+  sender -- "park code" --> t_otp
   member -- "Bearer JWT" --> applinks
   member -- "Bearer JWT" --> appcore
   adminUser -- "PKCE code flow + TOTP" --> emppool
   adminUser -- "employee JWT" --> adminsvc
+
   applinks -- "create tx" --> t_rec
-  t_prod -- "cache read" --> applinks
   applinks -- "counters" --> t_ops
+  applinks -- "generateLink" --> proxy
+  t_prod -- "cache read" --> applinks
+  t_rec -- "short id" --> landing
+  landing -- "impression / click" --> funnel
+  landing -. "302 + custom_parameters" .-> ali
+
+  sched --> proxy
+  sched --> fx
+  fx -- "USD-ILS" --> t_fx
+  proxy -- "orders + links" --> ali
   proxy -- "cache tx" --> t_prod
   proxy -- "cursor write" --> t_state
   t_state -- "cursor read" --> proxy
   proxy -- "unmatched" --> t_unattr
   t_guest -- "guest read" --> proxy
-  sender -- "park code" --> t_otp
-  adminsvc -- "sole writer" --> t_cfg
-  writer -- "stats" --> t_rec
-  applinks -- "generateLink" --> proxy
-  t_rec -- "short id" --> landing
-  landing -- "impression / click" --> funnel
-  landing -. "302 + custom_parameters" .-> ali
-  sched --> proxy
-  sched --> fx
-  fx -- "USD-ILS" --> t_fx
-  proxy -- "orders + links" --> ali
   proxy -- "WriteConversions" --> writer
+  writer -- "stats" --> t_rec
+  writer -- "append-only" --> aurora
   aurora -- "wallet reads" --> appcore
   aurora -- "read-only" --> adminsvc
-  writer -- "append-only" --> aurora
+  adminsvc -- "sole writer" --> t_cfg
 
-  obscw["CloudWatch + X-Ray<br>dashboards + alarms -> SNS -> ops email"]
   region -. "traces + metrics + logs<br>from every function and API" .-> obscw
 
   classDef invpc fill:#e6f0ff,stroke:#3b6fb3
