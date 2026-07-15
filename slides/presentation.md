@@ -115,8 +115,8 @@ money-safety won.
 Layout: full-slide diagram. Render the mermaid below (or restyle it) — keep the color code.
 
 ```mermaid
-%%{init: {"flowchart": {"nodeSpacing": 26, "rankSpacing": 40}}}%%
-flowchart TB
+%%{init: {"layout": "elk", "flowchart": {"nodeSpacing": 26, "rankSpacing": 40}}}%%
+flowchart LR
   member(["Member SPA - browser"])
   friend(["Friend / guest - browser"])
   adminUser(["Admin - browser"])
@@ -149,7 +149,7 @@ flowchart TB
     subgraph dynamo["DynamoDB - one node per table, no cross-table transactions.<br>* = exact counter row lives IN the table - the only same-tx pair"]
       t_rec[("recommendation *")]
       t_prod[("product *")]
-      t_cfg[("runtime_config")]
+      t_cfg[("runtime_config<br>read by EVERY service - edges omitted")]
       t_fx[("fx_rate")]
       t_state[("poller_state")]
       t_unattr[("unattributed_order")]
@@ -203,13 +203,6 @@ flowchart TB
   aurora -- "read-only" --> adminsvc
   adminsvc == "sole writer" ==> t_cfg
 
-  t_cfg --> applinks
-  t_cfg --> appcore
-  t_cfg --> adminsvc
-  t_cfg --> landing
-  t_cfg --> proxy
-  t_cfg --> fx
-  t_cfg --> sender
   t_fx --> applinks
   t_fx --> appcore
   t_fx --> adminsvc

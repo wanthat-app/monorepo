@@ -64,7 +64,7 @@ flowchart TB
       t_guest[("guest_attribution")]
       t_state[("poller_state")]
       t_unattr[("unattributed_order<br>byState GSI")]
-      t_cfg[("runtime_config")]
+      t_cfg[("runtime_config<br>read by EVERY service - edges omitted")]
       t_ops[("ops_counters")]
       t_fx[("fx_rate")]
       t_outbox[("notification_outbox<br>TTL 30 d + stream")]
@@ -141,14 +141,6 @@ flowchart TB
   writer -- "per-link stats" --> t_rec
   migrator -- "wanthat_migrator - DDL" --> aurora
 
-  t_cfg --> applinks
-  t_cfg --> appcore
-  t_cfg --> adminsvc
-  t_cfg --> landing
-  t_cfg --> proxy
-  t_cfg --> fx
-  t_cfg --> sender
-  t_cfg --> dispatcher
   t_fx --> applinks
   t_fx --> appcore
   t_fx --> adminsvc
@@ -190,7 +182,8 @@ tables ever share a transaction — every DynamoDB `TransactWriteItems` is singl
 item plus its counter row live in the same table by design), and the Aurora ledger + audit
 writes are sequential idempotent statements, not one SQL transaction. Arrow direction follows the data:
 writes point into a store, reads point out of it (unlabeled arrows out of a store are plain
-reads), r/w access is drawn bidirectional. Every read path is drawn — none omitted.*
+reads), r/w access is drawn bidirectional. Every read path is drawn except `runtime_config` reads — that table is read by every
+service, so its read edges are omitted and noted on the node.*
 
 Compute is sliced by real seams (ADR-0002, reshaped by ADR-0006): the member surface is split
 into the non-VPC **app-links** (catalog + recommendations, no database) and the in-VPC
