@@ -37,7 +37,8 @@ flowchart TB
   end
 
   subgraph region["AWS il-central-1"]
-    cognito["Cognito x 2 pools - ESSENTIALS<br>customers: phone OTP + passkeys, PII in attributes<br>employees: email + TOTP, Managed Login"]
+    custpool["Cognito CUSTOMER pool - ESSENTIALS<br>phone OTP + passkeys<br>PII in user attributes"]
+    emppool["Cognito EMPLOYEE pool<br>email + mandatory TOTP<br>Managed Login + PKCE"]
     sender["message-sender<br>custom SMS sender, kill-switched"]
     postconf["post-confirmation<br>welcome + attribution + counters"]
 
@@ -87,11 +88,11 @@ flowchart TB
   cf -- "default" --> s3site
   cf -- "/p/*" --> landinggw --> landing
 
-  member -- "browser-direct: SignUp,<br>InitiateAuth, WEB_AUTHN" --> cognito
-  cognito -. "custom SMS sender" .-> sender
+  member -- "browser-direct: SignUp,<br>InitiateAuth, WEB_AUTHN" --> custpool
+  custpool -. "custom SMS sender" .-> sender
   sender -- "WhatsApp default, SMS fallback" --> meta
   sender -- "park every code" --> t_otp
-  cognito -. "post confirmation" .-> postconf
+  custpool -. "post confirmation" .-> postconf
   postconf -- "optin_welcome" --> t_outbox
   postconf -- "guest -> member" --> t_guest
   postconf -- "customer counter" --> t_ops
@@ -101,12 +102,13 @@ flowchart TB
   member -- "Bearer JWT" --> appgw
   appgw --> applinks
   appgw --> appcore
-  appgw -. "validate via JWKS" .-> cognito
-  adminUser -- "PKCE code flow<br>Managed Login" --> cognito
+  appgw -. "validate via JWKS" .-> custpool
+  admingw -. "validate via JWKS" .-> emppool
+  adminUser -- "PKCE code flow<br>Managed Login" --> emppool
   adminUser -- "Bearer JWT" --> admingw
   admingw --> adminsvc
   admingw --> admincred
-  admincred -- "ListUsers, disable, enable,<br>sign-out, delete" --> cognito
+  admincred -- "ListUsers, disable, enable,<br>sign-out, delete - CUSTOMER pool" --> custpool
   admincred -- "PutSecretValue - write only" --> secrets
   admincred -- "delete by owner + counter" --> t_rec
 
@@ -145,7 +147,7 @@ flowchart TB
   class appcore,adminsvc,writer,migrator invpc
   class applinks,admincred,landing,proxy,fx,dispatcher,sender,postconf novpc
   class t_prod,t_rec,t_guest,t_state,t_unattr,t_cfg,t_ops,t_fx,t_outbox,t_otp,t_wallet,t_audit,s3site,funnel data
-  class ali,meta,cognito ext
+  class ali,meta,custpool,emppool ext
   style vpc fill:#f3f0f7
 ```
 
