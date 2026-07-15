@@ -116,7 +116,7 @@ Layout: full-slide diagram. Render the mermaid below (or restyle it) — keep th
 
 ```mermaid
 %%{init: {"layout": "elk", "flowchart": {"nodeSpacing": 26, "rankSpacing": 40}}}%%
-flowchart LR
+flowchart TB
   member(["Member SPA - browser"])
   friend(["Friend / guest - browser"])
   adminUser(["Admin - browser"])
