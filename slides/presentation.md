@@ -11,7 +11,7 @@ code (keep consistent everywhere): green = our compute, orange = data stores, pu
 external/managed services, gray = clients. Phone snapshots in `assets/` are ~2x captures of
 340x587 frames — display at equal width in a row, card border + slight shadow.
 
-**Timing plan (20:00):** title 0:30 - business 3:30 - user flows 2:00 - engineering 14:00.
+**Timing plan (20:00):** title 0:30 - business 3:30 - user flows 2:00 - principles + architecture 5:00 - decisions and trade-offs (slides 8-13) 14:00 total with the above.
 Backup slides are for Q&A only.
 
 ---
@@ -186,97 +186,132 @@ money enters the VPC. (3) The friend's click never leaves DynamoDB. (4) Money en
 through the scheduled pipeline on the right — retailer-proxy fetches, the in-VPC writer
 appends. Full per-table version lives in `docs/AWS_Architecture.md`.
 
-## Slide 8 — Data: three homes, one rule each (2:30)
+## Slide 8 — Data: one store per job, and what each costs us (2:30)
 
-Layout: three-column diagram + a one-line rule under each; mermaid below as the visual.
+Layout: decision table (Data / Decision / Why / Trade-off accepted) + closing constraint line.
 
-```mermaid
-flowchart LR
-  subgraph cog["Cognito user attributes"]
-    pii["ALL customer PII<br>phone, name, email, locale<br>profile = ID-token claims"]
-  end
-  subgraph pg["Aurora Serverless v2 - money only"]
-    wallet[("wallet_entry<br>append-only ledger<br>keyed by cognito sub")]
-    audit[("audit_log<br>hash-chained")]
-  end
-  subgraph dyn["DynamoDB - operational, non-PII"]
-    rec[("recommendation + product<br>counter rows in-table")]
-    ops[("attribution, config,<br>counters, FX, outbox, otp_sink")]
-  end
-  pii -. "sub is the only join key" .- wallet
-  wallet -. "sequential idempotent appends,<br>NOT one transaction" .- audit
-```
+| Data | Decision | Why | Trade-off accepted |
+|---|---|---|---|
+| Money | Aurora Serverless v2 (0-2 ACU, IAM auth, no proxy) | ACID + Postgres GRANTs as the money invariant (app_rw SELECT-only, poller_writer INSERT-only); SQL for reconciliation | Scale-to-zero cold resume ~20 s (60 s connect timeout + SPA warm-up probe); 50-connection cap |
+| Customer PII | Cognito user attributes are the system of record | Auth path touches zero databases; GDPR delete = one call; backups carry no PII | ListUsers-only queries (no joins, one filter); no PITR; no attribute history. Escape hatch: dual-write projection |
+| Operational | DynamoDB on-demand (10 tables) | Viral bursts absorbed at $0 idle; access patterns modeled as projections (byOwner, byState GSIs) | No joins, no ad-hoc queries; counters kept exact via same-table transactions |
 
-On-slide bullets:
-- **PII lives in Cognito** — profile = ID-token claims; GDPR delete = one API call; nothing
-  on the auth path touches a database (ADR-0027).
-- **Aurora holds money only** — an append-only ledger (`pending -> confirmed -> clawback`
-  as immutable rows, balance always derived) + a hash-chained audit log. Postgres GRANTs are
-  the enforcement: `app_rw` can only SELECT, `poller_writer` can only INSERT, UPDATE/DELETE
-  revoked from everyone (ADR-0003).
-- **DynamoDB for everything else** — 10 on-demand tables; $0 idle, unlimited burst.
-- **No cross-table transactions anywhere, by design** — exact counters live as counter rows
-  inside the counted table (single-table `TransactWriteItems`); ledger + audit are sequential
-  idempotent appends protected by a unique `(order_id, kind, status)` index.
+Closing line: **deliberate constraint — no cross-table transactions exist anywhere.** Counter
+rows live inside the counted table (single-table TransactWriteItems); ledger + audit are
+sequential idempotent appends behind a unique (order_id, kind, status) index. Cross-store
+consistency is by keys and idempotency, not coordination.
 
-Speaker notes: the sub is the only join key between the three worlds — that's what makes
-user deletion clean and keeps the ledger pseudonymous.
+Speaker notes: if asked why not one Postgres for everything — the redirect hot path must
+absorb viral spikes at zero idle cost, and the auth path must not depend on a relational
+database resume. (The data-homes diagram is in backup B6.)
 
-## Slide 9 — Auth without an auth service (1:30)
+## Slide 9 — Auth: three options, one deleted service (2:30)
 
-Layout: bullets left, mini flow right.
-- The SPA calls the public Cognito API directly: `SignUp`, `InitiateAuth (USER_AUTH)`,
-  native `WEB_AUTHN` passkeys. **Zero backend calls to log in**; first backend touch is
-  `GET /wallet`.
-- OTP: WhatsApp-default / SMS-fallback via the custom-sender Lambda — sticky per-user
-  preference, runtime-config kill switches, account-wide SMS spend hard cap.
-- Face ID on returning devices: one-prompt Cognito-native passkey (remembered phone).
-- Abuse control at the pool boundary: WAF rate rules on the unauthenticated Cognito
-  operations + quotas — no app-side velocity tables.
-- Admin is a separate pool: employees, mandatory TOTP, Managed Login + PKCE — a customer
-  token structurally cannot reach `/admin`.
+Layout: three option cards (A/B/C) + two trade-off lines below.
 
-Speaker notes: the previous design proxied every ceremony through app code to win one
-feature (userless Face ID); waiving that requirement deleted two Lambdas, three tables and a
-crypto path — backup slide B1 has the full sequence diagram.
+- **A — Cognito Managed Login** (hosted pages, PKCE — zero auth code to own).
+  **REJECTED**: no Hebrew/RTL (12 locales, text not editable); passkey RP-ID forced to the
+  auth subdomain — credentials siloed off wanthat.app.
+- **B — Cognito-native, own UI** (browser calls SignUp / InitiateAuth / WEB_AUTHN directly;
+  profile = ID-token claims). **CHOSEN**: zero backend calls to authenticate; full RTL UI;
+  pool WAF + quotas as abuse control.
+- **C — App-owned ceremonies** (proxy every OTP step, own WebAuthn store, Ed25519 ticket
+  bridge, AdminSetUserPassword exchange). **BUILT, THEN DELETED**: 2 Lambdas + 3 tables + a
+  crypto path bought ONE feature — userless Face ID. Requirement waived, cost column deleted.
 
-## Slide 10 — The viral hot path (1:30)
+Trade-offs signed off with B: userless Face ID waived (remembered-phone one-prompt kept);
+phone enumeration accepted (preventUserExistenceErrors LEGACY) — mitigated by pool WAF rate
+rules; JWT revocation lags up to 1 h on our APIs (stateless authorizer) — acceptable while
+the only member surface is a read-only wallet.
+Measured effect: login requires zero backend calls; the Aurora cold-resume login stall
+(~20 s) is structurally impossible.
 
-Layout: horizontal chip flow + three callouts.
-Flow: `friend taps wanthat.app/p/{id}` -> `CloudFront /p/*` -> `landing (non-VPC)` ->
-`DynamoDB: short id -> product + owner` -> `OG landing with the review` ->
-`302 to store, custom_parameters = who`.
-- Crawlers get server-injected OG tags — links look rich in WhatsApp.
-- **Cookieless**: attribution rides the URL (`custom_parameters`), not a cookie (ADR-0008).
-- Aurora is never on this path — a viral burst cannot touch the money database.
+Speaker notes: full sequence diagram in backup B1. The C-to-B migration was possible
+pre-release — one dev user deleted, no migration burden.
 
-## Slide 11 — Following the money (1:30)
+## Slide 10 — Network: pay for nothing that idles (2:30)
 
-Layout: horizontal chip flow + three callouts.
-Flow: `EventBridge heartbeat 15 min` -> `retailer-proxy: listOrdersByIndex (HMAC)` ->
-`attribution resolve (link / guest / unmatched -> admin claim queue)` ->
-`invoke in-VPC writer` -> `append ledger rows + audit chain`.
-- **Poll, don't listen**: a scheduled reconciliation poll is auditable and replayable; no
-  inbound webhook to spoof (ADR-0009).
-- One writer: only `poller_writer` can INSERT into the ledger; every row is audit-chained.
-- Unmatched orders park in a DynamoDB claim queue; admin claims settle on the next beat.
+Layout: avoided-cost table + three consequence lines.
 
-## Slide 12 — Cost and security posture (1:00)
+| Component avoided | Fixed cost avoided | Replaced by |
+|---|---|---|
+| NAT Gateway | ~$33/mo + $0.045/GB | Non-VPC functions call public AWS endpoints (IAM + TLS); the only true internet egress is retailer-proxy |
+| VPC interface endpoints | ~$7-15/mo each | Zero needed: nothing in-VPC calls Cognito, Secrets Manager, or the internet — by design, not by exception |
+| RDS Proxy | per-ACU hourly | Direct IAM DB auth; 50-connection cap + no reserved concurrency keeps pressure bounded |
+| DynamoDB access from VPC | — | Free gateway endpoint |
 
-Layout: two columns.
-Cost: Aurora paused = storage only; DynamoDB $0 idle; no NAT / no RDS Proxy / zero interface
-endpoints; OTP delivery is the dominant line item — and it is hard-capped.
-Security: two WAF layers (CloudFront + Cognito pool); per-function IAM; money invariants in
-Postgres GRANTs, not just IAM; the retailer credential readable by exactly one function
-(the admin panel can rotate it but never read it); customer/admin separated at pool level.
+- Structural consequence: in-VPC functions cannot initiate outward calls — the conversion
+  chain is always proxy → writer (invoke), and admin claim intents settle asynchronously on
+  the next poll heartbeat.
+- Blast-radius bonus: the retailer credential is readable by exactly one non-VPC function; a
+  compromised in-VPC function has no path to it or to the internet.
+- Revisit trigger: sustained Aurora connection pressure (alarm at 80% of 50) → RDS Proxy;
+  steady traffic → reserved concurrency once the account quota (10) is raised.
 
-## Slide 13 — Status and what's next (1:00)
+Speaker notes: il-central-1 gaps shaped this too — no RDS Data API (killed the no-VPC data
+path), no Lambda Function URLs (landing sits behind an HTTP API).
 
-- Live in dev + prod: create-link, landing `/p/`, conversion pipeline (15-min heartbeat),
-  wallet, admin console with money KPIs, funnel analytics.
-- Critical path: Meta WhatsApp onboarding (OTP at scale) + AliExpress app approval.
-- Month-3 gates decide Phase 2: group sharing + two-sided rewards.
-- Close: "Questions? Backup slides have the sequence diagrams and the ADR map."
+## Slide 11 — Money: poll over webhook, append over update (2:30)
+
+Layout: two decision cards.
+
+**Ingestion: scheduled reconciliation**
+- Webhooks rejected: an inbound money-bearing endpoint is a spoofing surface, needs ordering
+  and retry semantics, and the retailer offers no reliable one anyway (ADR-0009).
+- Poll = a cursor in poller_state + listOrdersByIndex every 15 min: replayable from any
+  point, idempotent by the ledger unique index, nothing to authenticate inbound.
+- Accepted latency: minutes to surface, 24-48 h to confirm (retailer settlement dominates —
+  the product promise is days, not seconds).
+- Interim throttling (ADR-0021): sequential calls + one ban-window retry; revisit at volume.
+
+**Storage: append-only + GRANT-enforced**
+- Lifecycle is data, not mutation: pending → confirmed → clawback are separate immutable
+  rows; balances are always derived.
+- The invariant lives in Postgres, not app code: UPDATE/DELETE revoked from every role; only
+  poller_writer can INSERT; audit_append is SECURITY DEFINER.
+- Hash-chained audit log makes tampering evident; admin config changes audit the same way.
+- Blast radius: a bug or compromise in any read path has zero write capability on money.
+
+Speaker notes: sequence in backup B3. Unmatched orders are not dropped — they park in
+unattributed_order and an admin claim settles on the next heartbeat.
+
+## Slide 12 — Cost model: a measured floor, then linear (2:00)
+
+Layout: cost table + two accepted-cost lines.
+
+| Line item | Monthly | Note |
+|---|---|---|
+| Compute + APIs + DynamoDB idle | $0 | Everything scales from zero; Aurora paused = storage only (~$2) |
+| WAF (2 web ACLs + rules) | ~$15 | The deliberate fixed floor: CloudFront ACL + Cognito-pool ACL |
+| Secrets, Route 53, misc | ~$2 | 2 retailer secrets, hosted zone |
+| OTP delivery | capped $1 | SNS hard cap (SMS sandbox); WhatsApp ~10x cheaper per message at scale — hence WhatsApp-default |
+| NAT / proxies / endpoints | $0 | Architecturally eliminated (slide 10) |
+
+- Costs accepted knowingly: cold-resume UX risk on first wallet read (mitigated by warm-up
+  probe); one AWS account for dev+prod shares SMS caps and quotas — flagged for split.
+- Unit economics guardrail: the redirect hot path costs micro-cents per thousand clicks and
+  cannot touch Aurora — cost scales with revenue-bearing traffic, not with virality.
+
+Speaker notes: numbers are il-central-1 approximations; the point is the shape — a ~$20
+measured floor, then linear with usage.
+
+## Slide 13 — Limits I know about, and their revisit triggers (2:00)
+
+Layout: limits table + Questions line.
+
+| Limitation | Current stance | Revisit trigger |
+|---|---|---|
+| Single active region | Cross-region backups only; RTO = hours (ADR-0005) | Revenue SLA or user base that prices an active-standby |
+| Cognito PII: no PITR, weak queries | Accepted for MVP; profile is thin | Compliance/BI needs → dual-write projection to SQL |
+| JWT revocation lag <= 1 h | Only member surface is a read-only wallet | Any sensitive member mutation → short tokens or in-handler check |
+| Account concurrency = 10 | No reserved concurrency anywhere (deliberate) | Quota raise, then per-function caps return |
+| dev + prod in one account | Shared SMS cap and service quotas | Before marketing push: account split |
+| Retailer throttling interim | Sequential + one ban-window retry (ADR-0021) | Poller volume growth or AliExpress app approval |
+
+Close: "Questions? Backup: sequence diagrams, failure modes, the rejected-alternatives list."
+
+Speaker notes: every row is documented in an ADR or docs/AWS_Architecture.md — none of these
+are surprises.
 
 ---
 
@@ -421,30 +456,58 @@ Talking points: only what touches Aurora enters the VPC; in-VPC functions cannot
 the conversion chain is always proxy -> writer; a NAT Gateway would be the single biggest
 fixed cost in the account.
 
-## Slide B6 — ADR-0003 + 0027: where data lives (and the transaction rule)
+## Slide B6 — ADR-0003 + 0027: where data lives
 
-Reuse the slide-8 mermaid. Extra talking points:
-- The `customer` table was dropped when PII moved to Cognito (migration `0006_money_only`) —
-  the ledger is keyed by the Cognito sub directly.
-- Admin user search runs on `ListUsers` (one-attribute filters); acceptable at MVP scale,
-  dual-write projection is the documented escape hatch.
+Layout: diagram + three trade-off lines.
+
+```mermaid
+flowchart LR
+  subgraph cog["Cognito user attributes"]
+    pii["ALL customer PII<br>phone, name, email, locale<br>profile = ID-token claims"]
+  end
+  subgraph pg["Aurora Serverless v2 - money only"]
+    wallet[("wallet_entry<br>append-only ledger<br>keyed by cognito sub")]
+    audit[("audit_log<br>hash-chained")]
+  end
+  subgraph dyn["DynamoDB - operational, non-PII"]
+    rec[("recommendation + product<br>counter rows in-table")]
+    ops[("attribution, config,<br>counters, FX, outbox, otp_sink")]
+  end
+  pii -. "sub is the only join key" .- wallet
+  wallet -. "sequential idempotent appends,<br>NOT one transaction" .- audit
+```
+
+- The customer table was dropped when PII moved to Cognito (migration 0006_money_only) — the
+  ledger is keyed by the Cognito sub directly.
+- Admin user search runs on ListUsers (one-attribute filters); fine at MVP scale — dual-write
+  projection is the escape hatch.
 - Trade-offs accepted: no SQL over PII, no PITR for the user pool, attribute changes have no
   built-in history.
 
-## Slide B7 — ADR-0008 + 0009: attribution and polling
+## Slide B7 — Failure modes and recovery
 
-- Attribution rides `custom_parameters` on the retailer redirect — no click-log lookup, no
-  cookies; the 3-day window is the retailer's, not ours.
-- Conversion via scheduled `listOrdersByIndex` reconciliation: idempotent by the ledger's
-  unique `(order_id, kind, status)` index; replayable from the cursor in `poller_state`;
-  nothing to spoof.
-- Orders that arrive with no attribution park in `unattributed_order` — an admin claim queue
-  settled on the next heartbeat.
+Layout: table.
 
-## Slide B8 — ADR-0017: currency model
+| Failure | Behavior | Recovery |
+|---|---|---|
+| Aurora cold resume (~20 s) | First wallet read after idle stalls | SPA fires /healthz/db warm-up probe on auth screens; 60 s connect timeout rides it out |
+| AliExpress ApiCallLimit ban window | Poll heartbeat calls rejected | Sequential calls + one ban-window retry (ADR-0021); cursor unmoved → next beat replays |
+| WhatsApp delivery down | OTP channel unavailable | Sticky-preference fallback to SMS; runtime-config kill switches; SNS spend cap bounds abuse |
+| Poller crash mid-batch | Partial writes | Cursor advances only after batch; ledger unique index makes replays no-ops |
+| Dispatcher poison message | Outbox item repeatedly fails | bisectBatchOnError + 3 retries → SQS DLQ (14 d); items age out by TTL |
+| Cognito outage | No new logins | Static SPA still serves; landing redirect works for guests (DynamoDB-only path) |
 
-- Cashback is **held in the settlement currency** (what AliExpress actually pays) — the
-  wallet shows real per-currency holdings.
-- The ILS headline is always a **display estimate** (`~₪142.50`, "Estimated" chip) from the
-  fx_rate cache (Bank of Israel rate, refreshed 12 h).
-- Conversion happens once, at withdrawal — no FX risk carried on displayed balances.
+## Slide B8 — Rejected alternatives: the graveyard
+
+Layout: two-column table.
+
+| Alternative | Why not |
+|---|---|
+| RDS Data API (no-VPC SQL) | Not available in il-central-1 — verified, killed the design branch |
+| Lambda Function URLs for landing | Not available in il-central-1 → HTTP API behind CloudFront /p/* |
+| NAT + interface endpoints | Fixed monthly cost for idle capability; non-VPC chaining is $0 and least-privilege by construction |
+| RDS Proxy | Cost + unneeded at 50-connection scale; revisit on connection-pressure alarm |
+| Managed Login for customers | No Hebrew/RTL; passkey RP-ID silo on the auth subdomain (kept for the admin console, where it fits) |
+| Conversion webhooks | Spoofable inbound money surface + no reliable retailer support; reconciliation poll is replayable and auditable |
+| Self-minted session JWTs | A second token validation path across every API; Cognito stays the only issuer |
+| Aurora customer table (PII in SQL) | Kept Aurora on the auth path and PII in two stores; moved to Cognito attributes (ADR-0027) |
