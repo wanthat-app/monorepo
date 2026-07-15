@@ -218,6 +218,25 @@ flowchart LR
   t_unattr --> adminsvc
   t_unattr --> proxy
 
+  %% layer pins: users > edge > auth+services > stores > analytics/observability
+  member ~~~ cf
+  friend ~~~ cf
+  cf ~~~ custpool
+  cf ~~~ emppool
+  cf ~~~ sched
+  custpool ~~~ applinks
+  emppool ~~~ adminsvc
+  applinks ~~~ t_prod
+  landing ~~~ t_rec
+  proxy ~~~ t_state
+  proxy ~~~ t_guest
+  sender ~~~ t_otp
+  appcore ~~~ aurora
+  adminsvc ~~~ aurora
+  t_outbox ~~~ funnel
+  t_ops ~~~ obscw
+  aurora ~~~ funnel
+
   region -. "traces + metrics + logs<br>from every function and API" .-> obscw
 
   classDef invpc fill:#e6f0ff,stroke:#3b6fb3
