@@ -127,6 +127,9 @@ flowchart TB
   end
 
   subgraph region["AWS il-central-1"]
+    appgw["App HTTP API<br>JWT authorizer - customer pool<br>throttle 500 rps"]
+    admingw["Admin HTTP API<br>JWT authorizer - employee pool<br>throttle 50 rps"]
+    landinggw["Landing HTTP API - public<br>throttle 2000 rps"]
     custpool["Cognito CUSTOMER pool<br>phone OTP + passkeys<br>PII in attributes"]
     emppool["Cognito EMPLOYEE pool<br>email + mandatory TOTP<br>Managed Login + PKCE"]
     sched["EventBridge Scheduler<br>orders 15 min + FX 12 h"]
@@ -169,15 +172,20 @@ flowchart TB
   member -- "assets + config.json" --> cf
   friend -- "GET /p/:id" --> cf
   cf --> s3site
-  cf -- "/p/*" --> landing
+  cf -- "/p/*" --> landinggw
+  landinggw --> landing
   member -- "browser-direct auth:<br>SignUp, InitiateAuth, WEB_AUTHN" --> custpool
   custpool -. "OTP" .-> sender
   sender -- "WhatsApp / SMS" --> meta
   sender == "park code" ==> t_otp
-  member -- "Bearer JWT" --> applinks
-  member -- "Bearer JWT" --> appcore
+  member -- "Bearer JWT" --> appgw
+  appgw --> applinks
+  appgw --> appcore
+  appgw -. "validate via JWKS" .-> custpool
   adminUser -- "PKCE code flow + TOTP" --> emppool
-  adminUser -- "employee JWT" --> adminsvc
+  adminUser -- "employee JWT" --> admingw
+  admingw --> adminsvc
+  admingw -. "validate via JWKS" .-> emppool
 
   applinks == "create tx" ==> t_rec
   applinks == "counters" ==> t_ops
@@ -221,7 +229,12 @@ flowchart TB
   %% layer pins: users > edge > auth+services > stores > analytics/observability
   member ~~~ cf
   friend ~~~ cf
+  cf ~~~ appgw
+  cf ~~~ admingw
   cf ~~~ custpool
+  admingw ~~~ custpool
+  appgw ~~~ custpool
+  landinggw ~~~ custpool
   cf ~~~ emppool
   cf ~~~ sched
   custpool ~~~ applinks
