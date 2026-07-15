@@ -137,7 +137,7 @@ flowchart TB
     fx["fx-rates - non-VPC"]
     sched["EventBridge Scheduler<br>orders 15 min + FX 12 h"]
     ddb[("DynamoDB - 10 tables<br>links, attribution, config, counters, FX, outbox")]
-    funnel[("Firehose -> S3 -> Athena<br>funnel events")]
+    funnel[("Funnel analytics: CW logs -> Firehose<br>-> S3 -> Glue/Athena")]
 
     subgraph vpc["VPC - no NAT, no RDS Proxy"]
       appcore["app-core - wallet"]
@@ -171,6 +171,9 @@ flowchart TB
   adminsvc -- "read-only" --> aurora
   writer -- "append-only" --> aurora
 
+  obscw["CloudWatch + X-Ray<br>dashboards + alarms -> SNS -> ops email"]
+  region -. "traces + metrics + logs<br>from every function and API" .-> obscw
+
   classDef invpc fill:#e6f0ff,stroke:#3b6fb3
   classDef novpc fill:#eafaf1,stroke:#2e8b57
   classDef data fill:#fff4e6,stroke:#cc8400
@@ -178,7 +181,7 @@ flowchart TB
   class appcore,adminsvc,writer invpc
   class applinks,landing,proxy,fx,sender novpc
   class aurora,ddb,s3site,funnel data
-  class ali,meta,custpool,emppool ext
+  class ali,meta,custpool,emppool,obscw ext
   style vpc fill:#f3f0f7
 ```
 

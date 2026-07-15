@@ -34,6 +34,7 @@ flowchart TB
   subgraph edge["Edge - CloudFront cert + WAF in us-east-1"]
     cf["CloudFront + WAF<br>default -> SPA, /p/* -> landing API"]
     s3site[("S3 - SPA + config.json")]
+    edgedash["CloudWatch edge dashboard<br>CloudFront + WAF metrics - us-east-1"]
   end
 
   subgraph region["AWS il-central-1"]
@@ -55,7 +56,7 @@ flowchart TB
     sched["EventBridge Scheduler<br>orders 15 min + FX 12 h"]
 
     secrets["Secrets Manager<br>retailer credential"]
-    funnel[("Firehose -> S3 -> Glue/Athena<br>impression, click, conversion, order_untracked")]
+    funnel[("Funnel analytics - CW Logs subscription filters<br>-> Firehose -> S3 date-partitioned -> Glue funnel_events<br>-> Athena. Events: impression, click, conversion, order_untracked")]
 
     subgraph dynamo["DynamoDB - on-demand, PITR. Logical view: one node per table - NO cross-table transactions"]
       t_prod[("product<br>+ counter row - same-table tx")]
@@ -140,6 +141,14 @@ flowchart TB
   writer -- "per-link stats" --> t_rec
   migrator -- "wanthat_migrator - DDL" --> aurora
 
+  subgraph obs["Observability - ObservabilityStack, deploys last"]
+    cw["CloudWatch + X-Ray<br>per-surface dashboards - retention-bounded log groups<br>alarms: Lambda errors, API 5xx, Aurora conns 80% of 50, SMS spend 80% of cap"]
+    alarmtopic["SNS wanthat-env-alarms<br>-> ops email"]
+  end
+  region -. "traces, metrics, structured logs<br>from every function and API" .-> cw
+  cw -- "threshold alarms" --> alarmtopic
+  cf -. "requests + WAF metrics" .-> edgedash
+
   classDef invpc fill:#e6f0ff,stroke:#3b6fb3,color:#0b2545
   classDef novpc fill:#eafaf1,stroke:#2e8b57,color:#0b3d2e
   classDef data fill:#fff4e6,stroke:#cc8400,color:#5c3b00
@@ -147,7 +156,7 @@ flowchart TB
   class appcore,adminsvc,writer,migrator invpc
   class applinks,admincred,landing,proxy,fx,dispatcher,sender,postconf novpc
   class t_prod,t_rec,t_guest,t_state,t_unattr,t_cfg,t_ops,t_fx,t_outbox,t_otp,t_wallet,t_audit,s3site,funnel data
-  class ali,meta,custpool,emppool ext
+  class ali,meta,custpool,emppool,cw,alarmtopic,edgedash ext
   style vpc fill:#f3f0f7
 ```
 
