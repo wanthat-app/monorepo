@@ -136,7 +136,18 @@ flowchart TB
     proxy["retailer-proxy - non-VPC<br>sole retailer egress + credential"]
     fx["fx-rates - non-VPC"]
     sched["EventBridge Scheduler<br>orders 15 min + FX 12 h"]
-    ddb[("DynamoDB - 10 tables<br>links, attribution, config, counters, FX, outbox")]
+    subgraph dynamo["DynamoDB - one node per table, no cross-table transactions.<br>* = exact counter row lives IN the table - the only same-tx pair"]
+      t_rec[("recommendation *")]
+      t_prod[("product *")]
+      t_cfg[("runtime_config")]
+      t_fx[("fx_rate")]
+      t_state[("poller_state")]
+      t_unattr[("unattributed_order")]
+      t_guest[("guest_attribution")]
+      t_ops[("ops_counters")]
+      t_outbox[("notification_outbox")]
+      t_otp[("otp_sink")]
+    end
     funnel[("Funnel analytics: CW logs -> Firehose<br>-> S3 -> Glue/Athena")]
 
     subgraph vpc["VPC - no NAT, no RDS Proxy"]
@@ -158,13 +169,23 @@ flowchart TB
   member -- "Bearer JWT" --> appcore
   adminUser -- "PKCE code flow + TOTP" --> emppool
   adminUser -- "employee JWT" --> adminsvc
-  applinks -- "links" --> ddb
+  applinks -- "create tx" --> t_rec
+  applinks -- "read" --> t_prod
+  applinks -- "counters" --> t_ops
+  proxy -- "cache tx" --> t_prod
+  proxy -- "cursor" --> t_state
+  proxy -- "unmatched" --> t_unattr
+  proxy -- "guest read" --> t_guest
+  sender -- "park code" --> t_otp
+  adminsvc -- "sole writer" --> t_cfg
+  writer -- "stats" --> t_rec
   applinks -- "generateLink" --> proxy
-  landing -- "short id lookup" --> ddb
+  landing -- "short id" --> t_rec
   landing -- "impression / click" --> funnel
   landing -. "302 + custom_parameters" .-> ali
   sched --> proxy
-  sched --> fx -- "USD-ILS" --> ddb
+  sched --> fx
+  fx -- "USD-ILS" --> t_fx
   proxy -- "orders + links" --> ali
   proxy -- "WriteConversions" --> writer
   appcore -- "wallet reads" --> aurora
@@ -180,7 +201,7 @@ flowchart TB
   classDef ext fill:#f3f0f7,stroke:#7a5fa3
   class appcore,adminsvc,writer invpc
   class applinks,landing,proxy,fx,sender novpc
-  class aurora,ddb,s3site,funnel data
+  class aurora,t_rec,t_prod,t_cfg,t_fx,t_state,t_unattr,t_guest,t_ops,t_outbox,t_otp,s3site,funnel data
   class ali,meta,custpool,emppool,obscw ext
   style vpc fill:#f3f0f7
 ```
