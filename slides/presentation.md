@@ -170,17 +170,18 @@ flowchart TB
   adminUser -- "PKCE code flow + TOTP" --> emppool
   adminUser -- "employee JWT" --> adminsvc
   applinks -- "create tx" --> t_rec
-  applinks -- "read" --> t_prod
+  t_prod -- "cache read" --> applinks
   applinks -- "counters" --> t_ops
   proxy -- "cache tx" --> t_prod
-  proxy -- "cursor" --> t_state
+  proxy -- "cursor write" --> t_state
+  t_state -- "cursor read" --> proxy
   proxy -- "unmatched" --> t_unattr
-  proxy -- "guest read" --> t_guest
+  t_guest -- "guest read" --> proxy
   sender -- "park code" --> t_otp
   adminsvc -- "sole writer" --> t_cfg
   writer -- "stats" --> t_rec
   applinks -- "generateLink" --> proxy
-  landing -- "short id" --> t_rec
+  t_rec -- "short id" --> landing
   landing -- "impression / click" --> funnel
   landing -. "302 + custom_parameters" .-> ali
   sched --> proxy
@@ -188,8 +189,8 @@ flowchart TB
   fx -- "USD-ILS" --> t_fx
   proxy -- "orders + links" --> ali
   proxy -- "WriteConversions" --> writer
-  appcore -- "wallet reads" --> aurora
-  adminsvc -- "read-only" --> aurora
+  aurora -- "wallet reads" --> appcore
+  aurora -- "read-only" --> adminsvc
   writer -- "append-only" --> aurora
 
   obscw["CloudWatch + X-Ray<br>dashboards + alarms -> SNS -> ops email"]

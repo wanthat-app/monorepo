@@ -114,14 +114,14 @@ flowchart TB
   admincred -- "delete by owner + counter" --> t_rec
 
   applinks -- "create: put + counter - one tx" --> t_rec
-  applinks -- "cache read" --> t_prod
+  t_prod -- "cache read" --> applinks
   applinks -- "invoke generateLink" --> proxy
-  appcore -- "app_rw - balance + history reads" --> t_wallet
-  adminsvc -- "app_ro - money KPIs" --> t_wallet
+  t_wallet -- "balance + history reads - app_rw" --> appcore
+  t_wallet -- "money KPIs - app_ro" --> adminsvc
   adminsvc -- "config audit fn - app_ro" --> t_audit
   adminsvc -- "sole writer" --> t_cfg
-  adminsvc -- "claim / dismiss" --> t_unattr
-  landing -- "short id -> product + owner" --> t_rec
+  adminsvc <-- "claim queue r/w" --> t_unattr
+  t_rec -- "short id -> product + owner" --> landing
   landing -- "impression / click log lines" --> funnel
   landing -. "302 to store with custom_parameters" .-> ali
 
@@ -131,9 +131,9 @@ flowchart TB
   proxy -- "HMAC: getProductDetail,<br>generatePromotionLink, listOrdersByIndex" --> ali
   proxy -- "read credential" --> secrets
   proxy -- "cache put + counter - one tx" --> t_prod
-  proxy -- "poll cursor" --> t_state
+  proxy <-- "poll cursor r/w" --> t_state
   proxy -- "park unmatched orders" --> t_unattr
-  proxy -- "attribution reads" --> t_guest
+  t_guest -- "attribution reads" --> proxy
   proxy -- "invoke WriteConversions" --> writer
   proxy -- "order_untracked log line" --> funnel
   writer -- "poller_writer - append rows" --> t_wallet
@@ -165,9 +165,10 @@ external/managed. Solid arrows are synchronous data/HTTP, dotted arrows are asyn
 streams, redirects). The datastores are drawn **one node per table** (logical view): no two
 tables ever share a transaction — every DynamoDB `TransactWriteItems` is single-table (the
 item plus its counter row live in the same table by design), and the Aurora ledger + audit
-writes are sequential idempotent statements, not one SQL transaction. Read edges for
-`runtime_config` (read by almost every function), `fx_rate` (read by app-links, app-core,
-admin-api, landing), and admin-api's read-only taps on ops_counters / otp_sink /
+writes are sequential idempotent statements, not one SQL transaction. Arrow direction follows the data:
+writes point into a store, reads point out of it, r/w access is drawn bidirectional. Read
+edges for `runtime_config` (read by almost every function), `fx_rate` (read by app-links,
+app-core, admin-api, landing), and admin-api's read-only taps on ops_counters / otp_sink /
 notification_outbox / product / recommendation are omitted to keep the diagram legible.*
 
 Compute is sliced by real seams (ADR-0002, reshaped by ADR-0006): the member surface is split
