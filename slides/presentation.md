@@ -128,7 +128,8 @@ flowchart TB
   end
 
   subgraph region["AWS il-central-1"]
-    cognito["Cognito x 2 pools<br>customers: OTP + passkeys, PII in attributes<br>employees: TOTP + Managed Login"]
+    custpool["Cognito CUSTOMER pool<br>phone OTP + passkeys<br>PII in attributes"]
+    emppool["Cognito EMPLOYEE pool<br>email + mandatory TOTP<br>Managed Login + PKCE"]
     sender["message-sender<br>custom SMS sender, kill-switched"]
     applinks["app-links - non-VPC<br>products + recommendations"]
     landing["landing - non-VPC<br>OG shell + attributed redirect"]
@@ -150,10 +151,12 @@ flowchart TB
   friend -- "GET /p/:id" --> cf
   cf --> s3site
   cf -- "/p/*" --> landing
-  member -- "browser-direct auth" --> cognito
-  cognito -. "OTP" .-> sender -- "WhatsApp / SMS" --> meta
+  member -- "browser-direct auth:<br>SignUp, InitiateAuth, WEB_AUTHN" --> custpool
+  custpool -. "OTP" .-> sender
+  sender -- "WhatsApp / SMS" --> meta
   member -- "Bearer JWT" --> applinks
   member -- "Bearer JWT" --> appcore
+  adminUser -- "PKCE code flow + TOTP" --> emppool
   adminUser -- "employee JWT" --> adminsvc
   applinks -- "links" --> ddb
   applinks -- "generateLink" --> proxy
@@ -175,7 +178,7 @@ flowchart TB
   class appcore,adminsvc,writer invpc
   class applinks,landing,proxy,fx,sender novpc
   class aurora,ddb,s3site,funnel data
-  class ali,meta,cognito ext
+  class ali,meta,custpool,emppool ext
   style vpc fill:#f3f0f7
 ```
 
