@@ -141,6 +141,29 @@ flowchart TB
   writer -- "per-link stats" --> t_rec
   migrator -- "wanthat_migrator - DDL" --> aurora
 
+  t_cfg --> applinks
+  t_cfg --> appcore
+  t_cfg --> adminsvc
+  t_cfg --> landing
+  t_cfg --> proxy
+  t_cfg --> fx
+  t_cfg --> sender
+  t_cfg --> dispatcher
+  t_fx --> applinks
+  t_fx --> appcore
+  t_fx --> adminsvc
+  t_fx --> landing
+  t_rec --> applinks
+  t_rec --> appcore
+  t_rec --> adminsvc
+  t_rec --> proxy
+  t_prod --> adminsvc
+  t_ops --> adminsvc
+  t_otp --> adminsvc
+  t_outbox --> adminsvc
+  t_unattr -- "settle reads" --> proxy
+  t_audit -- "admin activity feed" --> adminsvc
+
   subgraph obs["Observability - ObservabilityStack, deploys last"]
     cw["CloudWatch + X-Ray<br>per-surface dashboards - retention-bounded log groups<br>alarms: Lambda errors, API 5xx, Aurora conns 80% of 50, SMS spend 80% of cap"]
     alarmtopic["SNS wanthat-env-alarms<br>-> ops email"]
@@ -166,10 +189,8 @@ streams, redirects). The datastores are drawn **one node per table** (logical vi
 tables ever share a transaction — every DynamoDB `TransactWriteItems` is single-table (the
 item plus its counter row live in the same table by design), and the Aurora ledger + audit
 writes are sequential idempotent statements, not one SQL transaction. Arrow direction follows the data:
-writes point into a store, reads point out of it, r/w access is drawn bidirectional. Read
-edges for `runtime_config` (read by almost every function), `fx_rate` (read by app-links,
-app-core, admin-api, landing), and admin-api's read-only taps on ops_counters / otp_sink /
-notification_outbox / product / recommendation are omitted to keep the diagram legible.*
+writes point into a store, reads point out of it (unlabeled arrows out of a store are plain
+reads), r/w access is drawn bidirectional. Every read path is drawn — none omitted.*
 
 Compute is sliced by real seams (ADR-0002, reshaped by ADR-0006): the member surface is split
 into the non-VPC **app-links** (catalog + recommendations, no database) and the in-VPC

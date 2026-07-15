@@ -173,14 +173,14 @@ flowchart TB
   member -- "browser-direct auth:<br>SignUp, InitiateAuth, WEB_AUTHN" --> custpool
   custpool -. "OTP" .-> sender
   sender -- "WhatsApp / SMS" --> meta
-  sender -- "park code" --> t_otp
+  sender == "park code" ==> t_otp
   member -- "Bearer JWT" --> applinks
   member -- "Bearer JWT" --> appcore
   adminUser -- "PKCE code flow + TOTP" --> emppool
   adminUser -- "employee JWT" --> adminsvc
 
-  applinks -- "create tx" --> t_rec
-  applinks -- "counters" --> t_ops
+  applinks == "create tx" ==> t_rec
+  applinks == "counters" ==> t_ops
   applinks -- "generateLink" --> proxy
   t_prod -- "cache read" --> applinks
   t_rec -- "short id" --> landing
@@ -189,19 +189,41 @@ flowchart TB
 
   sched --> proxy
   sched --> fx
-  fx -- "USD-ILS" --> t_fx
+  fx == "USD-ILS" ==> t_fx
   proxy -- "orders + links" --> ali
-  proxy -- "cache tx" --> t_prod
-  proxy -- "cursor write" --> t_state
+  proxy == "cache tx" ==> t_prod
+  proxy == "cursor write" ==> t_state
   t_state -- "cursor read" --> proxy
-  proxy -- "unmatched" --> t_unattr
+  proxy == "unmatched" ==> t_unattr
   t_guest -- "guest read" --> proxy
   proxy -- "WriteConversions" --> writer
-  writer -- "stats" --> t_rec
-  writer -- "append-only" --> aurora
+  writer == "stats" ==> t_rec
+  writer == "append-only" ==> aurora
   aurora -- "wallet reads" --> appcore
   aurora -- "read-only" --> adminsvc
-  adminsvc -- "sole writer" --> t_cfg
+  adminsvc == "sole writer" ==> t_cfg
+
+  t_cfg --> applinks
+  t_cfg --> appcore
+  t_cfg --> adminsvc
+  t_cfg --> landing
+  t_cfg --> proxy
+  t_cfg --> fx
+  t_cfg --> sender
+  t_fx --> applinks
+  t_fx --> appcore
+  t_fx --> adminsvc
+  t_fx --> landing
+  t_rec --> applinks
+  t_rec --> appcore
+  t_rec --> adminsvc
+  t_rec --> proxy
+  t_prod --> adminsvc
+  t_ops --> adminsvc
+  t_otp --> adminsvc
+  t_outbox --> adminsvc
+  t_unattr --> adminsvc
+  t_unattr --> proxy
 
   region -. "traces + metrics + logs<br>from every function and API" .-> obscw
 
