@@ -1014,7 +1014,7 @@ function DebugPayloadsRow({ token }: { token: string | null }) {
           </div>
         ) : null}
       </div>
-      <div className="sm:w-[300px] sm:flex-shrink-0">
+      <div className="flex sm:w-[300px] sm:flex-shrink-0 sm:justify-end">
         {value === null ? (
           <Skeleton className="h-6 w-11" />
         ) : (

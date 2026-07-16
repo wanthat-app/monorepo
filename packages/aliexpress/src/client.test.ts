@@ -141,6 +141,25 @@ describe("getProductDetail", () => {
     await expect(empty.getProductDetail("1")).rejects.toMatchObject({ code: "empty_result" });
   });
 
+  it("reads a zero-record answer with an EMPTY products object as a definitive miss", async () => {
+    // Verbatim prod answer for a not-in-catalog product (2026-07-16, id 1005008735450412):
+    // zero records serialize as `products: {}` — no `product` array. Must be empty_result
+    // (-> the SPA's "not in the affiliate catalog"), not malformed_result.
+    const notInCatalog = client({
+      aliexpress_affiliate_productdetail_get_response: {
+        resp_result: { result: { current_record_count: 0, products: {} }, resp_code: 200 },
+        request_id: "2151e4fa17841966686116244",
+      },
+    });
+    await expect(notInCatalog.getProductDetail("1005008735450412")).rejects.toMatchObject({
+      code: "empty_result",
+    });
+    const err = await notInCatalog
+      .getProductDetail("1005008735450412")
+      .catch((e: Error) => e as AliExpressApiError);
+    expect((err as Error).message).toMatch(/resp_code=200.*records=0/);
+  });
+
   it("answers malformed_result for an unrecognized payload (NOT a definitive miss)", async () => {
     const garbage = client({ something: "else entirely" });
     await expect(garbage.getProductDetail("1")).rejects.toMatchObject({
