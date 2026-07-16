@@ -100,18 +100,23 @@ const ProductDetailResponse = z.object({
           current_record_count: z.number().optional(),
           products: z
             .object({
-              product: z.array(
-                z
-                  .object({
-                    product_title: z.string().optional(),
-                    product_main_image_url: z.string().optional(),
-                    target_sale_price: z.string().optional(),
-                    target_sale_price_currency: z.string().optional(),
-                    commission_rate: z.union([z.string(), z.number()]).optional(),
-                    hot_product_commission_rate: z.union([z.string(), z.number()]).optional(),
-                  })
-                  .passthrough(),
-              ),
+              // Optional: a zero-record answer serializes the empty container as `products: {}`
+              // with NO `product` array (verified in prod 2026-07-16 on a not-in-catalog
+              // product) — that is a well-formed definitive miss, not a malformed payload.
+              product: z
+                .array(
+                  z
+                    .object({
+                      product_title: z.string().optional(),
+                      product_main_image_url: z.string().optional(),
+                      target_sale_price: z.string().optional(),
+                      target_sale_price_currency: z.string().optional(),
+                      commission_rate: z.union([z.string(), z.number()]).optional(),
+                      hot_product_commission_rate: z.union([z.string(), z.number()]).optional(),
+                    })
+                    .passthrough(),
+                )
+                .optional(),
             })
             .optional(),
         })
@@ -303,7 +308,7 @@ export class AliExpressClient {
         `productdetail.get answered an unrecognized payload${this.diagnostic(data)}`,
       );
     const respResult = parsed.data.aliexpress_affiliate_productdetail_get_response.resp_result;
-    const product = respResult.result?.products?.product[0];
+    const product = respResult.result?.products?.product?.[0];
     if (!product) {
       const diagnostics = [
         respResult.resp_code !== undefined && `resp_code=${respResult.resp_code}`,
