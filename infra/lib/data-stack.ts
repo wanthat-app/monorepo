@@ -244,47 +244,5 @@ export class DataStack extends Stack {
       // even though the Lambda itself has 5 (the migrator now retries the connect via waitForDb).
       timeout: Duration.minutes(5),
     });
-
-    // TRANSITIONAL (T8 teardown) - REMOVE in a follow-up once every env's api stack has redeployed.
-    // Same trap as the api-stack's retained AppAuth export: the currently-deployed api template
-    // still imports the deleted auth tables' name + ARN exports, and a single-pass
-    // `cdk deploy --all` updates `data` BEFORE `api`, so dropping these exports while in use rolls
-    // the data deploy back ("cannot delete export ... in use"). An in-use export's VALUE is as
-    // frozen as its existence, so each one is retained with the exact literal it exported while the
-    // table still existed (per env; captured from the last dev/prod Deploy run logs - nothing
-    // evaluates them once api redeploys without the imports). The follow-up PR drops this block.
-    const transitionalAuthTableExports: Record<WanthatEnv["name"], Record<string, string>> = {
-      dev: {
-        ExportsOutputRefAuthChallenge21A195103CDA51C6:
-          "wanthat-dev-data-AuthChallenge21A19510-13395QR3QNJOM",
-        ExportsOutputFnGetAttAuthChallenge21A19510Arn23793D65:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-AuthChallenge21A19510-13395QR3QNJOM",
-        ExportsOutputRefPasskeyCredential849E2127F7C0C649:
-          "wanthat-dev-data-PasskeyCredential849E2127-1M6GGW4K4KJIG",
-        ExportsOutputFnGetAttPasskeyCredential849E2127ArnD735496D:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-PasskeyCredential849E2127-1M6GGW4K4KJIG",
-        ExportsOutputRefPhoneVelocity457B1C8C1EA8A4AE:
-          "wanthat-dev-data-PhoneVelocity457B1C8C-13JA693RLTI5P",
-        ExportsOutputFnGetAttPhoneVelocity457B1C8CArnA937956E:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-PhoneVelocity457B1C8C-13JA693RLTI5P",
-      },
-      prod: {
-        ExportsOutputRefAuthChallenge21A195103CDA51C6:
-          "wanthat-prod-data-AuthChallenge21A19510-J6D3YKQGCIHC",
-        ExportsOutputFnGetAttAuthChallenge21A19510Arn23793D65:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-AuthChallenge21A19510-J6D3YKQGCIHC",
-        ExportsOutputRefPasskeyCredential849E2127F7C0C649:
-          "wanthat-prod-data-PasskeyCredential849E2127-1MLD5187AHXZ1",
-        ExportsOutputFnGetAttPasskeyCredential849E2127ArnD735496D:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-PasskeyCredential849E2127-1MLD5187AHXZ1",
-        ExportsOutputRefPhoneVelocity457B1C8C1EA8A4AE:
-          "wanthat-prod-data-PhoneVelocity457B1C8C-WYGKFL5E9DM1",
-        ExportsOutputFnGetAttPhoneVelocity457B1C8CArnA937956E:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-PhoneVelocity457B1C8C-WYGKFL5E9DM1",
-      },
-    };
-    for (const [output, value] of Object.entries(transitionalAuthTableExports[wanthatEnv.name])) {
-      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-data:${output}` });
-    }
   }
 }

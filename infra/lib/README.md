@@ -70,3 +70,48 @@ aws cognito-idp admin-add-user-to-group \
 On first sign-in through the admin hosted UI (`AdminLoginBaseUrl`, reached via the SPA `/admin`
 route), the employee sets a permanent password and **enrols a TOTP authenticator** (MFA is mandatory
 on this pool). No further out-of-band steps; routine config/stats are managed in the console.
+
+## Runbook — Postgres service-role creation (R1) and legacy-role retirement (R2)
+
+The db-migrator runs as `wanthat_migrator`, which deliberately has **no CREATEROLE** — a
+`CREATE ROLE` inside a migration fails the deploy. Roles are therefore created and dropped
+**out-of-band by an operator** (psql as the master user, per env); migrations only GRANT/REVOKE
+privileges on roles that already exist. Connect with the master credentials from Secrets Manager
+(`wanthat-<env>-data` cluster secret) from a machine that can reach the cluster (e.g.
+`aws rds-db` port-forward or a bastion of choice); every statement is auditable via Postgres logs.
+
+**R1 — create the service roles (run in dev AND prod BEFORE the PR that ships migration
+`0008_service_role_grants.sql` deploys to that env; the migration fails with "role does not
+exist" otherwise):**
+
+```sql
+DO $$ BEGIN
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'wallet_reader') THEN CREATE ROLE wallet_reader LOGIN; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ledger_reader') THEN CREATE ROLE ledger_reader LOGIN; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'ledger_writer') THEN CREATE ROLE ledger_writer LOGIN; END IF;
+  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'audit_writer')  THEN CREATE ROLE audit_writer  LOGIN; END IF;
+END $$;
+GRANT rds_iam TO wallet_reader, ledger_reader, ledger_writer, audit_writer;
+-- Master (not the migrator) owns schema public - USAGE must be granted here, not in a migration.
+GRANT USAGE ON SCHEMA public TO wallet_reader, ledger_reader, ledger_writer, audit_writer;
+```
+
+Never `ALTER ROLE ... RENAME` an in-use role — IAM database auth binds tokens to the role name
+(`rds-db:connect` ARNs embed it), so a rename breaks every connected function mid-flight. The
+rename path is always: create new role (R1) → migration GRANTs → CDK flips `grantConnect` +
+`DB_USER` → cleanup migration REVOKEs → drop old role (R2).
+
+**R2 — drop the legacy roles (run in each env only AFTER migration
+`0009_legacy_role_cleanup.sql` has applied there — it REVOKEs everything first; DROP ROLE
+fails while privileges remain):**
+
+```sql
+DROP ROLE app_rw;
+DROP ROLE app_ro;
+DROP ROLE poller_writer;
+```
+
+**Retailer secret rotation is NOT a runbook** — it stays an admin-panel feature (write-only
+`PutSecretValue` from the admin surface; the console can rotate credentials without AWS access,
+deliberately, so a non-technical operator can manage retailer keys). The planned CloudTrail
+alarm on secret operations covers both the panel writes and the two runtime readers.
