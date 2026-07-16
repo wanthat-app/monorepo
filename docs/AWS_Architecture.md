@@ -34,10 +34,12 @@ flowchart TB
   subgraph edge["Edge - CloudFront cert + WAF in us-east-1"]
     cf["CloudFront + WAF<br>default -> SPA, /p/* -> landing API"]
     s3site[("S3 - SPA + config.json")]
+    edgedash["CloudWatch edge dashboard<br>CloudFront + WAF metrics - us-east-1"]
   end
 
   subgraph region["AWS il-central-1"]
-    cognito["Cognito x 2 pools - ESSENTIALS<br>customers: phone OTP + passkeys, PII in attributes<br>employees: email + TOTP, Managed Login"]
+    custpool["Cognito CUSTOMER pool - ESSENTIALS<br>phone OTP + passkeys<br>PII in user attributes"]
+    emppool["Cognito EMPLOYEE pool<br>email + mandatory TOTP<br>Managed Login + PKCE"]
     sender["message-sender<br>custom SMS sender, kill-switched"]
     postconf["post-confirmation<br>welcome + attribution + counters"]
 
@@ -54,7 +56,7 @@ flowchart TB
     sched["EventBridge Scheduler<br>orders 15 min + FX 12 h"]
 
     secrets["Secrets Manager<br>retailer credential"]
-    funnel[("Firehose -> S3 -> Glue/Athena<br>impression, click, conversion, order_untracked")]
+    funnel[("Funnel analytics - CW Logs subscription filters<br>-> Firehose -> S3 date-partitioned -> Glue funnel_events<br>-> Athena. Events: impression, click, conversion, order_untracked")]
 
     subgraph dynamo["DynamoDB - on-demand, PITR. Logical view: one node per table - NO cross-table transactions"]
       t_prod[("product<br>+ counter row - same-table tx")]
@@ -62,7 +64,7 @@ flowchart TB
       t_guest[("guest_attribution")]
       t_state[("poller_state")]
       t_unattr[("unattributed_order<br>byState GSI")]
-      t_cfg[("runtime_config")]
+      t_cfg[("runtime_config<br>read by EVERY service - edges omitted")]
       t_ops[("ops_counters")]
       t_fx[("fx_rate")]
       t_outbox[("notification_outbox<br>TTL 30 d + stream")]
@@ -87,11 +89,11 @@ flowchart TB
   cf -- "default" --> s3site
   cf -- "/p/*" --> landinggw --> landing
 
-  member -- "browser-direct: SignUp,<br>InitiateAuth, WEB_AUTHN" --> cognito
-  cognito -. "custom SMS sender" .-> sender
+  member -- "browser-direct: SignUp,<br>InitiateAuth, WEB_AUTHN" --> custpool
+  custpool -. "custom SMS sender" .-> sender
   sender -- "WhatsApp default, SMS fallback" --> meta
   sender -- "park every code" --> t_otp
-  cognito -. "post confirmation" .-> postconf
+  custpool -. "post confirmation" .-> postconf
   postconf -- "optin_welcome" --> t_outbox
   postconf -- "guest -> member" --> t_guest
   postconf -- "customer counter" --> t_ops
@@ -101,24 +103,25 @@ flowchart TB
   member -- "Bearer JWT" --> appgw
   appgw --> applinks
   appgw --> appcore
-  appgw -. "validate via JWKS" .-> cognito
-  adminUser -- "PKCE code flow<br>Managed Login" --> cognito
+  appgw -. "validate via JWKS" .-> custpool
+  admingw -. "validate via JWKS" .-> emppool
+  adminUser -- "PKCE code flow<br>Managed Login" --> emppool
   adminUser -- "Bearer JWT" --> admingw
   admingw --> adminsvc
   admingw --> admincred
-  admincred -- "ListUsers, disable, enable,<br>sign-out, delete" --> cognito
+  admincred -- "ListUsers, disable, enable,<br>sign-out, delete - CUSTOMER pool" --> custpool
   admincred -- "PutSecretValue - write only" --> secrets
   admincred -- "delete by owner + counter" --> t_rec
 
   applinks -- "create: put + counter - one tx" --> t_rec
-  applinks -- "cache read" --> t_prod
+  t_prod -- "cache read" --> applinks
   applinks -- "invoke generateLink" --> proxy
-  appcore -- "app_rw - balance + history reads" --> t_wallet
-  adminsvc -- "app_ro - money KPIs" --> t_wallet
+  t_wallet -- "balance + history reads - app_rw" --> appcore
+  t_wallet -- "money KPIs - app_ro" --> adminsvc
   adminsvc -- "config audit fn - app_ro" --> t_audit
   adminsvc -- "sole writer" --> t_cfg
-  adminsvc -- "claim / dismiss" --> t_unattr
-  landing -- "short id -> product + owner" --> t_rec
+  adminsvc <-- "claim queue r/w" --> t_unattr
+  t_rec -- "short id -> product + owner" --> landing
   landing -- "impression / click log lines" --> funnel
   landing -. "302 to store with custom_parameters" .-> ali
 
@@ -128,15 +131,38 @@ flowchart TB
   proxy -- "HMAC: getProductDetail,<br>generatePromotionLink, listOrdersByIndex" --> ali
   proxy -- "read credential" --> secrets
   proxy -- "cache put + counter - one tx" --> t_prod
-  proxy -- "poll cursor" --> t_state
+  proxy <-- "poll cursor r/w" --> t_state
   proxy -- "park unmatched orders" --> t_unattr
-  proxy -- "attribution reads" --> t_guest
+  t_guest -- "attribution reads" --> proxy
   proxy -- "invoke WriteConversions" --> writer
   proxy -- "order_untracked log line" --> funnel
   writer -- "poller_writer - append rows" --> t_wallet
   writer -- "audit_append per row" --> t_audit
   writer -- "per-link stats" --> t_rec
   migrator -- "wanthat_migrator - DDL" --> aurora
+
+  t_fx --> applinks
+  t_fx --> appcore
+  t_fx --> adminsvc
+  t_fx --> landing
+  t_rec --> applinks
+  t_rec --> appcore
+  t_rec --> adminsvc
+  t_rec --> proxy
+  t_prod --> adminsvc
+  t_ops --> adminsvc
+  t_otp --> adminsvc
+  t_outbox --> adminsvc
+  t_unattr -- "settle reads" --> proxy
+  t_audit -- "admin activity feed" --> adminsvc
+
+  subgraph obs["Observability - ObservabilityStack, deploys last"]
+    cw["CloudWatch + X-Ray<br>per-surface dashboards - retention-bounded log groups<br>alarms: Lambda errors, API 5xx, Aurora conns 80% of 50, SMS spend 80% of cap"]
+    alarmtopic["SNS wanthat-env-alarms<br>-> ops email"]
+  end
+  region -. "traces, metrics, structured logs<br>from every function and API" .-> cw
+  cw -- "threshold alarms" --> alarmtopic
+  cf -. "requests + WAF metrics" .-> edgedash
 
   classDef invpc fill:#e6f0ff,stroke:#3b6fb3,color:#0b2545
   classDef novpc fill:#eafaf1,stroke:#2e8b57,color:#0b3d2e
@@ -145,7 +171,7 @@ flowchart TB
   class appcore,adminsvc,writer,migrator invpc
   class applinks,admincred,landing,proxy,fx,dispatcher,sender,postconf novpc
   class t_prod,t_rec,t_guest,t_state,t_unattr,t_cfg,t_ops,t_fx,t_outbox,t_otp,t_wallet,t_audit,s3site,funnel data
-  class ali,meta,cognito ext
+  class ali,meta,custpool,emppool,cw,alarmtopic,edgedash ext
   style vpc fill:#f3f0f7
 ```
 
@@ -154,10 +180,10 @@ external/managed. Solid arrows are synchronous data/HTTP, dotted arrows are asyn
 streams, redirects). The datastores are drawn **one node per table** (logical view): no two
 tables ever share a transaction — every DynamoDB `TransactWriteItems` is single-table (the
 item plus its counter row live in the same table by design), and the Aurora ledger + audit
-writes are sequential idempotent statements, not one SQL transaction. Read edges for
-`runtime_config` (read by almost every function), `fx_rate` (read by app-links, app-core,
-admin-api, landing), and admin-api's read-only taps on ops_counters / otp_sink /
-notification_outbox / product / recommendation are omitted to keep the diagram legible.*
+writes are sequential idempotent statements, not one SQL transaction. Arrow direction follows the data:
+writes point into a store, reads point out of it (unlabeled arrows out of a store are plain
+reads), r/w access is drawn bidirectional. Every read path is drawn except `runtime_config` reads — that table is read by every
+service, so its read edges are omitted and noted on the node.*
 
 Compute is sliced by real seams (ADR-0002, reshaped by ADR-0006): the member surface is split
 into the non-VPC **app-links** (catalog + recommendations, no database) and the in-VPC
