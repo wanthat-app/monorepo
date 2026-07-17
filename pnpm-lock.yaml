@@ -470,9 +470,6 @@ importers:
       '@aws-lambda-powertools/logger':
         specifier: ^2.8.0
         version: 2.33.1
-      '@aws-sdk/client-secrets-manager':
-        specifier: ^3.652.0
-        version: 3.1076.0
       '@wanthat/db':
         specifier: workspace:*
         version: link:../../packages/db
