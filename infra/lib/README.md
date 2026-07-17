@@ -76,9 +76,11 @@ on this pool). No further out-of-band steps; routine config/stats are managed in
 The db-migrator runs as `wanthat_migrator`, which deliberately has **no CREATEROLE** — a
 `CREATE ROLE` inside a migration fails the deploy; role creation is a master-only capability.
 **R1 is automated**: the `role-bootstrap` deploy Trigger (DataStack) runs as master on every
-deploy, BEFORE the migrator — it reads the cluster's generated master secret (via the
-TRANSITIONAL Secrets Manager interface endpoint; both are removed once R2 has run through the
-same function) and executes `runRoleBootstrap` (`packages/db/src/role-bootstrap.ts`):
+deploy, BEFORE the migrator — connecting via **IAM token auth as `wanthat_master`** (no
+password, no Secrets Manager: 0003 made master a member of `wanthat_migrator`, which holds
+`rds_iam`, and RDS routes any — even transitive — rds_iam member through IAM/PAM auth; this
+also means master PASSWORD login is disabled cluster-wide) and executes `runRoleBootstrap`
+(`packages/db/src/role-bootstrap.ts`):
 create-if-missing the four service roles + `GRANT rds_iam` + `GRANT USAGE ON SCHEMA public`,
 idempotently. Migration `0008_service_role_grants.sql` then GRANTs table privileges on roles
 the bootstrap guarantees exist. No operator steps in either env.

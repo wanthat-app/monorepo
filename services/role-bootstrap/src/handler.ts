@@ -2,18 +2,22 @@
  * role-bootstrap (refactor 2026-07) — a one-shot, in-VPC Lambda invoked by a CDK
  * `triggers.Trigger` after the Aurora cluster exists and BEFORE the db-migrator's Trigger.
  *
- * It is the system's ONLY master-credential consumer: it reads the cluster's generated master
- * secret (via the TRANSITIONAL Secrets Manager interface endpoint — see DataStack) and runs
- * `runRoleBootstrap` (R1 as code): create-if-missing the four service roles + GRANT rds_iam +
- * GRANT USAGE ON SCHEMA public. Master must do this because `wanthat_migrator` deliberately has
- * no CREATEROLE (0003/0006); migration 0008 then GRANTs table privileges on the roles this
- * function guarantees exist. Idempotent every deploy.
+ * It connects AS THE MASTER USER (`wanthat_master`) via IAM database authentication — no
+ * password, no Secrets Manager. This works because 0003 made master a member of
+ * `wanthat_migrator`, which holds `rds_iam`: RDS routes any (even transitively) rds_iam-member
+ * role through IAM/PAM auth — which simultaneously DISABLES master's password login (the
+ * failure mode that killed the secret-based first version of this function) and enables the
+ * same SigV4-token path every other in-VPC function uses.
+ *
+ * It runs `runRoleBootstrap` (R1 as code): create-if-missing the four service roles +
+ * GRANT rds_iam + GRANT USAGE ON SCHEMA public. Master must do this because
+ * `wanthat_migrator` deliberately has no CREATEROLE (0003/0006); migration 0008 then GRANTs
+ * table privileges on the roles this function guarantees exist. Idempotent every deploy.
  *
  * Throwing on failure is intentional: it fails the Trigger custom resource, which fails the
  * deploy — missing roles must never let a deploy that depends on them look successful.
  */
 import { Logger } from "@aws-lambda-powertools/logger";
-import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-secrets-manager";
 import { createDb, runRoleBootstrap, SERVICE_ROLES, waitForDb } from "@wanthat/db";
 
 const SERVICE = "role-bootstrap";
@@ -25,38 +29,15 @@ function requireEnv(name: string): string {
   return value;
 }
 
-/** The fields we need from the RDS-generated master secret (SecretString JSON). */
-export function parseMasterSecret(secretString: string): { username: string; password: string } {
-  const parsed: unknown = JSON.parse(secretString);
-  if (
-    typeof parsed !== "object" ||
-    parsed === null ||
-    typeof (parsed as { username?: unknown }).username !== "string" ||
-    typeof (parsed as { password?: unknown }).password !== "string"
-  ) {
-    throw new Error("master secret is missing username/password");
-  }
-  const { username, password } = parsed as { username: string; password: string };
-  return { username, password };
-}
-
 export const handler = async (): Promise<{ status: "ok"; roles: readonly string[] }> => {
   const region = process.env.AWS_REGION ?? "il-central-1";
-  const sm = new SecretsManagerClient({ region });
-  const res = await sm.send(
-    new GetSecretValueCommand({ SecretId: requireEnv("MASTER_SECRET_ARN") }),
-  );
-  if (!res.SecretString) throw new Error("master secret has no SecretString");
-  const { username, password } = parseMasterSecret(res.SecretString);
-
-  // Static master password (the one legitimate use of cfg.password outside tests); TLS trusts the
-  // RDS CA via NODE_EXTRA_CA_CERTS, same as every other in-VPC function.
+  // No password: createDb mints a fresh SigV4 IAM token per connection (same path as the app
+  // roles); DB_USER is wanthat_master. TLS trusts the RDS CA via NODE_EXTRA_CA_CERTS.
   const db = createDb({
     host: requireEnv("DB_HOST"),
     port: Number(requireEnv("DB_PORT")),
     database: requireEnv("DB_NAME"),
-    user: username,
-    password,
+    user: requireEnv("DB_USER"),
     region,
   });
   try {
