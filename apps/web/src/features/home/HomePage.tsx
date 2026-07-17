@@ -2,7 +2,7 @@ import { useQuery } from "@tanstack/react-query";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { type ActivityItemWire, activityApi, walletApi } from "../../lib/api";
+import { type ActivityItemWire, configApi, walletApi } from "../../lib/api";
 import { formatMoneyMinor, splitMoneyMinor } from "../../lib/money";
 import { Logo } from "../../ui/brand";
 import { Button } from "../../ui/components";
@@ -15,13 +15,16 @@ import {
   UserChip,
   useSession,
 } from "../../user";
+import { useActivityFeed } from "../activity/useActivityFeed";
 
 const ROW_STATUS = { confirmed: "confirmed", pending: "pending", clawback: "rejected" } as const;
 
 /**
- * Member home — the wallet dashboard (design handoff: Wallet flow, Home). Balance + activity come
- * from the wallet endpoints (Bearer access token via useSession — app-core is wallet-only after
- * ADR-0006). The profile is the module's ID-token claims; the avatar is the module's UserChip
+ * Member home — the wallet dashboard (design handoff: Wallet flow, Home). Balance comes from the
+ * wallet endpoint (Bearer access token via useSession — app-core is wallet-only after ADR-0006);
+ * the recent-activity strip is the CLIENT-SIDE merge of /wallet/entries + /recommendations
+ * (useActivityFeed — the server's GET /activity is deleted, refactor PR 2b).
+ * The profile is the module's ID-token claims; the avatar is the module's UserChip
  * (profile edit, passkeys and sign-out all live inside it). The Face ID prompt card is live —
  * shown only to members with no enrolled passkey (server truth via Cognito
  * ListWebAuthnCredentials; hidden while unknown so the enrolled majority never sees a flash).
@@ -38,11 +41,18 @@ export function HomePage() {
     queryFn: () => walletApi.get(token as string),
     enabled: !!token && !!profile,
   });
-  // No explicit limit: the server applies CONFIG home.recentActivityLimit (admin-tunable).
-  const activity = useQuery({
-    queryKey: ["activity", profile?.sub],
-    queryFn: () => activityApi.list(token as string),
-    enabled: !!token && !!profile,
+  // The strip's size stays admin-tunable (CONFIG home.recentActivityLimit) — read via the public
+  // config projection now that the activity merge is client-side; the CONFIG default (10) covers
+  // a failed read. The feed itself merges /wallet/entries + /recommendations in the browser.
+  const stripLimit = useQuery({
+    queryKey: ["config", "home.recentActivityLimit"],
+    queryFn: () => configApi.getPublic(["home.recentActivityLimit"]),
+  });
+  const rawLimit = stripLimit.data?.values["home.recentActivityLimit"];
+  const activity = useActivityFeed({
+    token,
+    pageSize: typeof rawLimit === "number" ? rawLimit : 10,
+    enabled: !!token && !!profile && !stripLimit.isPending,
   });
   const passkeys = useQuery({
     queryKey: ["passkeys", profile?.sub],
@@ -185,12 +195,14 @@ export function HomePage() {
               {t("home.seeAll")}
             </button>
           </div>
-          {activity.isPending || activity.isError ? (
+          {activity.items === null ? (
+            // Loading AND failed both keep the quiet skeletons — the strip never nags; the full
+            // /activity page owns the retry affordance (unchanged from the server-merge days).
             [0, 1, 2].map((i) => <ActivityRow key={i} loading />)
-          ) : activity.data.items.length === 0 ? (
+          ) : activity.items.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted">{t("home.noActivity")}</p>
           ) : (
-            activity.data.items.map((item) => (
+            activity.items.map((item) => (
               <MemberActivityRow key={rowKey(item)} item={item} meta={itemMeta(item.at)} />
             ))
           )}

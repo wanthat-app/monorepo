@@ -75,7 +75,11 @@ export interface WalletEntryWire {
   createdAt: string;
 }
 
-/** One item of the merged member activity feed (GET /activity). */
+/**
+ * One item of the member activity feed. Since the merge moved CLIENT-SIDE (refactor PR 2b) this
+ * is the feed's DISPLAY type only — no endpoint answers it. The SPA maps the two paginated
+ * sources onto it: `GET /recommendations` (app-links) and `GET /wallet/entries` (app-core).
+ */
 export type ActivityItemWire =
   | {
       type: "recommendation_created";
@@ -94,18 +98,12 @@ export type ActivityItemWire =
       at: string;
     };
 
-export const activityApi = {
-  /** No limit -> the server applies CONFIG home.recentActivityLimit (the home strip's size). */
-  list: (token: string, opts: { limit?: number; cursor?: string } = {}) => {
-    const params = new URLSearchParams();
-    if (opts.limit !== undefined) params.set("limit", String(opts.limit));
-    if (opts.cursor) params.set("cursor", opts.cursor);
-    const qs = params.toString();
-    return request<{ items: ActivityItemWire[]; nextCursor: string | null }>(
-      `/activity${qs ? `?${qs}` : ""}`,
-      { token },
-    );
-  },
+const pageQuery = (opts: { limit?: number; cursor?: string }): string => {
+  const params = new URLSearchParams();
+  if (opts.limit !== undefined) params.set("limit", String(opts.limit));
+  if (opts.cursor) params.set("cursor", opts.cursor);
+  const qs = params.toString();
+  return qs ? `?${qs}` : "";
 };
 
 export const walletApi = {
@@ -113,9 +111,10 @@ export const walletApi = {
     request<{ balances: WalletBalanceWire[]; estimated: WalletEstimateWire | null }>("/wallet", {
       token,
     }),
-  entries: (token: string, limit: number) =>
+  // Newest-first ledger history; the opaque cursor is the server's (createdAt, id) keyset key.
+  entries: (token: string, opts: { limit?: number; cursor?: string } = {}) =>
     request<{ items: WalletEntryWire[]; nextCursor: string | null }>(
-      `/wallet/entries?limit=${limit}`,
+      `/wallet/entries${pageQuery(opts)}`,
       { token },
     ),
 };
@@ -158,8 +157,23 @@ export interface RecommendationWire {
   createdAt: string;
   updatedAt: string;
 }
+/** One row of GET /recommendations (contracts RecommendationSummary) — the list projection. */
+export interface RecommendationSummaryWire {
+  recommendationId: string;
+  shareUrl: string;
+  title: string;
+  imageUrl: string | null;
+  stats: { clicks: number; conversions: number };
+  createdAt: string;
+}
 
 export const linksApi = {
+  // My recommendations, newest first (byOwner GSI); the cursor is the server's opaque keyset key.
+  list: (token: string, opts: { limit?: number; cursor?: string } = {}) =>
+    request<{ items: RecommendationSummaryWire[]; nextCursor: string | null }>(
+      `/recommendations${pageQuery(opts)}`,
+      { token },
+    ),
   // Paste URL → the shared product + a current-policy cashback estimate. The server mints the
   // product-level affiliate link on first resolve; the URL itself is never fetched by the SPA.
   resolveProduct: (token: string, url: string) =>

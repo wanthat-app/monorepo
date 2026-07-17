@@ -1,18 +1,18 @@
-import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { type ActivityItemWire, activityApi } from "../../lib/api";
 import { Logo } from "../../ui/brand";
 import { Button } from "../../ui/components";
 import { ActivityRow, TabBar, TopNav } from "../../ui/wallet";
 import { UserChip, useSession } from "../../user";
 import { MemberActivityRow, rowKey } from "../home/HomePage";
+import { useActivityFeed } from "./useActivityFeed";
 
 const PAGE_SIZE = 20;
 
 /**
  * The full activity page ("see all" from the home strip): the same merged feed — recommendation
- * creations + wallet movements, newest first — cursor-paged with an explicit page size.
+ * creations + wallet movements, newest first — now composed CLIENT-SIDE (refactor PR 2b) from
+ * the two paginated sources via `useActivityFeed`, one PAGE_SIZE page per "load more".
  */
 export function ActivityPage() {
   const { t, i18n } = useTranslation();
@@ -20,32 +20,11 @@ export function ActivityPage() {
   const { profile, loading, accessToken } = useSession();
   const token = accessToken();
 
-  const [items, setItems] = useState<ActivityItemWire[] | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [failed, setFailed] = useState(false);
-  const [busy, setBusy] = useState(false);
-
-  const load = useCallback(
-    async (cursor?: string) => {
-      if (!token) return;
-      setBusy(true);
-      setFailed(false);
-      try {
-        const res = await activityApi.list(token, { limit: PAGE_SIZE, cursor });
-        setItems((prev) => (cursor ? [...(prev ?? []), ...res.items] : res.items));
-        setNextCursor(res.nextCursor);
-      } catch {
-        setFailed(true);
-      } finally {
-        setBusy(false);
-      }
-    },
-    [token],
-  );
-
-  useEffect(() => {
-    if (profile) void load();
-  }, [load, profile]);
+  const { items, failed, busy, hasMore, loadMore } = useActivityFeed({
+    token,
+    pageSize: PAGE_SIZE,
+    enabled: !!token && !!profile,
+  });
 
   // Wait out the session rehydrate before deciding — a hard reload of /activity must not bounce
   // a signed-in member to /auth while the refresh-token exchange is in flight.
@@ -89,7 +68,7 @@ export function ActivityPage() {
           {failed ? (
             <div className="flex flex-col items-center gap-3 py-6">
               <p className="text-sm text-muted">{t("home.loadFailed")}</p>
-              <Button variant="ghost" onClick={() => void load()}>
+              <Button variant="ghost" onClick={loadMore}>
                 {t("home.retry")}
               </Button>
             </div>
@@ -102,9 +81,9 @@ export function ActivityPage() {
               {items.map((item) => (
                 <MemberActivityRow key={rowKey(item)} item={item} meta={itemMeta(item.at)} />
               ))}
-              {nextCursor ? (
+              {hasMore ? (
                 <div className="mt-3 flex justify-center">
-                  <Button variant="ghost" disabled={busy} onClick={() => void load(nextCursor)}>
+                  <Button variant="ghost" disabled={busy} onClick={loadMore}>
                     {t("memberActivity.loadMore")}
                   </Button>
                 </div>

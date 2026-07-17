@@ -11,8 +11,10 @@ import { app } from "./handler";
 
 /**
  * Until the T8 infra teardown, API Gateway still routes the deleted auth surface
- * (`/auth/session`, `/auth/register`, `/me`) at this Lambda. Those requests must fall through to
- * Hono's default 404 — never a crash and never a stale handler.
+ * (`/auth/session`, `/auth/register`, `/me`) at this Lambda — and, since refactor PR 2b, the
+ * deleted merged `GET /activity` (the SPA now merges wallet entries + recommendations
+ * client-side). Those requests must fall through to Hono's default 404 — never a crash and
+ * never a stale handler.
  */
 describe("app-core routing after the auth-surface removal", () => {
   it("serves the liveness probe", async () => {
@@ -27,6 +29,7 @@ describe("app-core routing after the auth-surface removal", () => {
     ["GET", "/me"],
     ["PATCH", "/me"],
     ["POST", "/me/attribution/claim"],
+    ["GET", "/activity"],
   ])("404s the deleted route %s %s", async (method, path) => {
     const res = await app.request(path, { method, body: method === "GET" ? undefined : "{}" });
     expect(res.status).toBe(404);

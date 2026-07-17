@@ -132,9 +132,6 @@ export class ApiStack extends Stack {
         // config, read through the VPC's free DynamoDB gateway endpoint (ADR-0004).
         FX_RATE_TABLE: props.fxRateTable.tableName,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
-        // The member activity feed merges recommendation creations (byOwner, read-only)
-        // into the wallet movements - over the free DynamoDB gateway endpoint (ADR-0004).
-        RECOMMENDATION_TABLE: props.recommendationTable.tableName,
         // Dashboard metrics (spec 2026-07-12): presence stamps in OpsCounters.
         OPS_COUNTERS_TABLE: props.opsCountersTable.tableName,
         ...RDS_CA_ENV,
@@ -146,7 +143,6 @@ export class ApiStack extends Stack {
     // Aurora as app_rw via IAM auth (ADR-0003) - no RDS Proxy, no static credential.
     props.cluster.grantConnect(appCoreFn, "app_rw");
     props.fxRateTable.grantReadData(appCoreFn);
-    props.recommendationTable.grantReadData(appCoreFn);
     props.runtimeConfigTable.grantReadData(appCoreFn);
     // Write-only on OpsCounters: presence stamps + the activeDaily ADD are UpdateItems.
     props.opsCountersTable.grantWriteData(appCoreFn);

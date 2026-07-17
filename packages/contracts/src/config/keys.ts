@@ -109,7 +109,11 @@ export const RetailerAliexpressTrackingId = z.string().trim().min(1).max(64);
  */
 export const RetailerDebugLogPayloads = z.boolean();
 
-/** The member home's recent-activity strip: how many merged items GET /activity answers by default. */
+/**
+ * The member home's recent-activity strip: how many merged items the SPA's client-side feed
+ * shows on the home screen. Applied in the browser since the merge moved client-side (refactor
+ * PR 2b) — public so the signed-in home can read it via `GET /config` (non-PII sizing knob).
+ */
 export const HomeRecentActivityLimit = z.number().int().min(1).max(50);
 
 /**
@@ -220,6 +224,8 @@ export const CONFIG_PUBLIC: Partial<Record<ConfigKey, boolean>> = {
   "auth.defaultOtpChannel": true,
   "site.noticeEn": true,
   "site.noticeHe": true,
+  // The home strip's size — applied by the SPA since the activity merge moved client-side.
+  "home.recentActivityLimit": true,
 };
 
 /** Whether `key` may be served by the public config endpoint (default false). */
