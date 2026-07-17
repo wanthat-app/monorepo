@@ -10,7 +10,6 @@ import {
 } from "@wanthat/ui";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams, useSearchParams } from "react-router-dom";
 import { getOrMintGuestId, resolveRedirect } from "../../lib/landing-api";
 import {
   BiometricGlyph,
@@ -45,10 +44,8 @@ import { readLandingSnapshot } from "./snapshot";
  */
 const MERCHANT_NAMES: Record<string, string> = { aliexpress: "AliExpress" };
 
-export function SharedProductPage() {
+export function SharedProductPage({ id }: { id: string }) {
   const { t } = useTranslation();
-  const { id = "" } = useParams();
-  const [searchParams] = useSearchParams();
   // A member is recognised by the session status (a valid Cognito refresh) — the profile comes free
   // with it (ID-token claims), so no backend is touched either way (ADR-0006).
   const { status, loading, accessToken } = useSession();
@@ -60,7 +57,7 @@ export function SharedProductPage() {
   const armed = useRef(false);
   // On-device diagnosis of the auto-prompt gates (`?debug=1` renders it): phones have no console, so
   // when the Face ID sheet doesn't appear this names WHICH gate suppressed it or what the ceremony threw.
-  const debug = searchParams.get("debug") !== null;
+  const debug = new URLSearchParams(window.location.search).get("debug") !== null;
   const [diag, setDiag] = useState<string[]>([]);
   const note = (line: string) => {
     console.log(`[landing-auth] ${line}`);

@@ -34,8 +34,10 @@ flowchart TB
   meta[("Meta WhatsApp - eu-central-1<br>SNS SMS")]
 
   subgraph edge["Edge - CloudFront cert + WAF in us-east-1"]
-    cf["CloudFront + WAF<br>default -> SPA, /p/* -> landing API"]
-    s3site[("S3 - SPA + config.json")]
+    cf["Member CloudFront + WAF<br>default -> site bucket, /p/* -> landing API"]
+    s3site[("S3 site bucket - member SPA index.html + assets<br>landing app landing.html + landing-assets<br>config.json")]
+    cfadmin["Admin CloudFront - admin subdomain<br>same WAF ACL, strict CSP"]
+    s3admin[("S3 - admin SPA + config.json")]
     edgedash["CloudWatch edge dashboard<br>CloudFront + WAF metrics - us-east-1"]
   end
 
@@ -90,8 +92,11 @@ flowchart TB
   member -- "SPA assets + config.json" --> cf
   friend -- "GET /p/:id + resolve" --> cf
   crawler -- "GET /p/:id" --> cf
+  adminUser -- "admin SPA assets + config.json" --> cfadmin
+  cfadmin -- "default" --> s3admin
   cf -- "default" --> s3site
   cf -- "/p/*" --> landinggw --> landing
+  landing -. "fetch landing.html shell" .-> cf
 
   member -- "browser-direct: SignUp,<br>InitiateAuth, WEB_AUTHN" --> custpool
   custpool -. "custom SMS sender" .-> otpsender
@@ -213,17 +218,32 @@ post-confirmation→notification-sender (async), post-confirmation→audit-write
 
 ### 3.1 Edge & front-end
 - **CloudFront** (EdgeStack, pinned to us-east-1 for the ACM cert + CLOUDFRONT-scope WAF —
-  control plane only; PRICE_CLASS_200 includes the Israel edge) — one distribution:
-  - **default** → private **S3 SPA bucket** via Origin Access Control; 403/404 rewritten to
-    `/index.html` (SPA routing), so the landing path must answer its own not-found as 200.
-  - **`/p/*`** → the landing HTTP API as a cross-region HTTP origin, caching disabled, all
-    methods (the resolve call is a POST).
-  - WAF web ACL: `AWSManagedRulesCommonRuleSet` + a 2000 req/IP rate rule.
-- **SPA** — Vite + React (ADR-0016), cookieless: tokens in localStorage, every API call a
-  Bearer XHR. It learns its backend URLs + Cognito client ids from a runtime **`config.json`**
-  the EdgeStack writes into the bucket at deploy (no build-time env), `Cache-Control: no-cache`.
-- **DNS**: Route 53 alias to CloudFront — apex `wanthat.app` (prod) / `dev.wanthat.app` (dev),
-  same hosted zone. A prod-only **DnsStack** adds Zoho mail records (MX/SPF/DKIM/DMARC).
+  control plane only; PRICE_CLASS_200 includes the Israel edge) — two distributions:
+  - **Member site** (`wanthat.app` / `dev.wanthat.app`):
+    - **default** → a private **S3 site bucket** via Origin Access Control holding TWO builds:
+      the member SPA (`index.html` + `/assets/*`, apps/web) and the lean **landing app**
+      (`landing.html` + `/landing-assets/*`, apps/landing) whose shell the landing Lambda
+      fetches and injects — so a guest opening a viral `/p/*` link never downloads the member
+      bundle. Disjoint filenames by construction; one BucketDeployment publishes both. 403/404
+      rewritten to `/index.html` (SPA routing), so the landing path must answer its own
+      not-found as 200.
+    - **`/p/*`** → the landing HTTP API as a cross-region HTTP origin, all methods (the resolve
+      call is a POST), origin-controlled cache (opt-in `max-age=60`, path-only key — the
+      viral-burst shield).
+  - **Admin console** (`admin.{domain}`) → its own private S3 bucket + OAC serving the admin
+    SPA (apps/admin) with strict CSP response headers — employee tokens are storage-isolated
+    from all customer-facing code.
+  - One WAF web ACL fronts both: `AWSManagedRulesCommonRuleSet` + a 2000 req/IP rate rule.
+- **SPAs** — three Vite + React apps (ADR-0016), all cookieless (tokens in localStorage, every
+  API call a Bearer XHR): the **member SPA** (apps/web), the **admin console** (apps/admin, its
+  own origin), and the **landing app** (apps/landing — same origin as the member site, served
+  only through the landing Lambda's shell injection on `/p/*`). Member + admin learn their
+  backend URLs + Cognito client ids from a runtime **`config.json`** the EdgeStack writes into
+  each bucket at deploy (no build-time env), `Cache-Control: no-cache`; the landing app reads
+  the member site's same-origin `config.json` for its Cognito coordinates.
+- **DNS**: Route 53 aliases to CloudFront — apex `wanthat.app` (prod) / `dev.wanthat.app` (dev)
+  for the member site plus `admin.{domain}` for the console, same hosted zone. A prod-only
+  **DnsStack** adds Zoho mail records (MX/SPF/DKIM/DMARC).
 
 ### 3.2 Identity & messaging (ADR-0006, ADR-0019)
 - **Cognito, two pools** (both ESSENTIALS):
@@ -289,9 +309,10 @@ Three HTTP APIs (API Gateway v2), each throttled on `$default`:
   `POST .../{orderId}/claim|dismiss`, `GET /admin/users/{sub}/recommendations`,
   `GET /admin/otp-sink`, `POST /admin/fx-rates/refresh`). The money-stats active-member
   figure moved out of SQL — the admin SPA composes it from the users stats.
-- **Landing API**: `GET /p/{id}` (OG-injected SPA shell + content snapshot; bots get previews,
-  humans boot the SPA; always 200) and `POST /p/{id}/resolve` (the attributed redirect;
-  verifies a member's Bearer token **offline via JWKS** — landing never calls Cognito).
+- **Landing API**: `GET /p/{id}` (OG-injected `landing.html` shell — the lean apps/landing
+  build, not the member SPA — + content snapshot; bots get previews, humans boot the landing
+  app; always 200) and `POST /p/{id}/resolve` (the attributed redirect; verifies a member's
+  Bearer token **offline via JWKS** — landing never calls Cognito).
 
 ### 3.4 Compute (Lambda, Node 24, arm64 — 15 functions, `wanthat-{env}-{slug}`)
 
@@ -446,8 +467,8 @@ succeed-entirely-or-fail, no notifications; their non-VPC orchestrators emit aft
   count/5xx/p95, Lambda errors/throttles/p95 in registry order, Aurora ACU + connections,
   SMS spend). The CloudFront/WAF dashboard lives on the EdgeStack (us-east-1, where those
   metrics publish).
-- **Two WAF web ACLs**: CLOUDFRONT scope on the distribution; REGIONAL scope on the customer
-  pool (§3.2).
+- **Two WAF web ACLs**: CLOUDFRONT scope shared by both distributions (member + admin);
+  REGIONAL scope on the customer pool (§3.2).
 - **Least privilege**: per-function IAM; money invariants enforced by Postgres GRANTs (not
   just IAM — one role per function, §3.5); the retailer secret readable by exactly two
   functions; customer/admin separated at the pool level; admin-console can rotate but never

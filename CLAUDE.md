@@ -28,7 +28,11 @@ change a decision by adding a new superseding ADR, not by editing an accepted on
 ## Layout
 
 ```
-apps/web/                  Vite + React SPA (cookieless, Hebrew/RTL; runtime config.json)
+apps/
+  web/                     member SPA — Vite + React (cookieless, Hebrew/RTL; runtime config.json)
+  admin/                   admin console SPA — its OWN origin (admin.{domain}); employee tokens isolated
+  landing/                 lean guest landing SPA for /p/* — builds landing.html + landing-assets/,
+                           injected by services/landing so guests never download the member bundle
 services/                    one dir per Lambda; slug = wanthat-{env}-{slug} (registry: infra/lib/config.ts)
   landing/                 public /p/ landing + attributed redirect (non-VPC → DynamoDB)
   member-catalog/          member catalog: products.resolve + recommendations + /config (non-VPC)
@@ -46,7 +50,7 @@ services/                    one dir per Lambda; slug = wanthat-{env}-{slug} (re
   role-bootstrap/          deploy-time Postgres role creator (in-VPC, CDK Trigger, runs before migrator)
   db-migrator/             deploy-time SQL migration runner (in-VPC, CDK Trigger)
 packages/
-  contracts/  domain/  db/  dynamo/  aliexpress/  whatsapp/  config/
+  contracts/  domain/  db/  dynamo/  aliexpress/  whatsapp/  config/  ui/
 infra/                     AWS CDK app (stacks → see infra/lib/README.md)
 adrs/                      architecture decision records
 docs/                      consolidated overview: docs/AWS_Architecture.md
