@@ -12,15 +12,19 @@ const PAGE_SIZE = 20;
 type Member = { name: string; phone: string } | null;
 
 /**
- * Admin activity page: one paged feed over the audit log (registrations, deletions, future
- * audited admin actions), newest first. In dev the server merges live OTP codes from the dev
- * sink into page 1 (type "otp_sent" — never present in prod). Unknown event types render with
- * a neutral badge and the raw type string, so new audit events appear without SPA changes.
+ * Admin activity page: one paged feed over the audit log (registrations, deletions, moderation
+ * moves, config edits — every audited action), newest first, from admin-ledger-view — plus the
+ * live parked OTP codes from admin-console's /admin/otp-sink, fetched IN PARALLEL (refactor
+ * PR-5: the server no longer merges them into the feed) and rendered as their own small
+ * section above the feed. Unknown event types render with a neutral badge and the raw type
+ * string, so new audit events appear without SPA changes.
  */
 export function ActivityView({ token }: { token: string | null }) {
   const { t } = useTranslation();
   const [page, setPage] = useState(1);
   const [data, setData] = useState<{ items: ActivityItem[]; total: number } | null>(null);
+  // undefined = loading, null = fetch failed (the section simply hides), [] = no live codes.
+  const [otp, setOtp] = useState<ActivityItem[] | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
   // wallet_entry audit payloads carry only the member's sub (admin-api cannot reach Cognito
@@ -52,6 +56,13 @@ export function ActivityView({ token }: { token: string | null }) {
       if (!token) return;
       setLoading(true);
       setLoadFailed(false);
+      // Two PARALLEL requests (PR-5): the audit feed (admin-ledger-view) and the live OTP
+      // codes (admin-console). The codes are transient dev-facing sugar — a sink failure hides
+      // the section instead of failing the page.
+      void adminApi.listOtpSink(token).then(
+        (res) => setOtp(res.items),
+        () => setOtp(null),
+      );
       try {
         const res = await adminApi.listActivity(token, { page: pageNo, pageSize: PAGE_SIZE });
         setData({ items: res.items, total: res.total });
@@ -107,6 +118,19 @@ export function ActivityView({ token }: { token: string | null }) {
           </span>
         ) : null}
       </div>
+
+      {/* Live OTP codes — their own section (PR-5: no longer merged into the audit feed).
+          Hidden when the sink is empty or its fetch failed; rows reuse the feed's renderer. */}
+      {otp && otp.length > 0 ? (
+        <div className="mb-4 rounded-card border border-line bg-surface pb-1">
+          <div className="px-4 pb-2 pt-4 text-[11px] font-bold uppercase tracking-[0.04em] text-placeholder">
+            {t("admin.activityPage.otpSection")}
+          </div>
+          {otp.map((item) => (
+            <ActivityRow key={item.id} item={item} members={members} />
+          ))}
+        </div>
+      ) : null}
 
       <div className="rounded-card border border-line bg-surface pb-1">
         <div className="flex items-center px-4 pb-2 pt-4 text-[11px] font-bold uppercase tracking-[0.04em] text-placeholder">

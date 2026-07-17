@@ -1,9 +1,9 @@
 /**
  * The unattributed-order claim queue (Phase 2, 2026-07-10). List / claim / dismiss over the
  * `unattributed_order` projection the poller feeds. Claiming only writes INTENT — the
- * retailer-proxy heartbeat settles it through the conversion writer (this in-VPC function
- * cannot invoke Lambdas, ADR-0004; and money enters through one door only, ADR-0002). Claims
- * are validated against a live recommendation so a typo surfaces here, not as a stuck queue.
+ * retailer-proxy heartbeat settles it through the conversion writer (money enters through one
+ * door only, ADR-0002; the admin surface never invokes the money writer). Claims are
+ * validated against a live recommendation so a typo surfaces here, not as a stuck queue.
  */
 import {
   ClaimUnattributedOrderBody,

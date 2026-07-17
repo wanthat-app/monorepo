@@ -45,6 +45,12 @@ export function toAdminUserItem(user: UserType): AdminUserItem | undefined {
   return parsed.success ? parsed.data : undefined;
 }
 
+/** The member's canonical id (Cognito sub, ADR-0020) from an AdminGetUser result, spread-ready. */
+function subOf(user: AdminGetUserCommandOutput): { sub?: string } {
+  const sub = user.UserAttributes?.find((a) => a.Name === "sub")?.Value;
+  return sub ? { sub } : {};
+}
+
 export interface ListUsersPage {
   users: AdminUserItem[];
   /** DescribeUserPool.EstimatedNumberOfUsers - the whole pool, approximate (never filtered). */
@@ -112,35 +118,40 @@ export class CognitoUserAdmin {
   }
 
   /** `AdminDisableUser` - reversible suspension, with `AdminGetUser` FIRST so the caller learns
-   * whether the user was actually enabled before this call. Re-disabling stays idempotent success
-   * in Cognito, but reports `wasEnabled: false` - the customer counter must count each suspension
-   * ONCE, so a repeat must not mark another user disabled. found=false = unknown phone (404). */
-  async disable(phone: string): Promise<{ found: boolean; wasEnabled: boolean }> {
+   * whether the user was actually enabled before this call (and the member's canonical sub, for
+   * the audit-writer event). Re-disabling stays idempotent success in Cognito, but reports
+   * `wasEnabled: false` - the customer counter must count each suspension ONCE, so a repeat must
+   * not mark another user disabled. found=false = unknown phone (404). */
+  async disable(phone: string): Promise<{ found: boolean; wasEnabled: boolean; sub?: string }> {
     const user = await this.getUser(phone);
     if (!user) return { found: false, wasEnabled: false };
     const found = await this.lifecycle(
       new AdminDisableUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
     );
-    return { found, wasEnabled: found && user.Enabled !== false };
+    return { found, wasEnabled: found && user.Enabled !== false, ...subOf(user) };
   }
 
   /** `AdminEnableUser` - lift a suspension. Symmetric to `disable`: `wasDisabled` reports whether
    * the lift actually changed state, so a repeated lift never double-counts on the counter. */
-  async enable(phone: string): Promise<{ found: boolean; wasDisabled: boolean }> {
+  async enable(phone: string): Promise<{ found: boolean; wasDisabled: boolean; sub?: string }> {
     const user = await this.getUser(phone);
     if (!user) return { found: false, wasDisabled: false };
     const found = await this.lifecycle(
       new AdminEnableUserCommand({ UserPoolId: this.userPoolId, Username: phone }),
     );
-    return { found, wasDisabled: found && user.Enabled === false };
+    return { found, wasDisabled: found && user.Enabled === false, ...subOf(user) };
   }
 
   /** `AdminUserGlobalSignOut` - revoke every refresh token (issued access tokens live out
-   * their hour - the stateless-authorizer caveat lives in the contract comment). */
-  async globalSignOut(phone: string): Promise<boolean> {
-    return this.lifecycle(
+   * their hour - the stateless-authorizer caveat lives in the contract comment). Resolves the
+   * user FIRST (like disable/enable) so the caller gets the sub for the audit-writer event. */
+  async globalSignOut(phone: string): Promise<{ found: boolean; sub?: string }> {
+    const user = await this.getUser(phone);
+    if (!user) return { found: false };
+    const found = await this.lifecycle(
       new AdminUserGlobalSignOutCommand({ UserPoolId: this.userPoolId, Username: phone }),
     );
+    return { found, ...subOf(user) };
   }
 
   private async lifecycle(

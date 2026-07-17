@@ -118,9 +118,9 @@ export class DataStack extends Stack {
     });
 
     // Operational counters keyed by counterKey - e.g. the exact customerCounter item
-    // (CustomerCounterRepo). A dedicated table so the counter writers (post-confirmation,
-    // admin-credentials) hold NO write grant on the config table above: admin-api stays the
-    // config table's single writer. Counters start at zero, so no seed or migration is needed.
+    // (CustomerCounterRepo). A dedicated table so counter writes stay separable from the config
+    // table above, whose single writer is the admin-console (refactor PR-5). Counters start at
+    // zero, so no seed or migration is needed.
     this.opsCountersTable = new dynamodb.Table(this, "OpsCounters", {
       partitionKey: { name: "counterKey", type: dynamodb.AttributeType.STRING },
       ...common,

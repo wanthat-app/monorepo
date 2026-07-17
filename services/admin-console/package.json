@@ -1,5 +1,5 @@
 {
-  "name": "@wanthat/admin-api",
+  "name": "@wanthat/admin-console",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,12 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@wanthat/config": "workspace:*",
+    "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
+    "@aws-sdk/client-lambda": "^3.600.0",
+    "@aws-sdk/client-secrets-manager": "^3.600.0",
     "@wanthat/contracts": "workspace:*",
-    "@wanthat/db": "workspace:*",
-    "@wanthat/domain": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
-    "hono": "^4.6.0",
-    "kysely": "^0.28.17"
+    "hono": "^4.6.0"
   }
 }

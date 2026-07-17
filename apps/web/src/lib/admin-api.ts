@@ -13,10 +13,12 @@ import type {
   ListActivityResponse,
   ListAdminUserRecommendationsResponse,
   ListConfigResponse,
+  ListOtpSinkResponse,
   ListUnattributedOrdersResponse,
   ListUsersResponse,
   PutConfigResponse,
   PutRetailerCredentialsBody,
+  RefreshFxRatesResponse,
   RetailerCredentialsStatus,
   UnattributedOrderActionResponse,
   UnattributedOrderState,
@@ -50,13 +52,17 @@ export interface AdminUserWalletWire {
   entries: { items: WalletEntryWire[]; nextCursor: string | null };
 }
 
-/** GET /admin/stats/money — see @wanthat/contracts MoneyStats for the full semantics. */
+/**
+ * GET /admin/stats/money — see @wanthat/contracts MoneyStats for the full semantics. The
+ * per-active-member KPI is computed CLIENT-side (refactor PR-5): `ilsEstimate.confirmedInWindow`
+ * is the ₪ numerator; the active30d denominator comes from /admin/stats/users, which the
+ * dashboard already fetches.
+ */
 export interface MoneyStatsWire {
   totals: ({ currency: string } & WalletEarningsWire)[];
-  ilsEstimate: WalletEarningsWire | null;
+  ilsEstimate: (WalletEarningsWire & { confirmedInWindow: MoneyWire }) | null;
   conversions30d: number;
   dailyConversions: { date: string; count: number }[];
-  cashbackPerActive30d: MoneyWire | null;
 }
 
 async function adminRequest<T>(
@@ -134,7 +140,7 @@ export const adminApi = {
   moneyStats: (token: string) => adminRequest<MoneyStatsWire>("/admin/stats/money", token),
   usersStats: (token: string) => adminRequest<UsersStats>("/admin/stats/users", token),
   catalogStats: (token: string) => adminRequest<CatalogStats>("/admin/stats/catalog", token),
-  // Activity page: paged audit-log feed (+ dev OTP codes merged server-side on page 1 in dev).
+  // Activity page: paged audit-log feed (audit rows ONLY — served by admin-ledger-view).
   listActivity: (token: string, opts: { page?: number; pageSize?: number } = {}) => {
     const params = new URLSearchParams();
     if (opts.page) params.set("page", String(opts.page));
@@ -142,6 +148,12 @@ export const adminApi = {
     const qs = params.toString();
     return adminRequest<ListActivityResponse>(`/admin/activity${qs ? `?${qs}` : ""}`, token);
   },
+  // Live parked OTP codes (docs/otp-sink.md) — their own admin-console route since PR-5; the
+  // activity page fetches this in parallel with the audit feed and renders codes separately.
+  listOtpSink: (token: string) => adminRequest<ListOtpSinkResponse>("/admin/otp-sink", token),
+  // On-demand FX refresh (sync run of the fx-rates updater); answers the freshly cached rates.
+  refreshFxRates: (token: string) =>
+    adminRequest<RefreshFxRatesResponse>("/admin/fx-rates/refresh", token, { method: "POST" }),
   // Users page (Cognito-backed, ADR-0006): forward-only token pagination (no random-access page),
   // `search` is an E.164 phone PREFIX (Cognito `phone_number ^=`), pageSize is capped at Cognito's
   // Limit max of 60.

@@ -7,7 +7,7 @@ import type { PutRetailerCredentialsBody, RetailerCredentialsStatus } from "@wan
 
 /**
  * Write-only access to the retailer credential secret (`wanthat/{env}/retailer/aliexpress`).
- * admin-api's IAM role holds PutSecretValue + DescribeSecret only — it structurally cannot
+ * admin-console's IAM role holds PutSecretValue + DescribeSecret only — it structurally cannot
  * read the value back; retailer-proxy stays the sole reader. Credential values must never
  * be logged or echoed anywhere in this service.
  */

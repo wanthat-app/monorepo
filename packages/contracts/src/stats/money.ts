@@ -19,17 +19,18 @@ export type MoneyCurrencyTotals = z.infer<typeof MoneyCurrencyTotals>;
  *   member movements, not platform cashback — excluded).
  * - `ilsEstimate`: display-only ₪ conversion of the USD totals (cached rate minus the
  *   fx.conversionCommissionBps — identical to the member wallet's `≈₪`). Hard zeros when no
- *   USD is held; null ONLY when USD is held but no rate is cached.
+ *   USD is held; null ONLY when USD is held but no rate is cached. `confirmedInWindow` is the
+ *   confirmed sum bucketed inside the 30-day window — the numerator of the PRD §3.2 go/no-go
+ *   metric (₪ per active member), which the admin SPA computes CLIENT-side against the
+ *   `active30d` it already fetches from GET /admin/stats/users (refactor PR-5: the money route
+ *   is a pure ledger read and carries no active-member figure).
  * - `conversions30d` / `dailyConversions`: distinct attributed orders, bucketed to the
  *   Jerusalem date of the order's earliest reward row; dense 30-entry series.
- * - `cashbackPerActive30d`: ₪ confirmed-in-window ÷ active members (30d) — the PRD §3.2
- *   go/no-go metric. Null when the rate is missing (with USD held) or active30d is 0.
  */
 export const MoneyStats = z.object({
   totals: z.array(MoneyCurrencyTotals),
-  ilsEstimate: z.object({ confirmed: Money, pending: Money }).nullable(),
+  ilsEstimate: z.object({ confirmed: Money, pending: Money, confirmedInWindow: Money }).nullable(),
   conversions30d: z.number().int().nonnegative(),
   dailyConversions: z.array(DailyCount).length(30),
-  cashbackPerActive30d: Money.nullable(),
 });
 export type MoneyStats = z.infer<typeof MoneyStats>;

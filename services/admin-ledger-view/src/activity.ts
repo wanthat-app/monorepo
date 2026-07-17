@@ -1,11 +1,12 @@
 import { ActivityItem } from "@wanthat/contracts";
 import type { AuditLogEntry } from "@wanthat/db";
-import type { OtpSinkItem } from "@wanthat/dynamo";
 
 /**
  * Pure mapping for the activity feed (I/O-free, like users-stats' buildUsersStats). Audit
  * payloads are free-form jsonb written by audit_append callers (0005); mapping is tolerant —
  * unknown types and malformed payloads still yield a renderable item, never a throw.
+ * The parked-OTP mapping (`otpSinkToItems`) lives on admin-console since refactor PR-5: the
+ * codes are their own GET /admin/otp-sink route, no longer merged into this feed.
  */
 
 function str(v: unknown): string | undefined {
@@ -42,29 +43,4 @@ export function auditEntryToItem(entry: AuditLogEntry): ActivityItem {
     ...(str(p.amountMinor) ? { amountMinor: str(p.amountMinor) } : {}),
     ...(str(p.currency) ? { currency: str(p.currency) } : {}),
   });
-}
-
-/**
- * Dev sink items -> otp_sent feed items. Items past their TTL are dropped here because DynamoDB
- * TTL deletion is best-effort (can lag hours); `ttl` is epoch seconds.
- */
-export function otpSinkToItems(items: OtpSinkItem[], nowMs: number): ActivityItem[] {
-  return items
-    .filter((i) => i.ttl * 1000 > nowMs)
-    .map((i) =>
-      ActivityItem.parse({
-        id: `otp_${i.phone}`,
-        type: "otp_sent",
-        at: i.createdAt,
-        phone: i.phone,
-        channel: i.channel,
-        code: i.code,
-        expiresAt: new Date(i.ttl * 1000).toISOString(),
-      }),
-    );
-}
-
-/** Merge two newest-first lists into one, newest first (stable for equal timestamps). */
-export function mergeByAtDesc(a: ActivityItem[], b: ActivityItem[]): ActivityItem[] {
-  return [...a, ...b].sort((x, y) => y.at.localeCompare(x.at));
 }
