@@ -1,0 +1,69 @@
+name,type,inputs (triggers / data reads),outputs (invocations / data writes)
+landing,Lambda (non-VPC),"HTTP: GET /p/{id} + POST /p/{id}/resolve via landing API (CloudFront /p/*); reads Dynamo: Recommendation, RuntimeConfig, FxRate","Returns SSR page / attributed URL; emits impression+click funnel log lines (picked up by CW Logs subscription)"
+member-catalog,Lambda (non-VPC),"HTTP: app API routes (customer JWT; /config + /healthz public); reads Dynamo: Product, Recommendation, FxRate, RuntimeConfig","Sync-invokes retailer-linkgen; writes Dynamo: Recommendation, OpsCounters (presence)"
+member-wallet,Lambda (in-VPC),"HTTP: app API /wallet* + /healthz/db (customer JWT); reads Aurora wallet_entry (as wallet_reader); reads Dynamo: FxRate, RuntimeConfig","Writes Dynamo: OpsCounters (presence). Read-only on money"
+admin-console,Lambda (non-VPC),"HTTP: admin API actions + Dynamo views (employee JWT); reads Dynamo: RuntimeConfig, UnattributedOrder, OpsCounters, Product, Recommendation, OtpSink, FxRate; Cognito customer-pool reads (ListUsers/AdminGetUser); SecretsManager DescribeSecret (retailer)","Sync-invokes audit-writer (audit-or-fail) + fx-rates; writes Dynamo: RuntimeConfig (sole writer), UnattributedOrder, OpsCounters, Recommendation (DeleteItem + #counter UpdateItem only, no PutItem); Cognito admin mutations; SecretsManager PutSecretValue (retailer, write-only)"
+admin-ledger-view,Lambda (in-VPC),"HTTP: admin API record-reads (employee JWT); reads Aurora wallet_entry + audit_log (as ledger_reader); reads Dynamo: FxRate, RuntimeConfig","Read-only; returns money stats / audit feed / per-user wallet"
+retailer-linkgen,Lambda (non-VPC),"Sync invoke from member-catalog; reads SecretsManager retailer secret; reads Dynamo: RuntimeConfig","Calls AliExpress affiliate API (HTTPS egress); writes Dynamo: Product (sole writer); returns affiliate link"
+retailer-settlement,Lambda (non-VPC),"EventBridge Scheduler 15-min heartbeat; reads SecretsManager retailer secret; reads Dynamo: PollerState, GuestAttribution, Recommendation, UnattributedOrder, RuntimeConfig","Calls AliExpress order API (HTTPS egress); sync-invokes ledger-writer (sole money-path caller); writes Dynamo: PollerState, UnattributedOrder, Recommendation (UpdateItem-only: absolute conversion-total SETs); emits funnel log lines"
+ledger-writer,Lambda (in-VPC),Sync invoke from retailer-settlement only,"Writes Aurora as ledger_writer: INSERT wallet_entry (append-only) + EXECUTE audit_append; returns absolute conversionTotals; emits conversion funnel log lines. Zero Dynamo"
+audit-writer,Lambda (in-VPC),Sync invoke from admin-console; async invoke from post-confirmation,Writes Aurora as audit_writer: EXECUTE audit_append only (hash-chained audit_log)
+otp-sender,Lambda (non-VPC),Cognito CUSTOM_SMS_SENDER trigger (customer pool); KMS Decrypt of the OTP; reads Dynamo: RuntimeConfig,"Sends WhatsApp via End User Messaging Social (eu-central-1) or SMS via SNS direct-to-phone; writes Dynamo: OtpSink"
+post-confirmation,Lambda (non-VPC),Cognito POST_CONFIRMATION trigger (customer pool),"Async-invokes notification-sender (welcome) + audit-writer (user_registered); writes Dynamo: GuestAttribution, OpsCounters"
+notification-sender,Lambda (non-VPC),Async (Event) invokes from producers (post-confirmation; later retailer-settlement); reads Dynamo: RuntimeConfig (kill switch),Sends WhatsApp via End User Messaging Social; after 2 async retries failures land in its SQS DLQ (real payloads)
+fx-rates,Lambda (non-VPC),EventBridge Scheduler 12h + sync invoke from admin-console; reads Dynamo: RuntimeConfig,Fetches ECB/BoI rates (HTTPS egress); writes Dynamo: FxRate (sole writer)
+db-migrator,Lambda (in-VPC),Custom::Trigger per deploy (ordered AFTER role-bootstrap),Runs SQL migrations on Aurora as wanthat_migrator (DDL + grants); throw fails the deploy
+role-bootstrap,Lambda (in-VPC),Custom::Trigger per deploy (after cluster; BEFORE migrator),Connects to Aurora as wanthat_master via IAM token (password auth is PAM-dead since 0003); CREATE ROLE/GRANT rds_iam/schema USAGE for the four service roles (idempotent)
+trigger-provider,Lambda (CDK-managed; aws-cdk-lib/triggers singleton in DataStack),CloudFormation Custom::Trigger resources during deploy,Invokes role-bootstrap then db-migrator; propagates their failures to CFN (deploy rollback)
+cross-region-export-writer,Lambda (CDK-managed custom resource; il-central-1 stacks),CFN deploy of stacks exporting values to us-east-1 (landing API id; identity client ids),Writes SSM parameters in us-east-1 for the EdgeStack to read
+cross-region-export-reader,Lambda (CDK-managed custom resource; us-east-1 EdgeStack),Reads the SSM parameters written above during EdgeStack deploys,Resolves cross-region refs (CloudFront origin + /config.json values)
+s3-auto-delete-provider,Lambda (CDK-managed custom resource; dev only),Bucket deletion during dev stack teardown (autoDeleteObjects),Empties dev buckets so DESTROY removal succeeds
+bucket-deployment,Lambda (CDK-managed BucketDeployment; EdgeStack),Deploy-time: SPA build assets + generated runtime config.json,Writes objects into the SPA bucket + CloudFront invalidation
+aurora-cluster,Aurora Serverless v2 (PostgreSQL 16; 0-2 ACU scale-to-zero; IAM auth; no RDS Proxy; storage encrypted),"IAM-token connections from: member-wallet, admin-ledger-view, ledger-writer, audit-writer, db-migrator, role-bootstrap",Money-only schema; writer instance + parameter group (max_connections=50) + subnet group in the isolated VPC
+wallet_entry,Aurora table (append-only ledger; keyed by cognito_sub),INSERT by ledger_writer only; SELECT by wallet_reader + ledger_reader,"Immutable rows; (order_id,kind,status) unique index (idempotency); partial index on recommendation_id (conversion totals); balance always derived"
+audit_log,Aurora table (hash-chained audit),Appends ONLY via SECURITY DEFINER audit_append (EXECUTE: audit_writer + ledger_writer); SELECT by ledger_reader,Tamper-evident chain (prev_hash/entry_hash); advisory-lock serialized
+Product,DynamoDB table (on-demand; PITR),Written by retailer-linkgen (sole),"Read by member-catalog, admin-console"
+Recommendation,DynamoDB table (on-demand; PITR; byOwner GSI),"Written by member-catalog (CRUD), retailer-settlement (total SETs), admin-console (erasure Delete + #counter)","Read by landing, member-catalog, retailer-settlement, admin-console"
+GuestAttribution,DynamoDB table (on-demand; PITR),Written by post-confirmation (guestId->sub claim),Read by retailer-settlement (attribution)
+PollerState,DynamoDB table (on-demand; PITR),Written by retailer-settlement (watermark),Read by retailer-settlement
+UnattributedOrder,DynamoDB table (on-demand; PITR; byState GSI),"Written by retailer-settlement (sightings), admin-console (claim/dismiss)",Read by both (admin queue + settle sweep)
+RuntimeConfig,DynamoDB table (on-demand; PITR),Written by admin-console (sole writer),Read by nearly every Lambda (kill switches + tunables)
+OpsCounters,DynamoDB table (on-demand; PITR),"Written by member-catalog, member-wallet, post-confirmation, admin-console",Read by admin-console (stats)
+FxRate,DynamoDB table (on-demand; PITR),Written by fx-rates (sole),"Read by landing, member-catalog, member-wallet, admin-console, admin-ledger-view"
+OtpSink,DynamoDB table (on-demand; 5-min TTL),Written by otp-sender (every code),Read by admin-console (GET /admin/otp-sink)
+app-http-api,API Gateway HTTP API + customer-pool JWT authorizer,HTTPS from SPA (Bearer; CORS allowlist; throttle 500/1000),Integrations -> member-catalog + member-wallet
+admin-http-api,API Gateway HTTP API + employee-pool JWT authorizer,HTTPS from admin SPA (Bearer ID token; throttle 50/100),Integrations -> admin-console (actions/catch-all) + admin-ledger-view (4 record-read routes)
+landing-http-api,API Gateway HTTP API (public; no authorizer),HTTPS from the CloudFront /p/* origin (throttle 2000/4000),Integration -> landing
+cloudfront,CloudFront distribution (+OAC),Browser HTTPS (apex/dev domain),Default -> SPA bucket; /p/* -> landing API (caching disabled); 403/404 -> index.html; WAF attached
+spa-bucket,S3 bucket (private; OAC-only),BucketDeployment writes (SPA build + /config.json),Served exclusively through CloudFront
+funnel-bucket,S3 bucket (analytics),Firehose delivery,Glue/Athena reads (partition projection)
+firehose-funnel,Kinesis Data Firehose (wanthat-{env}-funnel; + delivery IAM role),"CW Logs subscription filters on landing, retailer-settlement, ledger-writer log groups",Batched funnel events -> analytics bucket
+logs-subscriptions,CloudWatch Logs subscription filters (x3; + CWL-to-Firehose role),Structured JSON funnel lines from the three emitters,Stream to Firehose
+glue-athena,Glue database + funnel_events table / Athena queries,Reads funnel S3 objects,Funnel SQL (impressions -> clicks -> conversions)
+customer-user-pool,Cognito user pool (phone alias; passwordless SMS-OTP + native WEB_AUTHN passkeys; ESSENTIALS; PII in attributes),Browser calls cognito-idp public API directly; admin-console admin ops; fronted by the regional WAF,Triggers otp-sender (via KMS-encrypted code) + post-confirmation; issues customer JWTs
+customer-pool-client,Cognito app client (SPA; public),SPA auth flows (USER_AUTH),JWTs consumed by the app API authorizer + landing's offline JWKS verify
+employee-user-pool,Cognito user pool (email + password + mandatory TOTP),Admin browser via Managed Login (OAuth code + PKCE); operator provisioning (first-admin runbook),Issues employee JWTs for the admin API authorizer
+employee-pool-client+domain,Cognito app client + hosted Managed Login domain (branded),Admin SPA redirect flow,OAuth code exchange -> tokens
+custom-sender-kms-key,KMS key,Cognito encrypts each OTP to it,otp-sender kms:Decrypt (sole consumer)
+retailer-secret,Secrets Manager secret (wanthat/{env}/retailer/aliexpress),admin-console PutSecretValue (write-only) + DescribeSecret,Read by retailer-linkgen + retailer-settlement only
+aurora-master-secret,Secrets Manager secret (generated),Created by RDS/CDK,UNUSED at runtime (master password auth PAM-disabled since 0003; role-bootstrap uses IAM tokens); credential of record only
+order-poll-heartbeat,EventBridge Scheduler rate(15 min) + dedicated invoke role,Time,Invokes retailer-settlement
+fx-rates-schedule,EventBridge Scheduler rate(12 h) + dedicated invoke role,Time,Invokes fx-rates
+notification-sender-dlq,SQS queue,Lambda async on-failure destination (after 2 retries; real payloads),Operator inspection/redrive
+sns-sms,SNS SMS (direct-to-phone; no topics),otp-sender sns:Publish (NotResources on topic ARNs),SMS delivery; account MonthlySpendLimit cap (sandbox: $1)
+eum-social-whatsapp,AWS End User Messaging Social (eu-central-1),otp-sender + notification-sender SendWhatsAppMessage (scoped phone-number-id/*),WhatsApp delivery via Meta
+alarm-topic,SNS topic + email subscriptions,CloudWatch alarms,Emails to dennis@ + jonatan@wanthat.app
+cw-alarms,CloudWatch alarms,"Per-Lambda errors (13 alarmed fns - db-migrator + role-bootstrap excluded by design), API 5xx (x3 surfaces), Aurora connections (80% of 50), SMS spend (80% of cap)",Publish to alarm topic
+cw-dashboards,CloudWatch dashboards (wanthat-{env}; wanthat-{env}-edge),"Lambda errors/throttles/p95 (registry-ordered), API metrics, CloudFront/edge metrics",Operator view
+log-groups,CloudWatch log groups (one explicit per Lambda; dev 1-mo/DESTROY; prod 6-mo/RETAIN),Lambda stdout/stderr (delivered out-of-band; works from the endpoint-free VPC),Post-mortems; three feed the funnel subscriptions
+xray,AWS X-Ray (active tracing on all Lambdas),Trace segments,Service map + latency analysis
+vpc,VPC (2 AZs; PRIVATE_ISOLATED subnets + route tables; NO NAT; no interface endpoints),Hosts Aurora + the 6 in-VPC Lambdas,No internet egress by construction
+ddb-gateway-endpoint,VPC gateway endpoint (DynamoDB; free),In-VPC Lambdas' DynamoDB traffic,Routes to DynamoDB without internet
+lambda-sg / aurora-sg,Security groups (cross-stack; descriptions immutable by team rule),Lambda SG -> Aurora SG :5432 is the only ingress path,Aurora unreachable from anywhere else
+cloudfront-waf,WAF web ACL (us-east-1; CLOUDFRONT scope),CloudFront viewer requests,Rate-based + managed rules at the edge
+cognito-waf,WAF web ACL (REGIONAL; associated to the customer pool),Unauthenticated Cognito ops (SignUp/InitiateAuth/RespondToAuthChallenge),Rate-based abuse control (replaced the phone-velocity table)
+acm-cert,ACM certificate (us-east-1; DNS-validated),Route 53 validation records,TLS for CloudFront (wanthat.app / dev.wanthat.app)
+route53,Route 53 public zone wanthat.app,CDK-managed record writes,CloudFront alias records (apex + dev); prod DnsStack: Zoho MX/SPF/DKIM/DMARC/verification
+iam-execution-roles,IAM roles (one per Lambda; least-privilege per function),Assumed by lambda.amazonaws.com,"Carry each function's exact grants (incl. rds-db:connect per PG role: wallet_reader, ledger_reader, ledger_writer, audit_writer, wanthat_migrator, wanthat_master)"
+github-oidc-deploy,GitHub OIDC provider + per-env assume-only deploy roles,GitHub Actions deploy.yml (merge->dev; release->prod behind the prod Environment gate; workflow_dispatch break-glass),cdk deploy --all with no static keys; drift-guard reconcile by stack prefix
+cdk-bootstrap,CDKToolkit bootstrap stack (staging S3 bucket + CDK roles),cdk deploy asset publishing,Stores synthesized assets the deploy roles read

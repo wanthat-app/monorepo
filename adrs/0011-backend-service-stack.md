@@ -6,14 +6,15 @@
 
 ## Context
 
-The Lambdalith and admin functions need an internal HTTP router behind API Gateway; every function
+The HTTP-exposed functions need an internal HTTP router behind API Gateway; every function
 needs structured logging, tracing, and metrics — including the redirect/poller funnel events that
 are emitted as structured log lines (ADR-0007/0009).
 
 ## Decision
 
-- **Hono** as the in-Lambda HTTP framework. It routes the Lambdalith (`/auth/*`, `/me`, `/links`,
-  `/products/*`, `/wallet*`) and admin (`/admin/*`) via Hono's AWS Lambda adapter. Tiny, fast,
+- **Hono** as the in-Lambda HTTP framework. It routes the member surface (`member-catalog`:
+  `/products/*` + `/recommendations*`; `member-wallet`: `/wallet*`) and the admin surface
+  (`admin-console` + `admin-ledger-view`: `/admin/*`) via Hono's AWS Lambda adapter. Tiny, fast,
   ESM-first, fully typed; request/response validation at the boundary uses the shared **Zod**
   schemas (ADR-0001).
 - **AWS Lambda Powertools for TypeScript** (Logger, Tracer, Metrics) across **all** functions —

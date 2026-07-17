@@ -14,7 +14,7 @@ Domains (prod / dev):
 
 - SPA and passkey RP ID: `https://wanthat.app` / `https://dev.wanthat.app` (CloudFront; also fronts `/p/*` landing)
 - Cognito public API (called directly from the browser): `https://cognito-idp.il-central-1.amazonaws.com`
-- App HTTP API (app-core wallet routes): `https://<app-api-id>.execute-api.il-central-1.amazonaws.com` - the SPA calls it directly (cookieless, not fronted by CloudFront)
+- App HTTP API (member-wallet wallet routes): `https://<app-api-id>.execute-api.il-central-1.amazonaws.com` - the SPA calls it directly (cookieless, not fronted by CloudFront)
 - Token verification JWKS: `https://cognito-idp.il-central-1.amazonaws.com/<customer-pool-id>/.well-known/jwks.json`
 
 Key invariants (ADR-0006, ADR-0019, ADR-0020):
@@ -50,7 +50,7 @@ sequenceDiagram
     participant Cognito as Cognito public API<br/>https://cognito-idp<br/>.il-central-1.amazonaws.com
     participant Sender as Custom sender<br/>WhatsApp / SMS
     participant GW as API Gateway JWT authorizer<br/>execute-api domain
-    participant AppCore as app-core Lambda (in-VPC)<br/>wallet service
+    participant Wallet as member-wallet Lambda (in-VPC)<br/>wallet service
     participant Aurora as Aurora PG<br/>MONEY ONLY (ledger + audit,<br/>keyed by sub)
 
     rect rgb(245, 245, 245)
@@ -61,7 +61,7 @@ sequenceDiagram
         Sender-->>User: code via WhatsApp (default) or SMS<br/>(sticky preference + kill switches, ADR-0019)
         User->>SPA: type the code
         SPA->>Cognito: ConfirmSignUp, then InitiateAuth
-        Note right of Cognito: Post-Confirmation trigger queues the welcome<br/>message (notification_outbox, DynamoDB only)
+        Note right of Cognito: Post-Confirmation trigger async-invokes<br/>notification-sender (welcome) + audit-writer (user_registered)
         Cognito-->>SPA: access + id + refresh JWTs (RS256, pool-signed)
         Note right of SPA: profile = ID-token claims, decoded locally -<br/>no /auth/register, no /auth/session,<br/>no backend call at all
     end
@@ -96,8 +96,8 @@ sequenceDiagram
         SPA->>GW: GET /wallet - Authorization Bearer access-JWT
         Note right of GW: JWT authorizer validates signature/issuer/audience/expiry<br/>against https://cognito-idp.il-central-1.amazonaws.com/<br/>customer-pool-id/.well-known/jwks.json - no Lambda, no database
         alt token valid
-            GW->>AppCore: route to handler (claims injected, sub)
-            AppCore->>Aurora: ledger read keyed by sub (ADR-0020) -<br/>first Aurora touch, behind the /home skeleton
+            GW->>Wallet: route to handler (claims injected, sub)
+            Wallet->>Aurora: ledger read keyed by sub (ADR-0020) -<br/>first Aurora touch, behind the /home skeleton
         else invalid / expired
             GW-->>SPA: 401 (request never reaches a Lambda)
             SPA->>Cognito: InitiateAuth REFRESH_TOKEN_AUTH (browser direct)

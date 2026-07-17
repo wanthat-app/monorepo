@@ -26,7 +26,7 @@ event-log ledger keyed (order_id, kind, status) → derive balance + audit.`
   `yyyy-MM-dd HH:mm:ss`, **GMT+8**), **cursor-paginated** (`start_query_index_id`), filterable by
   `status`.
 - **Scheduler period and lookback are admin-tunable** via CONFIG (not just env): `poller.intervalMinutes`
-  (default 60 — `admin-api` applies a change to the EventBridge schedule) and `poller.lookbackHours`
+  (default 30 — the fixed 15-min EventBridge heartbeat self-gates on it; edited in `admin-console`) and `poller.lookbackHours`
   (default 72 — read by the poller at run time to size the window). The lookback must cover an order's
   full status maturation; 72h is a placeholder pending AliExpress's confirm/return latency.
 - Window = `[now − lookback, now]` in GMT+8; re-read overlapping windows so status
@@ -43,10 +43,17 @@ event-log ledger keyed (order_id, kind, status) → derive balance + audit.`
   credited in the retailer's **settlement currency** (USD for AliExpress): the wallet is held in
   that currency and converted to ILS only at withdrawal, not at credit — so our liability matches
   our receivable (zero FX float).
-- Realised as `EventBridge → Retailer Proxy.listOrders` (makes the IPv4-only retailer call,
+- Realised as `EventBridge → retailer-settlement` (makes the IPv4-only retailer call,
   resolves attribution from `custom_parameters` — `ref` → recommendation → referrer + product;
-  `c`/`g` → consumer, incl. the DynamoDB `guest_attribution` lookup) `→ invokes an in-VPC writer`
-  (drives the Aurora ledger + audit). See ADR-0002 / ADR-0004 / ADR-0008.
+  `c`/`g` → consumer, incl. the DynamoDB `guest_attribution` lookup) `→ invokes the in-VPC
+  ledger-writer` (drives the Aurora ledger + audit). See ADR-0002 / ADR-0004 / ADR-0008.
+- **The per-recommendation conversion stat is a DERIVED PROJECTION of the ledger.**
+  `ledger-writer` computes and returns **absolute** per-recommendation totals from the ledger
+  itself (`count(DISTINCT order_id)` and the `referrer_cashback` sum, via a partial index on
+  `recommendation_id` — migration `0009`); `retailer-settlement` then applies them to the
+  DynamoDB `recommendation` items as **idempotent absolute SETs** (`UpdateItem`, never
+  increments). A replayed batch or crashed beat cannot drift the stat — re-deriving from the
+  ledger always converges it.
 - **Conversion events → analytics.** The in-VPC writer emits a **conversion event** (resolved
   attribution, amount, `pending`/`confirmed`/`clawback` status) as a structured `console.log` line
   that a **CloudWatch Logs subscription → Firehose → S3** ships — the same off-band mechanism as
@@ -71,8 +78,8 @@ event-log ledger keyed (order_id, kind, status) → derive balance + audit.`
 - Credit latency is bounded by the poll period — acceptable, since the 3-day maturation window
   dwarfs it.
 - No public conversion endpoint → smaller attack surface (no inbound signature / WAF for it).
-- The sole money-writer is the poller-writer (append-only), enforcing the integrity property of
-  ADR-0002.
+- The sole money-writer is `ledger-writer` (append-only, invoked only by
+  `retailer-settlement`), enforcing the integrity property of ADR-0002.
 - **To confirm at integration:** the full `status` enum including the rejected/invalid state used
   for clawbacks, and that `custom_parameters` reliably round-trips the per-click value on the
   `api-sg` gateway.

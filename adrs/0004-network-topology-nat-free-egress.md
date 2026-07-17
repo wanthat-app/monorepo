@@ -39,33 +39,43 @@ outside it. Retailer egress happens only from non-VPC functions. No NAT Gateway.
 
 ### Function placement
 
+The in-VPC set is exactly the six functions that touch Aurora (ADR-0002); everything else
+runs outside the VPC:
+
 | Function | In VPC? | Reaches | Internet egress |
 |---|---|---|---|
-| Landing | No | DynamoDB (`recommendation_id→url`) | none |
-| App edge (`app-links`, the `links` module — ADR-0006) | No | DynamoDB, Retailer Proxy (Invoke) | none |
-| Core / admin (`app-core`, `admin-api`) | Yes | Aurora, DynamoDB (gateway endpoint) | none |
-| **Retailer Proxy** | No | retailer API, Secrets Mgr, DynamoDB | yes (direct) |
-| Poller **writer** | Yes | Aurora only | none |
+| `landing` | No | DynamoDB (`recommendation_id→url`) | none |
+| `member-catalog` | No | DynamoDB, `retailer-linkgen` (Invoke) | none |
+| `member-wallet`, `admin-ledger-view` | Yes | Aurora, DynamoDB (gateway endpoint) | none |
+| `admin-console` | No | DynamoDB, Cognito, Secrets Mgr (write-only), `audit-writer` + `fx-rates` (Invoke) | none |
+| **`retailer-linkgen`**, **`retailer-settlement`** | No | retailer API, Secrets Mgr, DynamoDB | yes (direct) |
+| `ledger-writer`, `audit-writer` | Yes | Aurora only | none |
+| `otp-sender`, `post-confirmation`, `notification-sender`, `fx-rates` | No | Cognito/KMS/SNS/Social/DynamoDB per function | fx-rates + WhatsApp sends (direct) |
+| `role-bootstrap`, `db-migrator` (deploy-time) | Yes | Aurora only | none |
 
 ### Non-VPC chaining
 
-Retailer calls are made only by the single non-VPC **Retailer Proxy** (ADR-0002) — it holds the
-secret-scoped credential and runs the HMAC-signing client. In-VPC functions never have internet
-egress and never hold the retailer secret. Invoke direction exploits an asymmetry — a non-VPC
-Lambda can invoke any Lambda freely (control-plane Invoke), but an in-VPC Lambda without NAT
-cannot reach the Invoke API without a paid interface endpoint:
+Retailer calls are made only by the two non-VPC **`retailer-*`** functions (ADR-0002) — they
+hold the secret-scoped credential and run the HMAC-signing client. In-VPC functions never have
+internet egress and never hold the retailer secret. Invoke direction exploits an asymmetry — a
+non-VPC Lambda can invoke any Lambda freely (control-plane Invoke), but an in-VPC Lambda
+without NAT cannot reach the Invoke API without a paid interface endpoint. All six
+Lambda-to-Lambda arrows (the ADR-0002 invoke matrix) are initiated from **non-VPC** functions,
+so none needs a paid endpoint:
 
-- **Poll flow** — `EventBridge Scheduler → Retailer Proxy.listOrders` (calls retailer, resolves
-  `guest_attribution` in DynamoDB) `→ invokes in-VPC writer` (Aurora ledger + audit). The
-  non-VPC side initiates → **no interface endpoint, $0**.
-- **Link generation** — touches **no Aurora** (products + recommendations are DynamoDB, ADR-0003),
-  so the `links` module runs on the **non-VPC app edge** (`app-links`, ADR-0006's
-  non-VPC half) and invokes `Retailer Proxy.generateLink` **synchronously** (the user waits for
-  the affiliate URL) as a free non-VPC→Lambda call — **no interface endpoint, $0**, the same
-  asymmetry the poll flow uses. The proxy mints/reuses the product-level affiliate URL and
-  upserts the **Product** in DynamoDB; the caller then writes the member's **Recommendation**.
-  The retailer credential still never leaves the proxy, and the JWT-authorized route stays on
-  the app HTTP API rather than exposing the proxy itself.
+- **Poll flow** — `EventBridge Scheduler → retailer-settlement` (calls the retailer, resolves
+  `guest_attribution` in DynamoDB) `→ invokes the in-VPC ledger-writer` (Aurora ledger +
+  audit). The non-VPC side initiates → **no interface endpoint, $0**.
+- **Link generation** — touches **no Aurora** (products + recommendations are DynamoDB,
+  ADR-0003), so it runs on the **non-VPC `member-catalog`** edge and invokes
+  `retailer-linkgen` **synchronously** (the user waits for the affiliate URL) as a free
+  non-VPC→Lambda call. Linkgen mints/reuses the product-level affiliate URL and upserts the
+  **Product** in DynamoDB; the caller then writes the member's **Recommendation**. The
+  retailer credential never leaves the `retailer-*` tier, and the JWT-authorized route stays
+  on the app HTTP API rather than exposing the workers themselves.
+- **Audit + notifications** — the non-VPC `admin-console` sync-invokes the in-VPC
+  `audit-writer` (audit-or-fail), and the non-VPC `post-confirmation` async-invokes
+  `audit-writer` and `notification-sender`. Same direction, same $0.
 
 ### In-VPC connectivity
 
@@ -87,22 +97,24 @@ function with zero internet still logs normally. Net: no NAT and no interface en
   placement (briefly deployed, PR #110): kept the links routes on the in-VPC function at the cost
   of the one paid endpoint. Replaced the same week by the non-VPC edge placement above, which
   serves the identical routes for $0; the endpoint was removed (2026-07-08 consolidation).
-- **Fronting `POST /links` with the Retailer Proxy directly** — also $0, but it would hang a
-  public, JWT-authorized HTTP surface on the credential-holding proxy; keeping the proxy
-  invoke-only preserves "attack surface == sensitivity boundary" below.
+- **Fronting the link-gen route with the retailer function directly** — also $0, but it would
+  hang a public, JWT-authorized HTTP surface on the credential-holding worker; keeping the
+  `retailer-*` tier invoke-only preserves "attack surface == sensitivity boundary" below (and
+  the ADR-0002 exposure rule).
 
 ## Consequences
 
 - **Standing network cost ≈ $0** (no NAT, no RDS Proxy, no interface endpoints, free DynamoDB
-  gateway endpoint). Both retailer-proxy flows — the sync link generation and the scheduled
-  poll — are initiated from non-VPC functions, so neither needs a paid endpoint.
+  gateway endpoint). Every retailer flow — the sync link generation and the scheduled poll —
+  and every invoke arrow is initiated from a non-VPC function, so nothing needs a paid endpoint.
 - **Attack surface == sensitivity boundary:** the public, viral, anonymous redirect path touches
   only one non-PII DynamoDB table — no Aurora reach, no VPC foothold, no PII, no money.
-- **Egress containment retained** on the in-VPC money/PII functions; the only internet-facing
-  code is the single, thin, secret-scoped Retailer Proxy.
-- **Caveat:** a non-VPC Lambda cannot have SG/egress firewalling, so a compromised Retailer Proxy
-  has unrestricted outbound. Mitigate with IAM least-privilege + supply-chain hygiene (lockfiles,
-  pinned deps, SCA scanning) and keep the Proxy minimal. This is the deliberate trade for
-  deleting the NAT.
+- **Egress containment retained** on the in-VPC money functions; the only internet-facing
+  code is the thin, secret-scoped `retailer-*` tier (plus fx-rates' provider fetch and the
+  WhatsApp senders' cross-region Social calls).
+- **Caveat:** a non-VPC Lambda cannot have SG/egress firewalling, so a compromised retailer
+  function has unrestricted outbound. Mitigate with IAM least-privilege + supply-chain hygiene
+  (lockfiles, pinned deps, SCA scanning) and keep those functions minimal. This is the
+  deliberate trade for deleting the NAT.
 - **Verify:** retailer hosts remain IPv4-only and confirm the real integration hostname per
   program (Shein/Temu/iHerb/Banggood may onboard via an affiliate network, not the storefront).

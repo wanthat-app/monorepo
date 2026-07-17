@@ -34,7 +34,7 @@ Constraints in play:
    `crossRegionReferences: true` on both the producing (`EdgeServicesStack`) and consuming
    (`EdgeStack`) stacks so the landing `apiId` flows across regions.
 
-**The app-api and admin APIs are NOT fronted by this distribution.** The SPA calls them directly at
+**The app and admin HTTP APIs are NOT fronted by this distribution.** The SPA calls them directly at
 their HTTP API endpoints with a `Bearer` JWT (ADR-0008/0016); cross-origin is fine and avoids an
 extra proxy hop and a second cross-region origin. Admin keeps its own separate exposure (ADR-0002).
 
@@ -62,8 +62,8 @@ extra proxy hop and a second cross-region origin. Admin keeps its own separate e
   page, already ADR-0007's model), never 403/404, or the rewrite would swallow it.
 - The `EdgeStack` is **us-east-1**; everything else stays il-central-1. Cross-region references add a
   small SSM-export + reader custom resource — the accepted cost of the region split.
-- The SPA's API base URL is configured to the il-central-1 app-api endpoint, and **app-api must send
-  CORS headers** allowing the SPA origin (the CloudFront/custom domain). That CORS wiring lands with
-  the app-api slice; it is out of scope for the EdgeStack itself.
+- The SPA's API base URL is configured to the il-central-1 app HTTP API endpoint, and **the app
+  API must send CORS headers** allowing the SPA origin (the CloudFront/custom domain). That CORS
+  wiring lands with the app-API slice; it is out of scope for the EdgeStack itself.
 - SPA bucket contents are reproducible build output, so the bucket is `DESTROY` + auto-delete; a
   `BucketDeployment` uploads `apps/web/dist` and invalidates the cache on each deploy.

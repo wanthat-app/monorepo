@@ -1,6 +1,6 @@
 # OTP sink — every code, visible in the admin activity feed
 
-message-sender parks EVERY decrypted OTP code in DynamoDB (5-minute TTL, the OTP lifetime)
+otp-sender parks EVERY decrypted OTP code in DynamoDB (5-minute TTL, the OTP lifetime)
 before attempting delivery — a permanent feature in every environment, not a configuration.
 The admin panel's Activity feed lists current codes; this keeps sign-in completable and
 testable while the account-wide SMS sandbox blocks real delivery, and gives support a way to
@@ -13,7 +13,7 @@ ceremony. Only when the code is NEITHER parked NOR delivered does the trigger th
 
 Security posture: codes are readable by the `admin` group for their 5-minute lifetime — an
 accepted trade-off for support and sandbox-era testing. The sink table carries no grant beyond
-message-sender (write) and admin-api (read); codes are never written to logs.
+otp-sender (write) and admin-console (read); codes are never written to logs.
 
 ## Read a code (CLI alternative to the Activity feed)
     aws dynamodb get-item \

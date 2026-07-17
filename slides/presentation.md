@@ -3,7 +3,9 @@
 > Input for a slides-generation agent. One `## Slide` section per slide: timing, layout hint,
 > on-slide content, visual (image asset or mermaid source), and speaker notes. Facts are
 > verified against code + the live AWS account (2026-07-14); the authoritative references are
-> `docs/AWS_Architecture.md` and `adrs/`. Mermaid sources are ASCII-only with no semicolons.
+> `docs/AWS_Architecture.md` and `adrs/`. Updated 2026-07-17 for the lambda-topology
+> refactor (fifteen functions - ADR-0002 rewrite). Mermaid sources are ASCII-only with no
+> semicolons.
 
 **Global style:** clean startup-pitch look, white background, one teal-green accent
 (evergreen `#1F7A57` — the product design-system accent), dark slate text. Diagram color
@@ -135,17 +137,20 @@ flowchart TB
     sched["EventBridge Scheduler<br>orders 15 min + FX 12 h"]
 
     subgraph svc["Non-VPC services"]
-      applinks["app-links<br>products + recommendations"]
+      catalog["member-catalog<br>products + recommendations"]
+      admincon["admin-console<br>all admin actions + views"]
       landing["landing<br>OG shell + attributed redirect"]
-      proxy["retailer-proxy<br>sole retailer egress + credential"]
+      linkgen["retailer-linkgen<br>sync link mint, invoke-only"]
+      settlement["retailer-settlement<br>15-min poll + attribution"]
       fx["fx-rates"]
-      sender["message-sender<br>custom SMS sender, kill-switched"]
+      otpsender["otp-sender<br>custom SMS sender, kill-switched"]
     end
 
     subgraph vpc["VPC - no NAT, no RDS Proxy"]
-      appcore["app-core - wallet"]
-      adminsvc["admin-api - stats + config"]
-      writer["conversion-poller<br>the ONLY money writer"]
+      wallet["member-wallet - wallet reads"]
+      ledgerview["admin-ledger-view<br>money stats + audit feed"]
+      writer["ledger-writer<br>the ONLY money writer"]
+      auditw["audit-writer<br>audit_append only"]
       aurora[("Aurora Serverless v2<br>money only - 0 to 2 ACU")]
     end
 
@@ -158,7 +163,6 @@ flowchart TB
       t_unattr[("unattributed_order")]
       t_guest[("guest_attribution")]
       t_ops[("ops_counters")]
-      t_outbox[("notification_outbox")]
       t_otp[("otp_sink")]
     end
 
@@ -175,56 +179,59 @@ flowchart TB
   cf -- "/p/*" --> landinggw
   landinggw --> landing
   member -- "browser-direct auth:<br>SignUp, InitiateAuth, WEB_AUTHN" --> custpool
-  custpool -. "OTP" .-> sender
-  sender -- "WhatsApp / SMS" --> meta
-  sender == "park code" ==> t_otp
+  custpool -. "OTP" .-> otpsender
+  otpsender -- "WhatsApp / SMS" --> meta
+  otpsender == "park code" ==> t_otp
   member -- "Bearer JWT" --> appgw
-  appgw --> applinks
-  appgw --> appcore
+  appgw --> catalog
+  appgw --> wallet
   appgw -. "validate via JWKS" .-> custpool
   adminUser -- "PKCE code flow + TOTP" --> emppool
   adminUser -- "employee JWT" --> admingw
-  admingw --> adminsvc
+  admingw --> admincon
+  admingw --> ledgerview
   admingw -. "validate via JWKS" .-> emppool
 
-  applinks == "create tx" ==> t_rec
-  applinks == "counters" ==> t_ops
-  applinks -- "generateLink" --> proxy
-  t_prod -- "cache read" --> applinks
+  catalog == "create tx" ==> t_rec
+  catalog == "counters" ==> t_ops
+  catalog -- "generateLink" --> linkgen
+  t_prod -- "cache read" --> catalog
   t_rec -- "short id" --> landing
   landing -- "impression / click" --> funnel
   landing -. "302 + custom_parameters" .-> ali
 
-  sched --> proxy
+  sched --> settlement
   sched --> fx
   fx == "USD-ILS" ==> t_fx
-  proxy -- "orders + links" --> ali
-  proxy == "cache tx" ==> t_prod
-  proxy == "cursor write" ==> t_state
-  t_state -- "cursor read" --> proxy
-  proxy == "unmatched" ==> t_unattr
-  t_guest -- "guest read" --> proxy
-  proxy -- "WriteConversions" --> writer
-  writer == "stats" ==> t_rec
+  linkgen -- "product + link mint" --> ali
+  linkgen == "cache tx" ==> t_prod
+  settlement -- "orders" --> ali
+  settlement == "cursor write" ==> t_state
+  t_state -- "cursor read" --> settlement
+  settlement == "unmatched" ==> t_unattr
+  t_guest -- "guest read" --> settlement
+  settlement -- "WriteConversions" --> writer
+  settlement == "conversion totals - SETs" ==> t_rec
   writer == "append-only" ==> aurora
-  aurora -- "wallet reads" --> appcore
-  aurora -- "read-only" --> adminsvc
-  adminsvc == "sole writer" ==> t_cfg
+  aurora -- "wallet reads" --> wallet
+  aurora -- "read-only" --> ledgerview
+  admincon == "sole writer" ==> t_cfg
+  admincon -- "audit or fail invoke" --> auditw
+  admincon -- "manual FX refresh invoke" --> fx
+  auditw == "audit_append" ==> aurora
 
-  t_fx --> applinks
-  t_fx --> appcore
-  t_fx --> adminsvc
+  t_fx --> catalog
+  t_fx --> wallet
+  t_fx --> admincon
   t_fx --> landing
-  t_rec --> applinks
-  t_rec --> appcore
-  t_rec --> adminsvc
-  t_rec --> proxy
-  t_prod --> adminsvc
-  t_ops --> adminsvc
-  t_otp --> adminsvc
-  t_outbox --> adminsvc
-  t_unattr --> adminsvc
-  t_unattr --> proxy
+  t_rec --> catalog
+  t_rec --> admincon
+  t_rec --> settlement
+  t_prod --> admincon
+  t_ops --> admincon
+  t_otp --> admincon
+  t_unattr --> admincon
+  t_unattr --> settlement
 
   %% layer pins: users > edge > auth+services > stores > analytics/observability
   member ~~~ cf
@@ -237,16 +244,15 @@ flowchart TB
   landinggw ~~~ custpool
   cf ~~~ emppool
   cf ~~~ sched
-  custpool ~~~ applinks
-  emppool ~~~ adminsvc
-  applinks ~~~ t_prod
+  custpool ~~~ catalog
+  emppool ~~~ admincon
+  catalog ~~~ t_prod
   landing ~~~ t_rec
-  proxy ~~~ t_state
-  proxy ~~~ t_guest
-  sender ~~~ t_otp
-  appcore ~~~ aurora
-  adminsvc ~~~ aurora
-  t_outbox ~~~ funnel
+  settlement ~~~ t_state
+  settlement ~~~ t_guest
+  otpsender ~~~ t_otp
+  wallet ~~~ aurora
+  ledgerview ~~~ aurora
   t_ops ~~~ obscw
   aurora ~~~ funnel
 
@@ -256,19 +262,21 @@ flowchart TB
   classDef novpc fill:#eafaf1,stroke:#2e8b57
   classDef data fill:#fff4e6,stroke:#cc8400
   classDef ext fill:#f3f0f7,stroke:#7a5fa3
-  class appcore,adminsvc,writer invpc
-  class applinks,landing,proxy,fx,sender novpc
-  class aurora,t_rec,t_prod,t_cfg,t_fx,t_state,t_unattr,t_guest,t_ops,t_outbox,t_otp,s3site,funnel data
+  class wallet,ledgerview,writer,auditw invpc
+  class catalog,admincon,landing,linkgen,settlement,fx,otpsender novpc
+  class aurora,t_rec,t_prod,t_cfg,t_fx,t_state,t_unattr,t_guest,t_ops,t_otp,s3site,funnel data
   class ali,meta,custpool,emppool,obscw ext
   style vpc fill:#f3f0f7
 ```
 
 Speaker notes (walk it left to right): (1) there is **no auth service** — the browser talks
 to Cognito directly; OTP rides a custom sender with WhatsApp-default and kill switches.
-(2) The member APIs split into non-VPC app-links and in-VPC app-core — only what touches
-money enters the VPC. (3) The friend's click never leaves DynamoDB. (4) Money enters only
-through the scheduled pipeline on the right — retailer-proxy fetches, the in-VPC writer
-appends. Full per-table version lives in `docs/AWS_Architecture.md`.
+(2) The member APIs split into non-VPC member-catalog and in-VPC member-wallet — only what
+touches money enters the VPC; the admin surface splits the same way (console vs ledger
+view). (3) The friend's click never leaves DynamoDB. (4) Money enters only through the
+scheduled pipeline on the right — retailer-settlement fetches, the in-VPC ledger-writer
+appends and returns the totals the poll projects back onto the links. Full per-table version
+lives in `docs/AWS_Architecture.md`.
 
 ## Slide 8 — Data: one store per job, and what each costs us (2:30)
 
@@ -276,9 +284,9 @@ Layout: decision table (Data / Decision / Why / Trade-off accepted) + closing co
 
 | Data | Decision | Why | Trade-off accepted |
 |---|---|---|---|
-| Money | Aurora Serverless v2 (0-2 ACU, IAM auth, no proxy) | ACID + Postgres GRANTs as the money invariant (app_rw SELECT-only, poller_writer INSERT-only); SQL for reconciliation | Scale-to-zero cold resume ~20 s (60 s connect timeout + SPA warm-up probe); 50-connection cap |
+| Money | Aurora Serverless v2 (0-2 ACU, IAM auth, no proxy) | ACID + Postgres GRANTs as the money invariant (one role per function: wallet_reader / ledger_reader SELECT-only, ledger_writer INSERT-only, audit_writer = audit_append only); SQL for reconciliation | Scale-to-zero cold resume ~20 s (60 s connect timeout + SPA warm-up probe); 50-connection cap |
 | Customer PII | Cognito user attributes are the system of record | Auth path touches zero databases; GDPR delete = one call; backups carry no PII | ListUsers-only queries (no joins, one filter); no PITR; no attribute history. Escape hatch: dual-write projection |
-| Operational | DynamoDB on-demand (10 tables) | Viral bursts absorbed at $0 idle; access patterns modeled as projections (byOwner, byState GSIs) | No joins, no ad-hoc queries; counters kept exact via same-table transactions |
+| Operational | DynamoDB on-demand (9 tables) | Viral bursts absorbed at $0 idle; access patterns modeled as projections (byOwner, byState GSIs) | No joins, no ad-hoc queries; counters kept exact via same-table transactions |
 
 Closing line: **deliberate constraint — no cross-table transactions exist anywhere.** Counter
 rows live inside the counted table (single-table TransactWriteItems); ledger + audit are
@@ -319,7 +327,7 @@ Layout: avoided-cost table + three consequence lines.
 
 | Component avoided | Fixed cost avoided | Replaced by |
 |---|---|---|
-| NAT Gateway | ~$33/mo + $0.045/GB | Non-VPC functions call public AWS endpoints (IAM + TLS); the only true internet egress is retailer-proxy |
+| NAT Gateway | ~$33/mo + $0.045/GB | Non-VPC functions call public AWS endpoints (IAM + TLS); the only true internet egress is the retailer tier |
 | VPC interface endpoints | ~$7-15/mo each | Zero needed: nothing in-VPC calls Cognito, Secrets Manager, or the internet — by design, not by exception |
 | RDS Proxy | per-ACU hourly | Direct IAM DB auth; 50-connection cap + no reserved concurrency keeps pressure bounded |
 | DynamoDB access from VPC | — | Free gateway endpoint |
@@ -352,7 +360,8 @@ Layout: two decision cards.
 - Lifecycle is data, not mutation: pending → confirmed → clawback are separate immutable
   rows; balances are always derived.
 - The invariant lives in Postgres, not app code: UPDATE/DELETE revoked from every role; only
-  poller_writer can INSERT; audit_append is SECURITY DEFINER.
+  ledger_writer can INSERT; audit_append is SECURITY DEFINER and the only door into the
+  audit log.
 - Hash-chained audit log makes tampering evident; admin config changes audit the same way.
 - Blast radius: a bug or compromise in any read path has zero write capability on money.
 
@@ -411,7 +420,7 @@ sequenceDiagram
   participant Cog as Cognito public API
   participant Snd as OTP sender WhatsApp/SMS
   participant GW as API GW JWT authorizer
-  participant Wal as app-core + Aurora
+  participant Wal as member-wallet + Aurora
 
   rect rgb(245,245,245)
     note over User,Snd: 1. Registration IS SignUp - no backend, no DB write
@@ -449,24 +458,24 @@ sequenceDiagram
   autonumber
   actor Member
   participant SPA as SPA
-  participant AL as app-links non-VPC
-  participant RP as retailer-proxy
+  participant MC as member-catalog non-VPC
+  participant RL as retailer-linkgen
   participant AE as AliExpress API
   participant DB as DynamoDB
 
   Member->>SPA: paste product URL
-  SPA->>AL: POST /products/resolve - Bearer JWT
-  AL->>DB: product cache lookup
+  SPA->>MC: POST /products/resolve - Bearer JWT
+  MC->>DB: product cache lookup
   alt cache miss
-    AL->>RP: invoke generateLink
-    RP->>AE: getProductDetail + generatePromotionLink - HMAC
-    RP->>DB: cache product + counter - one same-table tx
-    RP-->>AL: product + affiliate link
+    MC->>RL: invoke generateLink
+    RL->>AE: getProductDetail + generatePromotionLink - HMAC
+    RL->>DB: cache product + counter - one same-table tx
+    RL-->>MC: product + affiliate link
   end
-  AL-->>SPA: product + cashback split
-  SPA->>AL: POST /recommendations
-  AL->>DB: put recommendation + counter - one same-table tx
-  AL-->>SPA: wanthat.app/p/shortId
+  MC-->>SPA: product + cashback split
+  SPA->>MC: POST /recommendations
+  MC->>DB: put recommendation + counter - one same-table tx
+  MC-->>SPA: wanthat.app/p/shortId
 ```
 
 ## Slide B3 — Sequence: click to ledger
@@ -480,8 +489,8 @@ sequenceDiagram
   participant DB as DynamoDB
   participant AE as AliExpress
   participant SCH as Scheduler 15 min
-  participant RP as retailer-proxy
-  participant W as conversion-poller in-VPC
+  participant RS as retailer-settlement
+  participant W as ledger-writer in-VPC
   participant PG as Aurora ledger
 
   Friend->>CF: GET /p/:id
@@ -491,12 +500,14 @@ sequenceDiagram
   Friend->>L: POST resolve - member JWT or guest id
   L-->>Friend: 302 to store - custom_parameters - click logged
   Friend->>AE: purchase within attribution window
-  SCH->>RP: listOrders heartbeat
-  RP->>AE: listOrdersByIndex - cursor in poller_state
-  RP->>RP: resolve attribution - unmatched to claim queue
-  RP->>W: invoke WriteConversions
+  SCH->>RS: poll heartbeat
+  RS->>AE: listOrdersByIndex - cursor in poller_state
+  RS->>RS: resolve attribution - unmatched to claim queue
+  RS->>W: invoke WriteConversions
   W->>PG: append wallet_entry - pending/confirmed/clawback
   W->>PG: audit_append per row - hash chain
+  W-->>RS: absolute conversion totals from the ledger
+  RS->>DB: apply totals to recommendations - idempotent SETs
 ```
 
 ## Slide B4 — ADR map
@@ -517,30 +528,33 @@ Layout: two-column list; highlight the architecture set (0001-0009) vs stack set
 ```mermaid
 flowchart LR
   subgraph out["Outside the VPC - public AWS endpoints, IAM + TLS"]
-    applinks["app-links"]
-    admincred["admin-credentials"]
+    catalog["member-catalog"]
+    admincon["admin-console"]
     landing["landing"]
-    proxy["retailer-proxy<br>ONLY internet egress"]
+    retailer["retailer-linkgen + retailer-settlement<br>ONLY internet egress"]
     fx["fx-rates"]
-    msg["message-sender + dispatcher"]
+    msg["otp-sender + notification-sender"]
   end
   subgraph vpc["VPC - isolated subnets, no NAT, no RDS Proxy, no interface endpoints"]
-    appcore["app-core"]
-    adminsvc["admin-api"]
-    writer["conversion-poller writer"]
+    wallet["member-wallet"]
+    ledgerview["admin-ledger-view"]
+    writer["ledger-writer"]
+    auditw["audit-writer"]
     aurora[("Aurora - money only")]
   end
-  proxy -- "invoke - the only inward door" --> writer
-  appcore --> aurora
-  adminsvc --> aurora
+  retailer -- "invoke - money inward door" --> writer
+  admincon -- "invoke - audit inward door" --> auditw
+  wallet --> aurora
+  ledgerview --> aurora
   writer --> aurora
+  auditw --> aurora
 ```
 
 Talking points: only what touches Aurora enters the VPC; in-VPC functions cannot call out —
-the conversion chain is always proxy -> writer; a NAT Gateway would be the single biggest
-fixed cost in the account.
+every invoke arrow starts outside the VPC and the conversion chain is always
+settlement -> writer; a NAT Gateway would be the single biggest fixed cost in the account.
 
-## Slide B6 — ADR-0003 + 0027: where data lives
+## Slide B6 — ADR-0003 + 0006: where data lives
 
 Layout: diagram + three trade-off lines.
 
@@ -555,7 +569,7 @@ flowchart LR
   end
   subgraph dyn["DynamoDB - operational, non-PII"]
     rec[("recommendation + product<br>counter rows in-table")]
-    ops[("attribution, config,<br>counters, FX, outbox, otp_sink")]
+    ops[("attribution, config,<br>counters, FX, otp_sink")]
   end
   pii -. "sub is the only join key" .- wallet
   wallet -. "sequential idempotent appends,<br>NOT one transaction" .- audit
@@ -577,8 +591,8 @@ Layout: table.
 | Aurora cold resume (~20 s) | First wallet read after idle stalls | SPA fires /healthz/db warm-up probe on auth screens; 60 s connect timeout rides it out |
 | AliExpress ApiCallLimit ban window | Poll heartbeat calls rejected | Sequential calls + one ban-window retry (ADR-0021); cursor unmoved → next beat replays |
 | WhatsApp delivery down | OTP channel unavailable | Sticky-preference fallback to SMS; runtime-config kill switches; SNS spend cap bounds abuse |
-| Poller crash mid-batch | Partial writes | Cursor advances only after batch; ledger unique index makes replays no-ops |
-| Dispatcher poison message | Outbox item repeatedly fails | bisectBatchOnError + 3 retries → SQS DLQ (14 d); items age out by TTL |
+| Settlement poll crash mid-batch | Partial writes | Cursor advances only after batch; ledger unique index + absolute stat SETs make replays no-ops |
+| Notification invoke keeps failing | Welcome message undelivered | Lambda async retry x2 → real-payload SQS DLQ (redrivable); kill-switched skips return success and never DLQ |
 | Cognito outage | No new logins | Static SPA still serves; landing redirect works for guests (DynamoDB-only path) |
 
 ## Slide B8 — Rejected alternatives: the graveyard
@@ -594,4 +608,4 @@ Layout: two-column table.
 | Managed Login for customers | No Hebrew/RTL; passkey RP-ID silo on the auth subdomain (kept for the admin console, where it fits) |
 | Conversion webhooks | Spoofable inbound money surface + no reliable retailer support; reconciliation poll is replayable and auditable |
 | Self-minted session JWTs | A second token validation path across every API; Cognito stays the only issuer |
-| Aurora customer table (PII in SQL) | Kept Aurora on the auth path and PII in two stores; moved to Cognito attributes (ADR-0027) |
+| Aurora customer table (PII in SQL) | Kept Aurora on the auth path and PII in two stores; moved to Cognito attributes (ADR-0006) |
