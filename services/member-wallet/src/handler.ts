@@ -1,5 +1,5 @@
 /**
- * app-core — the in-VPC wallet service (ADR-0006 rev: Cognito-native auth), behind the shared app
+ * member-wallet — the in-VPC wallet service (ADR-0006 rev: Cognito-native auth), behind the shared app
  * HTTP API.
  *
  * Serves ONLY the endpoints that touch Aurora money data: `/wallet`, `/wallet/entries` (stubs until
@@ -19,7 +19,7 @@ import { subFromClaims } from "./claims";
 import { getContext } from "./context";
 import { walletRouter } from "./wallet/router";
 
-const SERVICE = "app-core";
+const SERVICE = "member-wallet";
 const app = new Hono<{ Bindings: { event: LambdaEvent } }>();
 
 // Unauthenticated liveness probe — the one positive signal for the pipeline smoke test.
@@ -46,11 +46,11 @@ app.use("*", async (c, next) => {
 
 // `/wallet` sits behind the JWT authorizer at the gateway and reads the verified claims.
 app.route("/wallet", walletRouter());
-// The links module lives on the NON-VPC app-links edge (Aurora-free path; the sync retailer-proxy
+// The links module lives on the NON-VPC member-catalog edge (Aurora-free path; the sync retailer-proxy
 // invoke is free there — in-VPC it would need a paid lambda interface endpoint, ADR-0004).
 // The former merged `GET /activity` is DELETED (refactor PR 2b): the SPA now composes the member
-// feed client-side from `GET /wallet/entries` (here) + `GET /recommendations` (app-links), so
-// app-core keeps zero Recommendation-table access. The gateway may still route the old path at
+// feed client-side from `GET /wallet/entries` (here) + `GET /recommendations` (member-catalog), so
+// member-wallet keeps zero Recommendation-table access. The gateway may still route the old path at
 // this Lambda until the infra teardown — it falls through to Hono's 404 like the auth surface.
 
 // Log any uncaught handler error (otherwise Hono returns 500 with no trace) so an in-VPC connection

@@ -1,5 +1,5 @@
 {
-  "name": "@wanthat/app-core",
+  "name": "@wanthat/otp-sender",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,10 +10,12 @@
     "test": "vitest run"
   },
   "dependencies": {
+    "@aws-crypto/client-node": "^5.0.0",
+    "@aws-lambda-powertools/logger": "^2.8.0",
+    "@aws-sdk/client-sns": "^3.600.0",
+    "@aws-sdk/client-socialmessaging": "^3.600.0",
     "@wanthat/contracts": "workspace:*",
-    "@wanthat/db": "workspace:*",
-    "@wanthat/domain": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
-    "hono": "^4.6.0"
+    "@wanthat/whatsapp": "workspace:*"
   }
 }

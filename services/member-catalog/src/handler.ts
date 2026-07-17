@@ -1,5 +1,5 @@
 /**
- * app-links — the non-VPC "links edge" (ADR-0006 rev: Cognito-native auth), behind the shared app
+ * member-catalog — the non-VPC "links edge" (ADR-0006 rev: Cognito-native auth), behind the shared app
  * HTTP API.
  *
  * Serves the links module (`/products/resolve` + `/recommendations*`) plus the tiny PUBLIC
@@ -20,7 +20,7 @@ import { publicConfigRouter } from "./config/router";
 import { getContext } from "./context";
 import { productsRouter, recommendationsRouter } from "./links/router";
 
-const SERVICE = "app-links";
+const SERVICE = "member-catalog";
 const app = new Hono<{ Bindings: { event: LambdaEvent } }>();
 
 // Unauthenticated liveness probe — the one positive signal for the pipeline smoke test.

@@ -7,7 +7,7 @@ import {
   RuntimeConfigRepo,
 } from "@wanthat/dynamo";
 
-/** The Kysely handle type, derived from createDb so app-core needs no direct kysely dependency. */
+/** The Kysely handle type, derived from createDb so member-wallet needs no direct kysely dependency. */
 type Db = ReturnType<typeof createDb>;
 
 function requireEnv(name: string): string {
@@ -31,7 +31,7 @@ let cached: CoreContext | undefined;
 
 /**
  * Build the per-container dependency graph once and reuse it across warm invocations. The in-VPC
- * wallet service (ADR-0006 rev: Cognito-native auth) reaches Aurora as `app_rw` via IAM auth (no
+ * wallet service (ADR-0006 rev: Cognito-native auth) reaches Aurora as `wallet_reader` via IAM auth (no
  * RDS Proxy) for the ledger, plus DynamoDB — through the VPC's free gateway endpoint (ADR-0004) —
  * for the fx-rate cache and the conversion-commission config behind the ILS estimate.
  */

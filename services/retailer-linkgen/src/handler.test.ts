@@ -7,7 +7,7 @@ import { handleGenerateLink } from "./handler";
 /**
  * Wire-shape parity with the pre-split retailer-proxy (refactor PR-6): the linkgen handler
  * still accepts the exact `GenerateLinkRequest` invoke payload (`op`/`retailer`/`url`), so the
- * app-links caller's move was an env-var flip — no payload migration, no client change.
+ * member-catalog caller's move was an env-var flip — no payload migration, no client change.
  */
 
 const NOW = "2026-07-08T10:00:00.000Z";

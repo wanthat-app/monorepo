@@ -53,7 +53,7 @@ function getDeps(): ConfirmDeps {
 
 /**
  * Cognito Post-Confirmation trigger (ADR-0006 decision 7). Best-effort in its entirety: unlike
- * message-sender (which MUST fail loudly so a dead OTP fails the initiating call), this handler
+ * otp-sender (which MUST fail loudly so a dead OTP fails the initiating call), this handler
  * never throws — a thrown error here would fail the user's ConfirmSignUp, and no welcome-message,
  * audit or attribution write is worth blocking a confirmation over. Always returns the event, as
  * the trigger contract requires.

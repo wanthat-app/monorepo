@@ -44,7 +44,7 @@ export interface AdminStackProps extends StackProps {
   readonly productTable: dynamodb.ITable;
   readonly recommendationTable: dynamodb.ITable;
   // OTP sink (docs/otp-sink.md) - GET /admin/otp-sink lists every parked code (5-minute TTL);
-  // message-sender parks each OTP before delivering, in every environment.
+  // otp-sender parks each OTP before delivering, in every environment.
   readonly otpSinkTable: dynamodb.ITable;
   // Retailer credential secret — the console may WRITE it (credential drop from the admin panel)
   // but never read it; the retailer-linkgen/settlement pair stays the sole reader (see the inline policy below).

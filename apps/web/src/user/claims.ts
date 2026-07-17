@@ -17,7 +17,7 @@ export interface UserProfile {
   email: string | null;
   /** BCP-47, e.g. "he-IL". */
   locale: string;
-  /** Sticky OTP delivery preference (ADR-0019); the message-sender enforces availability. */
+  /** Sticky OTP delivery preference (ADR-0019); the otp-sender enforces availability. */
   otpChannel: OtpChannel;
 }
 

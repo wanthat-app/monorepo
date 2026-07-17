@@ -78,7 +78,7 @@ export interface WalletEntryWire {
 /**
  * One item of the member activity feed. Since the merge moved CLIENT-SIDE (refactor PR 2b) this
  * is the feed's DISPLAY type only — no endpoint answers it. The SPA maps the two paginated
- * sources onto it: `GET /recommendations` (app-links) and `GET /wallet/entries` (app-core).
+ * sources onto it: `GET /recommendations` (member-catalog) and `GET /wallet/entries` (member-wallet).
  */
 export type ActivityItemWire =
   | {

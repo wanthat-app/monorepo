@@ -64,7 +64,7 @@ export class DataStack extends Stack {
     // The shared retailer product (ADR-0003): fetched/minted once, reused across every member who
     // recommends it. Keyed by the store + its native product id; carries the product-level
     // affiliate URL (ADR-0008: ONE link.generate per product). Written by retailer-linkgen
-    // (ADR-0004), read by app-core's links module.
+    // (ADR-0004), read by member-wallet's links module.
     this.productTable = new dynamodb.Table(this, "Product", {
       partitionKey: { name: "storeId", type: dynamodb.AttributeType.STRING },
       sortKey: { name: "storeProductId", type: dynamodb.AttributeType.STRING },
@@ -132,7 +132,7 @@ export class DataStack extends Stack {
       ...common,
     });
 
-    // OTP sink (docs/otp-sink.md): message-sender parks EVERY code here before its delivery
+    // OTP sink (docs/otp-sink.md): otp-sender parks EVERY code here before its delivery
     // attempt, and the admin activity feed lists current ones - a permanent feature in every
     // environment (it also keeps sign-in completable while the SMS sandbox blocks real prod
     // delivery). Items self-expire after 5 minutes, the OTP lifetime.

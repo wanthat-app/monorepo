@@ -38,7 +38,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
-  // clearAllMocks() does not reset implementations; re-pin the happy path (see message-sender).
+  // clearAllMocks() does not reset implementations; re-pin the happy path (see otp-sender).
   deps.notifications.send.mockResolvedValue(undefined);
   deps.audit.write.mockResolvedValue(undefined);
   deps.guests.claim.mockResolvedValue(true);

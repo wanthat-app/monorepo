@@ -98,7 +98,7 @@ export function AuthPage() {
   const [agreed, setAgreed] = useState(false);
   // OTP channel (ADR-0019): a sticky signup-time preference riding custom:otpChannel. The
   // offered channels + the preselected default mirror the kill switches via the PUBLIC config
-  // endpoint (same predicate the message-sender enforces, minus the private phoneNumberId);
+  // endpoint (same predicate the otp-sender enforces, minus the private phoneNumberId);
   // SMS is the safe initial value in case the fetch never lands. The sender remains the
   // enforcement point either way.
   const [channel, setChannel] = useState<OtpChannel>("sms");

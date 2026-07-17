@@ -1,5 +1,5 @@
 {
-  "name": "@wanthat/app-links",
+  "name": "@wanthat/member-wallet",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,10 +10,8 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aws-sdk/client-cognito-identity-provider": "^3.600.0",
-    "@aws-sdk/client-lambda": "^3.600.0",
-    "@wanthat/aliexpress": "workspace:*",
     "@wanthat/contracts": "workspace:*",
+    "@wanthat/db": "workspace:*",
     "@wanthat/domain": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
     "hono": "^4.6.0"

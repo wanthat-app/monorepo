@@ -3,7 +3,7 @@ import type { Kysely } from "kysely";
 import type { Database, WalletEntryTable } from "./schema";
 
 /**
- * Wallet ledger reads for app-core (ADR-0002: reads are `app_rw`; only the poller-writer appends).
+ * Wallet ledger reads for member-wallet (ADR-0002: reads are `wallet_reader`; only the ledger-writer appends).
  * `amount_minor` is Postgres bigint, which node-postgres returns as a string — every read maps it
  * back to a real `bigint` (money is exact, never a float). MVP volumes are bounded, so the balance
  * path fetches the sub's rows and derives in code (`@wanthat/domain` `deriveBalances`); SQL
