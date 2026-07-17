@@ -2,20 +2,15 @@ import { Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import { Trigger } from "aws-cdk-lib/triggers";
 import type { Construct } from "constructs";
 import {
-  LAMBDA_ARCHITECTURE,
-  LAMBDA_RUNTIME,
   MIGRATIONS_DIR_ENV,
+  makeServiceFunction,
   migratorBundling,
   RDS_CA_ENV,
-  serviceEntry,
-  serviceLogGroup,
   type WanthatEnv,
 } from "./config";
 
@@ -199,26 +194,18 @@ export class DataStack extends Stack {
     // NOT triggers.TriggerFunction (which is a plain lambda.Function and would not bundle). Connects
     // as wanthat_migrator via IAM auth (0003) - no Secrets Manager read, so the VPC keeps no
     // secretsmanager interface endpoint. New-env bootstrap caveat: see 0003_migrator_role.sql.
-    const migratorFn = new NodejsFunction(this, "DbMigrator", {
-      functionName: `wanthat-${wanthatEnv.name}-db-migrator`,
-      entry: serviceEntry("db-migrator"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
+    // The ObservabilityStack does NOT alarm this one-shot's errors (a failed migration surfaces via
+    // the deploy itself, SERVICES["db-migrator"].alarms = false), but its logs/traces are still
+    // retained for post-mortems.
+    // No reserved concurrency: a one-shot Trigger invokes this once per deploy, so it runs in the
+    // unreserved pool (reserving any concurrency needs account quota >= 21; see infra issues). The
+    // app-api/admin reserved budget (7/2) is the Aurora connection ceiling; this migrator isn't part
+    // of it. CDK's Trigger already serialises invocation, and migrations are transactional.
+    const migratorFn = makeServiceFunction(this, wanthatEnv, "db-migrator", {
       timeout: Duration.minutes(5), // generous for a cold scale-to-zero resume
-      // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability). The
-      // ObservabilityStack does NOT alarm this one-shot's errors (a failed migration surfaces via the
-      // deploy itself), but its logs/traces are still retained for post-mortems.
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "DbMigratorLogs", wanthatEnv),
       vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [lambdaSg],
-      // No reserved concurrency: a one-shot Trigger invokes this once per deploy, so it runs in the
-      // unreserved pool (reserving any concurrency needs account quota >= 21; see infra issues). The
-      // app-api/admin reserved budget (7/2) is the Aurora connection ceiling; this migrator isn't part
-      // of it. CDK's Trigger already serialises invocation, and migrations are transactional.
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         DB_USER: "wanthat_migrator",

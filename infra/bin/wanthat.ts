@@ -1,8 +1,15 @@
 #!/usr/bin/env node
 import * as cdk from "aws-cdk-lib";
+import type * as lambda from "aws-cdk-lib/aws-lambda";
 import { AdminStack } from "../lib/admin-stack";
 import { ApiStack } from "../lib/api-stack";
-import { resolveEnv, stackName } from "../lib/config";
+import {
+  type AlarmedServiceSlug,
+  type FunnelServiceSlug,
+  OBSERVED_SERVICES,
+  resolveEnv,
+  stackName,
+} from "../lib/config";
 import { DataStack } from "../lib/data-stack";
 import { DnsStack } from "../lib/dns-stack";
 import { EdgeServicesStack } from "../lib/edge-services-stack";
@@ -156,39 +163,48 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
   },
 });
 
+// Every deployed service Lambda by registry slug — the observability wiring below derives its
+// labels (and order) from the registry instead of hand-written strings. The one-shot db-migrator
+// is intentionally NOT here (SERVICES["db-migrator"].alarms = false): a failed migration surfaces
+// via the deploy, not steady-state alarms.
+const serviceFns: Record<AlarmedServiceSlug, lambda.Function> = {
+  "app-links": api.appLinksFn,
+  "app-core": api.appCoreFn,
+  "admin-api": admin.adminApiFn,
+  "admin-credentials": admin.adminCredentialsFn,
+  landing: edgeServices.landingFn,
+  "retailer-proxy": edgeServices.retailerProxyFn,
+  "conversion-poller": edgeServices.conversionPollerFn,
+  "fx-rates": edgeServices.fxRatesFn,
+  "message-sender": identity.messageSenderFn,
+  "post-confirmation": identity.postConfirmationFn,
+  "whatsapp-dispatcher": whatsapp.dispatcherFn,
+};
+
+// Funnel events are emitted by landing (impression/click), the conversion poller (conversion)
+// and the retailer proxy (order_untracked — the unattributed-revenue stream). ORDER is
+// load-bearing: FunnelAnalytics binds each log group to an indexed Subscription{i} logical id,
+// so reordering would rebind live subscription filters.
+const funnelServices: readonly FunnelServiceSlug[] = [
+  "landing",
+  "conversion-poller",
+  "retailer-proxy",
+];
+
 // ObservabilityStack deploys LAST — it only references resources the other il-central-1 stacks
-// already created (the HTTP APIs, the application Lambdas, and the Aurora cluster). The db-migrator is
-// intentionally excluded from the per-Lambda error alarms: a failed one-shot migration surfaces via
-// the deploy, not steady-state alarms.
+// already created (the HTTP APIs, the application Lambdas, and the Aurora cluster).
 new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
   ...common,
+  // Surface labels (per HTTP API), not function slugs: app-api fronts two functions.
   httpApis: [
     { label: "app-api", api: api.httpApi },
     { label: "admin-api", api: admin.httpApi },
     { label: "landing", api: edgeServices.landingApi },
   ],
-  functions: [
-    { label: "app-links", fn: api.appLinksFn },
-    { label: "app-core", fn: api.appCoreFn },
-    { label: "admin-api", fn: admin.adminApiFn },
-    { label: "admin-credentials", fn: admin.adminCredentialsFn },
-    { label: "landing", fn: edgeServices.landingFn },
-    { label: "retailer-proxy", fn: edgeServices.retailerProxyFn },
-    { label: "conversion-poller", fn: edgeServices.conversionPollerFn },
-    { label: "fx-rates", fn: edgeServices.fxRatesFn },
-    { label: "message-sender", fn: identity.messageSenderFn },
-    { label: "post-confirmation", fn: identity.postConfirmationFn },
-    { label: "whatsapp-dispatcher", fn: whatsapp.dispatcherFn },
-  ],
+  functions: OBSERVED_SERVICES.map((slug) => ({ label: slug, fn: serviceFns[slug] })),
   cluster: data.cluster,
   smsSpendLimitUsd: SMS_MONTHLY_SPEND_LIMIT_USD[wanthatEnv.name],
-  // Funnel events are emitted by landing (impression/click), the conversion poller (conversion)
-  // and the retailer proxy (order_untracked — the unattributed-revenue stream).
-  funnelLogGroups: [
-    edgeServices.landingFn.logGroup,
-    edgeServices.conversionPollerFn.logGroup,
-    edgeServices.retailerProxyFn.logGroup,
-  ],
+  funnelLogGroups: funnelServices.map((slug) => serviceFns[slug].logGroup),
 });
 
 // DnsStack — apex mail records (Zoho MX/SPF/DKIM/DMARC) for wanthat.app. Prod only: these belong to

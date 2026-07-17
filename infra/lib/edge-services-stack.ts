@@ -5,20 +5,17 @@ import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import type * as lambda from "aws-cdk-lib/aws-lambda";
 import type * as rds from "aws-cdk-lib/aws-rds";
 import * as scheduler from "aws-cdk-lib/aws-scheduler";
 import type * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 import {
   applyThrottle,
-  LAMBDA_ARCHITECTURE,
-  LAMBDA_RUNTIME,
+  makeServiceFunction,
   RDS_CA_ENV,
   rdsCaBundling,
-  serviceEntry,
-  serviceLogGroup,
+  type ServiceSlug,
   THROTTLING,
   type WanthatEnv,
 } from "./config";
@@ -69,24 +66,16 @@ export class EdgeServicesStack extends Stack {
     super(scope, id, props);
     const { wanthatEnv } = props;
 
-    const makeFn = (idPart: string, service: string, opts?: { timeoutSeconds?: number }) =>
-      new NodejsFunction(this, idPart, {
-        functionName: `wanthat-${wanthatEnv.name}-${service}`,
-        entry: serviceEntry(service),
-        handler: "handler",
-        runtime: LAMBDA_RUNTIME,
-        architecture: LAMBDA_ARCHITECTURE,
-        memorySize: 256,
+    // The stack's non-VPC baseline: config.makeServiceFunction with just the shared env var.
+    const makeFn = (slug: ServiceSlug, opts?: { timeoutSeconds?: number }) =>
+      makeServiceFunction(this, wanthatEnv, slug, {
         timeout: Duration.seconds(opts?.timeoutSeconds ?? 15),
-        // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
-        tracing: lambda.Tracing.ACTIVE,
-        logGroup: serviceLogGroup(this, `${idPart}Logs`, wanthatEnv),
         environment: { WANTHAT_ENV: wanthatEnv.name },
         bundling: { minify: true, sourceMap: true },
       });
 
     // --- landing (public HTTP API; Lambda Function URLs are unavailable in il-central-1, ADR-0007) ---
-    const landing = makeFn("Landing", "landing");
+    const landing = makeFn("landing");
     this.landingFn = landing;
     // The public site origin (dev.wanthat.app / wanthat.app) for ABSOLUTE Open Graph URLs. Behind
     // CloudFront the Lambda's Host header is the API-Gateway domain, not the site domain, so the
@@ -116,7 +105,7 @@ export class EdgeServicesStack extends Stack {
     // --- retailer proxy (sole egress; holds the credential) ---
     // 300s: the scheduled poll pages the retailer sequentially and awaits the in-VPC writer;
     // the sync generateLink callers stay bounded by their own API Gateway 30s regardless.
-    const retailerProxy = makeFn("RetailerProxy", "retailer-proxy", { timeoutSeconds: 300 });
+    const retailerProxy = makeFn("retailer-proxy", { timeoutSeconds: 300 });
     this.retailerProxyFn = retailerProxy;
     // generateLink upserts the shared Product (ADR-0004: the proxy owns the Product write; the
     // in-VPC caller writes the Recommendation — the proxy holds NO recommendation grant,
@@ -145,25 +134,17 @@ export class EdgeServicesStack extends Stack {
     );
 
     // --- conversion-poller-writer: IN-VPC, the sole money mutator (ADR-0002/0009) ---
-    const poller = new NodejsFunction(this, "ConversionPoller", {
-      functionName: `wanthat-${wanthatEnv.name}-conversion-poller`,
-      entry: serviceEntry("conversion-poller"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
+    // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap —
+    // reserving ANY amount here trips "UnreservedConcurrentExecution below its minimum" (bit
+    // the 2026-07-10 deploy). Runs are serialized anyway: the heartbeat gate allows one due
+    // poll at a time and the proxy's 300s timeout ends well inside the 15-minute heartbeat.
+    // Re-introduce a reserved budget once the account quota is raised (ADR-0002 note).
+    const poller = makeServiceFunction(this, wanthatEnv, "conversion-poller", {
       // One Aurora scale-to-zero resume (waitForDb, 60s budget) + a batch of inserts.
       timeout: Duration.seconds(90),
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "ConversionPollerLogs", wanthatEnv),
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
-      // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap —
-      // reserving ANY amount here trips "UnreservedConcurrentExecution below its minimum" (bit
-      // the 2026-07-10 deploy). Runs are serialized anyway: the heartbeat gate allows one due
-      // poll at a time and the proxy's 300s timeout ends well inside the 15-minute heartbeat.
-      // Re-introduce a reserved budget once the account quota is raised (ADR-0002 note).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         DB_HOST: props.cluster.clusterEndpoint.hostname,
@@ -184,7 +165,7 @@ export class EdgeServicesStack extends Stack {
     retailerProxy.addEnvironment("CONVERSION_WRITER_FUNCTION", poller.functionName);
 
     // fx-rates is implemented (ADR-0017): reads CONFIG `fx.provider`, writes the fx_rate cache.
-    const fxRates = makeFn("FxRates", "fx-rates");
+    const fxRates = makeFn("fx-rates");
     this.fxRatesFn = fxRates;
     props.fxRateTable.grantReadWriteData(fxRates);
     props.runtimeConfigTable.grantReadData(fxRates);

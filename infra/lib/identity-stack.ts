@@ -3,20 +3,12 @@ import * as cognito from "aws-cdk-lib/aws-cognito";
 import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as kms from "aws-cdk-lib/aws-kms";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import type * as lambda from "aws-cdk-lib/aws-lambda";
 import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import { ADMIN_LOGIN_SETTINGS, adminLoginAssets } from "./admin-login-branding";
-import {
-  LAMBDA_ARCHITECTURE,
-  LAMBDA_RUNTIME,
-  serviceEntry,
-  serviceLogGroup,
-  type WanthatEnv,
-  webOrigins,
-} from "./config";
+import { makeServiceFunction, type WanthatEnv, webOrigins } from "./config";
 
 export interface IdentityStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -153,18 +145,10 @@ export class IdentityStack extends Stack {
     // (WhatsApp via End User Messaging Social, SMS via SNS Publish). It reads the runtime-config
     // kill switches (auth.whatsappEnabled, auth.smsEnabled, ...), honours custom:otpChannel when
     // that channel is enabled, and falls back to the other enabled channel otherwise.
-    const messageSenderFn = new NodejsFunction(this, "MessageSender", {
-      functionName: `wanthat-${wanthatEnv.name}-message-sender`,
-      entry: serviceEntry("message-sender"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
+    // Non-VPC: Cognito-invoked; reaches KMS, DynamoDB, SNS and the End User Messaging Social
+    // endpoint over public AWS endpoints (ADR-0004 NAT-free).
+    const messageSenderFn = makeServiceFunction(this, wanthatEnv, "message-sender", {
       timeout: Duration.seconds(10),
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "MessageSenderLogs", wanthatEnv),
-      // Non-VPC: Cognito-invoked; reaches KMS, DynamoDB, SNS and the End User Messaging Social
-      // endpoint over public AWS endpoints (ADR-0004 NAT-free).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
@@ -203,17 +187,9 @@ export class IdentityStack extends Stack {
     // Aurora — which is exactly what makes a trigger acceptable here (no VPC, no cold DB resume).
     // The handler NEVER throws (it logs and returns the event), so an outbox or attribution failure
     // structurally cannot block a user's ConfirmSignUp.
-    const postConfirmationFn = new NodejsFunction(this, "PostConfirmation", {
-      functionName: `wanthat-${wanthatEnv.name}-post-confirmation`,
-      entry: serviceEntry("post-confirmation"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
+    // Non-VPC: Cognito-invoked; reaches DynamoDB over public AWS endpoints (ADR-0004 NAT-free).
+    const postConfirmationFn = makeServiceFunction(this, wanthatEnv, "post-confirmation", {
       timeout: Duration.seconds(10),
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "PostConfirmationLogs", wanthatEnv),
-      // Non-VPC: Cognito-invoked; reaches DynamoDB over public AWS endpoints (ADR-0004 NAT-free).
       environment: {
         NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
         GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
