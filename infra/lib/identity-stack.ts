@@ -167,7 +167,7 @@ export class IdentityStack extends Stack {
     this.otpSenderFn = otpSenderFn;
     customSenderKey.grantDecrypt(otpSenderFn);
     props.runtimeConfigTable.grantReadData(otpSenderFn);
-    // Write-only — the read paths are admin-api's activity feed and the developer AWS CLI
+    // Write-only — the read paths are admin-console's activity feed and the developer AWS CLI
     // (docs/otp-sink.md), never this function.
     props.otpSinkTable.grantWriteData(otpSenderFn);
     // sns:Publish scoped away from every topic ARN = direct-to-phone SMS only.
@@ -226,7 +226,7 @@ export class IdentityStack extends Stack {
     );
     props.guestAttributionTable.grantWriteData(postConfirmationFn);
     // Write-only: the counter increment is an UpdateItem on the counter item. Deliberately NOT a
-    // grant on the config table - admin-api stays the config table's single writer.
+    // grant on the config table - admin-console stays the config table's single writer.
     props.opsCountersTable.grantWriteData(postConfirmationFn);
     this.userPool.addTrigger(cognito.UserPoolOperation.POST_CONFIRMATION, postConfirmationFn);
 
@@ -485,25 +485,5 @@ export class IdentityStack extends Stack {
     new CfnOutput(this, "AdminSpaClientIdOut", {
       value: this.employeePoolClient.userPoolClientId,
     });
-
-    // TRANSITIONAL — dropped in refactor PR-8. The deployed observability template still imports
-    // the old MessageSender function-Ref export (its alarms + dashboard watched the function this
-    // PR renames), and a single-pass `cdk deploy --all` updates `identity` BEFORE
-    // `observability` — dropping an in-use export rolls the deploy back ("cannot delete export
-    // ... in use"). The value is the old function's PHYSICAL NAME (deterministic
-    // `wanthat-{env}-message-sender`), frozen as a per-env literal captured from
-    // `aws cloudformation list-exports --region il-central-1` (2026-07-17); nothing evaluates it
-    // once observability redeploys without the import.
-    const transitionalIdentityExports: Record<WanthatEnv["name"], Record<string, string>> = {
-      dev: {
-        ExportsOutputRefMessageSenderC8564C19C7EC2751: "wanthat-dev-message-sender",
-      },
-      prod: {
-        ExportsOutputRefMessageSenderC8564C19C7EC2751: "wanthat-prod-message-sender",
-      },
-    };
-    for (const [output, value] of Object.entries(transitionalIdentityExports[wanthatEnv.name])) {
-      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-identity:${output}` });
-    }
   }
 }

@@ -256,34 +256,5 @@ export class DataStack extends Stack {
       // even though the Lambda itself has 5 (the migrator now retries the connect via waitForDb).
       timeout: Duration.minutes(5),
     });
-
-    // TRANSITIONAL — dropped in refactor PR-8. The deployed identity/whatsapp/admin templates
-    // still import the deleted NotificationOutbox table's name/ARN/stream-ARN exports, and a
-    // single-pass `cdk deploy --all` updates `data` BEFORE those consumers — dropping an in-use
-    // export rolls the data deploy back ("cannot delete export ... in use"). An in-use export's
-    // VALUE is as frozen as its existence, so each is retained with the exact literal it exported
-    // while the table still existed (per env, captured from `aws cloudformation list-exports`);
-    // nothing evaluates them once the consumers redeploy without the imports.
-    const transitionalOutboxExports: Record<WanthatEnv["name"], Record<string, string>> = {
-      dev: {
-        ExportsOutputRefNotificationOutboxF565CEEECD77265C:
-          "wanthat-dev-data-NotificationOutboxF565CEEE-1GNZZUSOICNR8",
-        ExportsOutputFnGetAttNotificationOutboxF565CEEEArnCBE00B18:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-NotificationOutboxF565CEEE-1GNZZUSOICNR8",
-        ExportsOutputFnGetAttNotificationOutboxF565CEEEStreamArnC0F9DACD:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-NotificationOutboxF565CEEE-1GNZZUSOICNR8/stream/2026-07-02T12:19:59.304",
-      },
-      prod: {
-        ExportsOutputRefNotificationOutboxF565CEEECD77265C:
-          "wanthat-prod-data-NotificationOutboxF565CEEE-1TX16YFE2O9B6",
-        ExportsOutputFnGetAttNotificationOutboxF565CEEEArnCBE00B18:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-NotificationOutboxF565CEEE-1TX16YFE2O9B6",
-        ExportsOutputFnGetAttNotificationOutboxF565CEEEStreamArnC0F9DACD:
-          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-NotificationOutboxF565CEEE-1TX16YFE2O9B6/stream/2026-07-07T00:17:22.467",
-      },
-    };
-    for (const [output, value] of Object.entries(transitionalOutboxExports[wanthatEnv.name])) {
-      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-data:${output}` });
-    }
   }
 }

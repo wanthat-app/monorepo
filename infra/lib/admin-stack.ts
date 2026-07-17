@@ -356,27 +356,5 @@ export class AdminStack extends Stack {
     });
 
     new CfnOutput(this, "AdminApiUrl", { value: this.httpApi.apiEndpoint });
-
-    // TRANSITIONAL — dropped in refactor PR-8. The deployed observability template still imports
-    // the old AdminApi/AdminCredentials function-Ref exports (its alarms watched the functions
-    // this PR replaces), and a single-pass `cdk deploy --all` updates `admin` BEFORE
-    // `observability` — dropping an in-use export rolls the deploy back ("cannot delete export
-    // ... in use"). The values are the old functions' PHYSICAL NAMES (deterministic
-    // `wanthat-{env}-admin-api` / `wanthat-{env}-admin-credentials`), frozen as per-env literals
-    // captured from `aws cloudformation list-exports` (2026-07-17); nothing evaluates them once
-    // observability redeploys without the imports.
-    const transitionalAdminExports: Record<WanthatEnv["name"], Record<string, string>> = {
-      dev: {
-        ExportsOutputRefAdminApi059A0912DCBEE105: "wanthat-dev-admin-api",
-        ExportsOutputRefAdminCredentialsCD1C0A3A329B9BC2: "wanthat-dev-admin-credentials",
-      },
-      prod: {
-        ExportsOutputRefAdminApi059A0912DCBEE105: "wanthat-prod-admin-api",
-        ExportsOutputRefAdminCredentialsCD1C0A3A329B9BC2: "wanthat-prod-admin-credentials",
-      },
-    };
-    for (const [output, value] of Object.entries(transitionalAdminExports[wanthatEnv.name])) {
-      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-admin:${output}` });
-    }
   }
 }
