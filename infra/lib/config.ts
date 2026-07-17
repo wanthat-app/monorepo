@@ -184,6 +184,7 @@ export const SERVICES = {
   "app-core": { constructId: "AppCore", funnel: false, alarms: true },
   "admin-api": { constructId: "AdminApi", funnel: false, alarms: true },
   "admin-credentials": { constructId: "AdminCredentials", funnel: false, alarms: true },
+  "audit-writer": { constructId: "AuditWriter", funnel: false, alarms: true },
   landing: { constructId: "Landing", funnel: true, alarms: true },
   "retailer-proxy": { constructId: "RetailerProxy", funnel: true, alarms: true },
   "conversion-poller": { constructId: "ConversionPoller", funnel: true, alarms: true },

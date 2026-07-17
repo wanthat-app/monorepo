@@ -8,13 +8,15 @@ import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
  * Migration integration tests (ADR-0013: Testcontainers for packages/db) — apply every plain-SQL
  * migration, in order, to a real PostgreSQL 16 and verify the money-only end state of 0006
  * (ADR-0006 decision 4): customer gone, the ledger keyed by `cognito_sub`, append-only grants
- * intact, and the audit chain appendable by the poller role.
+ * intact, and the audit chain appendable by the poller role — plus the 0008 service-role grant
+ * surface (wallet_reader / ledger_reader / ledger_writer / audit_writer; the roles themselves
+ * are created out-of-band by runbook R1, mirrored in the test harness).
  *
  * Requires Docker (ADR-0013 accepts this: integration tests run on a Docker-enabled runner).
  * Container startup lives in the shared harness (test-harness.ts).
  */
 
-const MIGRATION_COUNT = 7;
+const MIGRATION_COUNT = 8;
 
 let testDb: TestDb;
 let db: Kysely<Database>;
@@ -36,7 +38,7 @@ async function asRole<T>(role: string, fn: (trx: Kysely<Database>) => Promise<T>
   });
 }
 
-describe("migrations 0001-0007 on real PostgreSQL", () => {
+describe("migrations 0001-0008 on real PostgreSQL", () => {
   it("apply cleanly, in order, from an empty database (fresh-env bootstrap path)", async () => {
     const { error, results } = await createMigrator(db, MIGRATIONS_DIR).migrateToLatest();
     if (error) throw error;
@@ -180,5 +182,108 @@ describe("migrations 0001-0007 on real PostgreSQL", () => {
     await expect(
       asRole("app_ro", (trx) => sql`SELECT audit_append('{"type":"x"}'::jsonb)`.execute(trx)),
     ).rejects.toThrow(/permission denied/);
+  });
+
+  // --- 0008 service-role grants (roles pre-exist via runbook R1, infra/lib/README.md) ---
+
+  it("lets audit_writer chain via audit_append, and nothing else", async () => {
+    await asRole("audit_writer", (trx) =>
+      sql`SELECT audit_append('{"type":"config_changed","key":"k","actor":"a@wanthat.app"}'::jsonb)`.execute(
+        trx,
+      ),
+    );
+    const { rows } = await sql<{ prev_hash: string | null; entry_hash: string }>`
+      SELECT prev_hash, entry_hash FROM audit_log ORDER BY id DESC LIMIT 2
+    `.execute(db);
+    // The appended row chains onto the previous writer's tail — one unforked chain across roles.
+    expect(rows[0]?.prev_hash).toBe(rows[1]?.entry_hash);
+
+    // No direct table access: audit_append (definer context) is audit_writer's ONLY capability.
+    for (const stmt of [
+      sql`INSERT INTO audit_log (prev_hash, entry_hash, payload) VALUES (NULL, 'x', '{}'::jsonb)`,
+      sql`UPDATE audit_log SET payload = '{}'::jsonb`,
+      sql`DELETE FROM audit_log`,
+      sql`INSERT INTO wallet_entry (cognito_sub, kind, amount_minor, currency, status)
+          VALUES ('sub-aw', 'adjustment', 1, 'USD', 'confirmed')`,
+      sql`UPDATE wallet_entry SET amount_minor = 0`,
+      sql`DELETE FROM wallet_entry`,
+      sql`SELECT count(*) FROM wallet_entry`,
+    ]) {
+      await expect(asRole("audit_writer", (trx) => stmt.execute(trx))).rejects.toThrow(
+        /permission denied/,
+      );
+    }
+  });
+
+  it("keeps ledger_reader read-only over the ledger AND the audit log", async () => {
+    const entries = await asRole("ledger_reader", (trx) =>
+      trx.selectFrom("wallet_entry").select("cognito_sub").execute(),
+    );
+    expect(entries.length).toBeGreaterThan(0);
+    const audits = await asRole("ledger_reader", (trx) =>
+      sql<{ n: string }>`SELECT count(*) AS n FROM audit_log`.execute(trx),
+    );
+    expect(Number(audits.rows[0]?.n)).toBeGreaterThan(0);
+
+    for (const stmt of [
+      sql`INSERT INTO wallet_entry (cognito_sub, kind, amount_minor, currency, status)
+          VALUES ('sub-lr', 'adjustment', 1, 'USD', 'confirmed')`,
+      sql`UPDATE wallet_entry SET amount_minor = 0`,
+      sql`DELETE FROM wallet_entry`,
+      sql`INSERT INTO audit_log (prev_hash, entry_hash, payload) VALUES (NULL, 'x', '{}'::jsonb)`,
+      sql`UPDATE audit_log SET payload = '{}'::jsonb`,
+      sql`DELETE FROM audit_log`,
+      sql`SELECT audit_append('{"type":"x"}'::jsonb)`,
+    ]) {
+      await expect(asRole("ledger_reader", (trx) => stmt.execute(trx))).rejects.toThrow(
+        /permission denied/,
+      );
+    }
+  });
+
+  it("scopes wallet_reader to the ledger: SELECT wallet_entry, no audit_log at all", async () => {
+    const rows = await asRole("wallet_reader", (trx) =>
+      trx.selectFrom("wallet_entry").select("cognito_sub").execute(),
+    );
+    expect(rows.length).toBeGreaterThan(0);
+
+    for (const stmt of [
+      sql`SELECT count(*) FROM audit_log`,
+      sql`INSERT INTO wallet_entry (cognito_sub, kind, amount_minor, currency, status)
+          VALUES ('sub-wr', 'adjustment', 1, 'USD', 'confirmed')`,
+      sql`UPDATE wallet_entry SET amount_minor = 0`,
+      sql`DELETE FROM wallet_entry`,
+      sql`SELECT audit_append('{"type":"x"}'::jsonb)`,
+    ]) {
+      await expect(asRole("wallet_reader", (trx) => stmt.execute(trx))).rejects.toThrow(
+        /permission denied/,
+      );
+    }
+  });
+
+  it("makes ledger_writer append-only: INSERT + audit_append yes, mutation never", async () => {
+    await asRole("ledger_writer", (trx) =>
+      sql`
+        INSERT INTO wallet_entry (cognito_sub, kind, amount_minor, currency, order_id, status)
+        VALUES ('sub-lw', 'referrer_cashback', 500, 'USD', 'order-lw-1', 'pending')
+      `.execute(trx),
+    );
+    await asRole("ledger_writer", (trx) =>
+      sql`SELECT audit_append('{"type":"wallet_entry","orderId":"order-lw-1"}'::jsonb)`.execute(
+        trx,
+      ),
+    );
+
+    for (const stmt of [
+      sql`UPDATE wallet_entry SET amount_minor = 0 WHERE order_id = 'order-lw-1'`,
+      sql`DELETE FROM wallet_entry WHERE order_id = 'order-lw-1'`,
+      sql`INSERT INTO audit_log (prev_hash, entry_hash, payload) VALUES (NULL, 'x', '{}'::jsonb)`,
+      sql`UPDATE audit_log SET payload = '{}'::jsonb`,
+      sql`DELETE FROM audit_log`,
+    ]) {
+      await expect(asRole("ledger_writer", (trx) => stmt.execute(trx))).rejects.toThrow(
+        /permission denied/,
+      );
+    }
   });
 });

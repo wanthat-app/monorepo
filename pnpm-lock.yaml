@@ -300,6 +300,18 @@ importers:
         specifier: ^4.6.0
         version: 4.12.27
 
+  services/audit-writer:
+    dependencies:
+      '@aws-lambda-powertools/logger':
+        specifier: ^2.8.0
+        version: 2.33.1
+      '@wanthat/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@wanthat/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+
   services/conversion-poller:
     dependencies:
       '@aws-lambda-powertools/logger':

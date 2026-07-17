@@ -141,6 +141,9 @@ export class DataStack extends Stack {
       timeToLiveAttribute: "ttl",
       stream: dynamodb.StreamViewType.NEW_IMAGE,
       ...common,
+      // DESTROY in ALL envs (overriding common's prod RETAIN): pre-deploys the DeletionPolicy
+      // so PR-4's removal of this table actually deletes it in prod instead of orphaning it.
+      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // OTP sink (docs/otp-sink.md): message-sender parks EVERY code here before its delivery

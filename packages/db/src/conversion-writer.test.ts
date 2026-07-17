@@ -1,12 +1,10 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
-import { PostgreSqlContainer, type StartedPostgreSqlContainer } from "@testcontainers/postgresql";
-import { Kysely, PostgresDialect, sql } from "kysely";
-import pg from "pg";
+import { type Kysely, sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { appendAudit, appendWalletEntry, type WalletEntryInsert } from "./conversion-writer";
+import { appendAudit } from "./audit";
+import { appendWalletEntry, type WalletEntryInsert } from "./conversion-writer";
 import { createMigrator } from "./migrator";
 import type { Database } from "./schema";
+import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
 
 /**
  * Writer-primitive integration tests on a real PostgreSQL 16 (ADR-0013; Docker-enabled runner —
@@ -15,23 +13,18 @@ import type { Database } from "./schema";
  * advances append new rows; audit_append chains hashes.
  */
 
-const MIGRATIONS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "migrations");
-
-let container: StartedPostgreSqlContainer;
+let testDb: TestDb;
 let db: Kysely<Database>;
 
 beforeAll(async () => {
-  container = await new PostgreSqlContainer("postgres:16-alpine").start();
-  const pool = new pg.Pool({ connectionString: container.getConnectionUri() });
-  await pool.query("CREATE ROLE rds_iam NOLOGIN"); // RDS-ism stand-in (see migrations.test.ts)
-  db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
+  testDb = await startTestDb();
+  db = testDb.db;
   const { error } = await createMigrator(db, MIGRATIONS_DIR).migrateToLatest();
   if (error) throw error;
 }, 180_000);
 
 afterAll(async () => {
-  await db?.destroy();
-  await container?.stop();
+  await testDb?.stop();
 });
 
 const ENTRY: WalletEntryInsert = {

@@ -69,6 +69,8 @@ export class AdminStack extends Stack {
   readonly adminApiFn: lambda.Function;
   /** The non-VPC credential-drop Lambda — observed by the ObservabilityStack. */
   readonly adminCredentialsFn: lambda.Function;
+  /** The in-VPC audit-writer Lambda (refactor PR-3) — observed by the ObservabilityStack. */
+  readonly auditWriterFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: AdminStackProps) {
     super(scope, id, props);
@@ -120,6 +122,31 @@ export class AdminStack extends Stack {
     // The activity feed scans the parked OTP codes and the signup outbox (read-only).
     props.otpSinkTable.grantReadData(fn);
     props.notificationOutboxTable.grantReadData(fn);
+
+    // The audit-writer (refactor PR-3): the ONE generic append path into the hash-chained
+    // audit_log. In-VPC (it is an Aurora writer, ADR-0004) as the `audit_writer` role, whose
+    // sole capability is EXECUTE on audit_append (migration 0008; the role itself is created
+    // out-of-band by runbook R1 — see lib/README.md — which must run in an env BEFORE this
+    // deploys there). Invoked directly with a typed AuditWriteRequest payload — deliberately
+    // NO invoke grants yet: the admin-console caller arrives in PR-5, post-confirmation later.
+    const auditWriterFn = makeServiceFunction(this, wanthatEnv, "audit-writer", {
+      timeout: Duration.seconds(30), // in-VPC Aurora: first connect may resume a scale-to-zero cluster
+      vpc: props.vpc,
+      vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [props.lambdaSg],
+      environment: {
+        WANTHAT_ENV: wanthatEnv.name,
+        DB_HOST: props.cluster.clusterEndpoint.hostname,
+        DB_NAME: "wanthat",
+        DB_USER: "audit_writer",
+        // Trust the Amazon RDS CA so the in-VPC TLS connection to Aurora verifies (ADR-0006).
+        ...RDS_CA_ENV,
+      },
+      // Ships the RDS CA bundle into the artifact so NODE_EXTRA_CA_CERTS above can point at it.
+      bundling: rdsCaBundling,
+    });
+    this.auditWriterFn = auditWriterFn;
+    props.cluster.grantConnect(auditWriterFn, "audit_writer");
 
     // The retailer-credential drop runs as a separate NON-VPC function: Secrets Manager is only
     // reachable over its public endpoint, and the VPC is deliberately endpoint-free (ADR-0004;

@@ -29,6 +29,17 @@ export async function startTestDb(): Promise<TestDb> {
   const pool = new pg.Pool({ connectionString: container.getConnectionUri() });
   // RDS provides rds_iam; plain Postgres does not. The migrations only GRANT it, so NOLOGIN works.
   await pool.query("CREATE ROLE rds_iam NOLOGIN");
+  // The four service roles are created OUT-OF-BAND by an operator in AWS (runbook R1,
+  // infra/lib/README.md — wanthat_migrator has no CREATEROLE, so migration 0008 only GRANTs on
+  // them). Mirror R1 here so the migrations apply on plain Postgres.
+  await pool.query(`
+    CREATE ROLE wallet_reader LOGIN;
+    CREATE ROLE ledger_reader LOGIN;
+    CREATE ROLE ledger_writer LOGIN;
+    CREATE ROLE audit_writer  LOGIN;
+    GRANT rds_iam TO wallet_reader, ledger_reader, ledger_writer, audit_writer;
+    GRANT USAGE ON SCHEMA public TO wallet_reader, ledger_reader, ledger_writer, audit_writer;
+  `);
   const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
   return {
     db,

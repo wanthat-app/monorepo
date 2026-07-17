@@ -1,4 +1,4 @@
-import { type Kysely, sql } from "kysely";
+import type { Kysely } from "kysely";
 import type { Database } from "./schema";
 
 /**
@@ -6,8 +6,8 @@ import type { Database } from "./schema";
  * only, deduplicated by the unique partial index `wallet_entry_order_kind_status_idx
  * (order_id, kind, status)` — a re-read window re-offers the same rows and they no-op, while a
  * status advance (pending → confirmed → clawback) is a NEW immutable row. Every row that
- * actually lands must also be chained into the audit log via `audit_append` (0005, SECURITY
- * DEFINER) — the caller sequences that, keyed off this function's return.
+ * actually lands must also be chained into the audit log via `appendAudit` (see audit.ts) —
+ * the caller sequences that, keyed off this function's return.
  */
 export interface WalletEntryInsert {
   cognitoSub: string;
@@ -39,9 +39,4 @@ export async function appendWalletEntry(
     .returning("id")
     .executeTakeFirst();
   return inserted !== undefined;
-}
-
-/** Chain one payload into audit_log — the ONLY way rows enter it (advisory-lock serialized). */
-export async function appendAudit(db: Kysely<Database>, payload: unknown): Promise<void> {
-  await sql`select audit_append(${JSON.stringify(payload)}::jsonb, now())`.execute(db);
 }
