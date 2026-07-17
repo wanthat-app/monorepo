@@ -1,6 +1,6 @@
+import { Logo } from "@wanthat/ui";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
-import { Logo } from "../../ui";
 import { UserChip, useSession } from "../../user";
 
 /**

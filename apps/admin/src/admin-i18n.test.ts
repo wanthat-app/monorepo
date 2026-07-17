@@ -1,6 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { adminI18n } from "./admin-i18n";
-import i18n from "./i18n";
 
 /** In-memory localStorage stub; returns the backing map for assertions. */
 function stubStorage() {
@@ -16,30 +15,18 @@ function stubStorage() {
 afterEach(() => vi.unstubAllGlobals());
 
 describe("admin i18n instance", () => {
-  it("is independent of the member instance - the two languages work in parallel", async () => {
-    await i18n.changeLanguage("he");
+  it("translates the admin namespace in both languages", async () => {
     await adminI18n.changeLanguage("en");
-    expect(i18n.language).toBe("he");
-    expect(adminI18n.language).toBe("en");
-    expect(i18n.t("user.profile")).toBe("פרופיל");
-    expect(adminI18n.t("user.profile")).toBe("Profile");
-
-    // Flipping one instance leaves the other untouched, in both directions.
+    expect(adminI18n.t("admin.configuration")).toBe("Configuration");
     await adminI18n.changeLanguage("he");
-    expect(i18n.language).toBe("he");
-    await i18n.changeLanguage("en");
-    expect(adminI18n.language).toBe("he");
     expect(adminI18n.t("admin.configuration")).toBe("תצורה");
   });
 
-  it("persists under its own key, never the member app's", async () => {
+  it("persists under the console's own key (wanthat.adminLang), never the member app's", async () => {
     const store = stubStorage();
     await adminI18n.changeLanguage("en");
     expect(store.get("wanthat.adminLang")).toBe("en");
+    // The member app's key stays untouched — the console never writes wanthat.lang.
     expect(store.has("wanthat.lang")).toBe(false);
-
-    await i18n.changeLanguage("he");
-    expect(store.get("wanthat.lang")).toBe("he");
-    expect(store.get("wanthat.adminLang")).toBe("en"); // untouched by the member change
   });
 });

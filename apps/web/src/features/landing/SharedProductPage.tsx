@@ -1,12 +1,17 @@
 import { convertMinor } from "@wanthat/domain";
+import {
+  AttributionChip,
+  Button,
+  formatMoneyMinor,
+  Logo,
+  ProductCard,
+  RecommendationQuote,
+  Screen,
+} from "@wanthat/ui";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
 import { getOrMintGuestId, resolveRedirect } from "../../lib/landing-api";
-import { formatMoneyMinor } from "../../lib/money";
-import { Logo } from "../../ui/brand";
-import { Button, Screen } from "../../ui/components";
-import { AttributionChip, ProductCard, RecommendationQuote } from "../../ui/wallet";
 import {
   BiometricGlyph,
   biometricLabelKey,

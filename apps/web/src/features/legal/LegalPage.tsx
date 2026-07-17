@@ -1,5 +1,5 @@
+import { Screen } from "@wanthat/ui";
 import { useTranslation } from "react-i18next";
-import { Screen } from "../../ui";
 import { AppHeader } from "../shell/AppHeader";
 
 /**

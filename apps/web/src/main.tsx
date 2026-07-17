@@ -4,8 +4,6 @@ import { createRoot } from "react-dom/client";
 import { createBrowserRouter, RouterProvider } from "react-router-dom";
 import { App } from "./App";
 import { ActivityPage } from "./features/activity/ActivityPage";
-import { AdminCallbackPage } from "./features/admin/AdminCallbackPage";
-import { AdminPage } from "./features/admin/AdminPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { CreateLinkPage } from "./features/create/CreateLinkPage";
 import { HomePage } from "./features/home/HomePage";
@@ -13,6 +11,7 @@ import { SharedProductPage } from "./features/landing/SharedProductPage";
 import { LegalPage } from "./features/legal/LegalPage";
 import { NotFoundPage } from "./features/not-found/NotFoundPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
+import { AdminRedirect } from "./features/shell/AdminRedirect";
 import { RouteErrorPage } from "./features/shell/RouteErrorPage";
 import { SiteNotice } from "./features/shell/SiteNotice";
 import "./i18n";
@@ -40,15 +39,10 @@ const router = createBrowserRouter([
       // Sample legal pages — linked from the registration consent checkbox.
       { path: "/terms", element: <LegalPage kind="terms" /> },
       { path: "/privacy", element: <LegalPage kind="privacy" /> },
-      // Each admin view has its own URL so deep links, reloads and browser history work.
-      { path: "/admin", element: <AdminPage /> },
-      { path: "/admin/users", element: <AdminPage /> },
-      { path: "/admin/users/:sub", element: <AdminPage /> },
-      { path: "/admin/orders", element: <AdminPage /> },
-      { path: "/admin/orders/:orderId", element: <AdminPage /> },
-      { path: "/admin/activity", element: <AdminPage /> },
-      { path: "/admin/settings", element: <AdminPage /> },
-      { path: "/admin/callback", element: <AdminCallbackPage /> },
+      // The admin console lives on its OWN origin (admin.{domain}) — employee tokens are
+      // storage-isolated from all customer-facing code. Old /admin* deep links redirect there.
+      { path: "/admin", element: <AdminRedirect /> },
+      { path: "/admin/*", element: <AdminRedirect /> },
       // Catch-all 404 for any unknown URL (otherwise react-router shows its developer error page).
       { path: "*", element: <NotFoundPage /> },
     ],

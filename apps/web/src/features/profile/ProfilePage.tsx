@@ -1,6 +1,6 @@
+import { BackButton, Card, Screen } from "@wanthat/ui";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { BackButton, Card, Screen } from "../../ui";
 import { ProfileEditor, useSession } from "../../user";
 
 /**

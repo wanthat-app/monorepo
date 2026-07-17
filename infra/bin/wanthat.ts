@@ -150,13 +150,18 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
   crossRegionReferences: true,
   landingApiId: edgeServices.landingApi.apiId,
   // Public runtime config written to /config.json in the SPA bucket (cross-region from il-central-1).
+  // The EdgeStack adds `adminOrigin` itself (the admin console's own origin, for the /admin* stub).
   spaConfig: {
     apiUrl: api.httpApi.apiEndpoint,
-    adminApiUrl: admin.httpApi.apiEndpoint,
     // ADR-0006: the SPA calls cognito-idp.<region>.amazonaws.com directly for every customer auth
     // ceremony (no Managed Login for customers). A synth-time literal, not a stack output.
     cognitoRegion: wanthatEnv.region,
     userPoolClientId: identity.userPoolClient.userPoolClientId,
+  },
+  // The ADMIN console's own /config.json (admin bucket) — the console is its own SPA on its own
+  // origin (apps/admin), so the member config no longer carries any admin values.
+  adminSpaConfig: {
+    adminApiUrl: admin.httpApi.apiEndpoint,
     adminManagedLoginUrl: identity.employeePoolDomain.baseUrl(),
     adminPoolClientId: identity.employeePoolClient.userPoolClientId,
   },

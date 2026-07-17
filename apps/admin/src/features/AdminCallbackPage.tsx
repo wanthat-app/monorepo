@@ -1,3 +1,4 @@
+import { Spinner } from "@wanthat/ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -5,8 +6,7 @@ import {
   completeAdminLogin,
   consumeAdminReturnPath,
   verifyAdminOauthState,
-} from "../../lib/admin-login";
-import { Spinner } from "../../ui/components";
+} from "../lib/admin-login";
 import { AdminI18nProvider } from "./AdminI18nProvider";
 
 /**
@@ -31,7 +31,7 @@ function AdminCallback() {
     const params = new URLSearchParams(window.location.search);
     const code = params.get("code");
     if (!code) {
-      navigate("/admin", { replace: true });
+      navigate("/", { replace: true });
       return;
     }
     // CSRF: the returned `state` must match the value stashed before the redirect. Verify (and clear)

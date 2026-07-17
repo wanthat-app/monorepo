@@ -4,6 +4,15 @@ import type {
   ConfigValue,
   RetailerCredentialsStatus,
 } from "@wanthat/contracts";
+import {
+  Button,
+  formatMoneyMinor,
+  RangeSlider,
+  Segmented,
+  Skeleton,
+  Spinner,
+  Switch,
+} from "@wanthat/ui";
 import { type ReactNode, useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -13,17 +22,15 @@ import {
   type MoneyStatsWire,
   type StatsOverview,
   type UsersStats,
-} from "../../lib/admin-api";
+} from "../lib/admin-api";
 import {
   type AdminTokens,
   beginAdminLogin,
   beginAdminLogout,
   ensureFreshAdminTokens,
   isAdminSession,
-} from "../../lib/admin-login";
-import { identityFromIdToken } from "../../lib/jwt";
-import { formatMoneyMinor } from "../../lib/money";
-import { Button, RangeSlider, Segmented, Skeleton, Spinner, Switch } from "../../ui/components";
+} from "../lib/admin-login";
+import { identityFromIdToken } from "../lib/jwt";
 import { ActivityView } from "./ActivityView";
 import { AdminI18nProvider } from "./AdminI18nProvider";
 import { AdminLayout, type AdminView } from "./AdminLayout";
@@ -38,44 +45,45 @@ import { UsersView } from "./UsersView";
  * a segmented FX-source toggle and switches, batching all dirty keys through a single save bar.
  *
  * Authenticated against the **employee** Cognito pool (ADR-0006 §two-pool), separate from the customer
- * session: an admin token is obtained via the employee hosted UI (`/admin/callback`). Without one we
- * redirect to that login; the `admin` group gates the UI client-side and admin-api re-enforces it. The
- * layout follows the document direction (RTL for Hebrew, the default) via logical properties.
+ * session: an admin token is obtained via the employee hosted UI (`/callback` on this origin). Without
+ * one we redirect to that login; the `admin` group gates the UI client-side and admin-api re-enforces
+ * it. The layout follows the document direction (RTL for Hebrew, the default) via logical properties.
  */
 // Each admin view owns a URL (deep links, reloads and back/forward all work); the path is the
-// single source of truth for the active view. The "config" view lives under /admin/settings to
+// single source of truth for the active view. The console serves at the ROOT of its own origin
+// (admin.{domain}), so there is no /admin prefix; the "config" view lives under /settings to
 // match the sidebar's Settings section.
 const VIEW_PATHS: Record<AdminView, string> = {
-  dashboard: "/admin",
-  users: "/admin/users",
-  orders: "/admin/orders",
-  activity: "/admin/activity",
-  config: "/admin/settings",
+  dashboard: "/",
+  users: "/users",
+  orders: "/orders",
+  activity: "/activity",
+  config: "/settings",
 };
 
 function viewFromPath(pathname: string): AdminView {
   const match = (Object.keys(VIEW_PATHS) as AdminView[]).find((v) => VIEW_PATHS[v] === pathname);
-  // /admin/orders/{orderId} and /admin/users/{sub} are detail pages of their list views.
-  if (!match && pathname.startsWith("/admin/orders/")) return "orders";
-  if (!match && pathname.startsWith("/admin/users/")) return "users";
+  // /orders/{orderId} and /users/{sub} are detail pages of their list views.
+  if (!match && pathname.startsWith("/orders/")) return "orders";
+  if (!match && pathname.startsWith("/users/")) return "users";
   return match ?? "dashboard";
 }
 
-/** The order id when the path is the /admin/orders/{orderId} detail page; null on the list. */
+/** The order id when the path is the /orders/{orderId} detail page; null on the list. */
 function orderIdFromPath(pathname: string): string | null {
-  const m = /^\/admin\/orders\/([^/]+)$/.exec(pathname);
+  const m = /^\/orders\/([^/]+)$/.exec(pathname);
   return m?.[1] ? decodeURIComponent(m[1]) : null;
 }
 
-/** The member sub when the path is the /admin/users/{sub} detail page; null on the list. */
+/** The member sub when the path is the /users/{sub} detail page; null on the list. */
 function userSubFromPath(pathname: string): string | null {
-  const m = /^\/admin\/users\/([^/]+)$/.exec(pathname);
+  const m = /^\/users\/([^/]+)$/.exec(pathname);
   return m?.[1] ? decodeURIComponent(m[1]) : null;
 }
 
 export function AdminPage() {
-  // The whole console renders inside the admin i18n boundary: its own language instance +
-  // document-direction ownership, independent of the member app (see AdminI18nProvider).
+  // The whole console renders inside the admin i18n boundary: its own i18next instance with its
+  // own persisted language choice (see AdminI18nProvider / admin-i18n.ts).
   return (
     <AdminI18nProvider>
       <AdminConsole />

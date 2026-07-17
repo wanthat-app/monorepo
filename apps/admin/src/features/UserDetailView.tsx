@@ -1,10 +1,9 @@
 import type { AdminUserItem, AdminUserRecommendationItem } from "@wanthat/contracts";
+import { formatMoneyMinor, Skeleton, StatusBadge } from "@wanthat/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { type AdminUserWalletWire, adminApi } from "../../lib/admin-api";
-import { formatMoneyMinor } from "../../lib/money";
-import { Skeleton, StatusBadge } from "../../ui/components";
+import { type AdminUserWalletWire, adminApi } from "../lib/admin-api";
 
 const ROW_STATUS = { confirmed: "confirmed", pending: "pending", clawback: "rejected" } as const;
 
@@ -95,7 +94,7 @@ export function UserDetailView({ token, sub }: { token: string | null; sub: stri
     <div className="max-w-[1080px]">
       <button
         type="button"
-        onClick={() => navigate("/admin/users")}
+        onClick={() => navigate("/users")}
         className="mb-4 text-[13px] font-bold text-accent"
       >
         ‹ {t("admin.userPage.backToList")}

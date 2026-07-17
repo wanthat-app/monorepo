@@ -4,10 +4,9 @@ import { configApi } from "../../lib/api";
 
 /**
  * Admin-set site-wide notice (runtime config `site.noticeEn` / `site.noticeHe`, public keys):
- * when either text is non-empty, every page — member app and admin console alike — carries a
- * warning bar with it (e.g. "test environment", maintenance heads-up). Language follows the
- * member locale; admin routes (English-only console) read the English text; either falls back
- * to the other when only one is set. Fetch failure or empty values render nothing — the
+ * when either text is non-empty, every member page carries a warning bar with it (e.g. "test
+ * environment", maintenance heads-up). Language follows the member locale; either text falls
+ * back to the other when only one is set. Fetch failure or empty values render nothing — the
  * banner can never block the app.
  */
 export function SiteNotice() {
@@ -23,8 +22,7 @@ export function SiteNotice() {
   if (!values) return null;
   const en = typeof values["site.noticeEn"] === "string" ? values["site.noticeEn"].trim() : "";
   const he = typeof values["site.noticeHe"] === "string" ? values["site.noticeHe"].trim() : "";
-  const isAdmin = window.location.pathname.startsWith("/admin");
-  const preferHe = !isAdmin && i18n.language.startsWith("he");
+  const preferHe = i18n.language.startsWith("he");
   const text = preferHe ? he || en : en || he;
   if (!text) return null;
 

@@ -1,6 +1,6 @@
+import { Screen } from "@wanthat/ui";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { Screen } from "../../ui/components";
 
 /** Catch-all 404 — replaces react-router's developer error page on unknown URLs. */
 export function NotFoundPage() {

@@ -1,11 +1,10 @@
 import type { AdminUserItem } from "@wanthat/contracts";
+import { Chip, SearchField, Skeleton, StatusBadge } from "@wanthat/ui";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { adminApi, normalizePhonePrefix } from "../../lib/admin-api";
-import { ApiError } from "../../lib/api";
-import { SearchField } from "../../ui/admin";
-import { Chip, Skeleton, StatusBadge } from "../../ui/components";
+import { adminApi, normalizePhonePrefix } from "../lib/admin-api";
+import { ApiError } from "../lib/api";
 
 const PAGE_SIZE = 20;
 
@@ -268,7 +267,7 @@ export function UsersView({ token }: { token: string | null }) {
                   <span className="flex-[1.2] pe-3">
                     <button
                       type="button"
-                      onClick={() => navigate(`/admin/users/${encodeURIComponent(user.id)}`)}
+                      onClick={() => navigate(`/users/${encodeURIComponent(user.id)}`)}
                       className="block max-w-full truncate text-start text-[13.5px] font-semibold text-accent underline-offset-2 hover:underline"
                     >
                       {name || user.phone}
