@@ -1,4 +1,4 @@
-import { ArnFormat, CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
+import { CfnOutput, Duration, Stack, type StackProps } from "aws-cdk-lib";
 import { CorsHttpMethod, HttpApi, HttpMethod } from "aws-cdk-lib/aws-apigatewayv2";
 import { HttpJwtAuthorizer } from "aws-cdk-lib/aws-apigatewayv2-authorizers";
 import { HttpLambdaIntegration } from "aws-cdk-lib/aws-apigatewayv2-integrations";
@@ -7,18 +7,16 @@ import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import type * as lambda from "aws-cdk-lib/aws-lambda";
 import type * as rds from "aws-cdk-lib/aws-rds";
 import type { Construct } from "constructs";
 import {
   applyThrottle,
-  LAMBDA_ARCHITECTURE,
-  LAMBDA_RUNTIME,
+  functionArnFor,
+  makeServiceFunction,
+  physicalName,
   RDS_CA_ENV,
   rdsCaBundling,
-  serviceEntry,
-  serviceLogGroup,
   THROTTLING,
   type WanthatEnv,
   webOrigins,
@@ -74,22 +72,12 @@ export class ApiStack extends Stack {
     const { wanthatEnv } = props;
 
     // --- app-links: NON-VPC links edge (DynamoDB + retailer-proxy invoke; no Cognito, no Aurora) ---
-    const appLinksFn = new NodejsFunction(this, "AppLinks", {
-      functionName: `wanthat-${wanthatEnv.name}-app-links`,
-      entry: serviceEntry("app-links"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
-      timeout: Duration.seconds(15),
-      // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "AppLinksLogs", wanthatEnv),
-      // No VPC: the links edge reaches DynamoDB over public AWS endpoints and its sync
-      // retailer-proxy invoke is free from outside the VPC (ADR-0004 asymmetry).
-      // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and
-      // this function is DynamoDB-only (no Aurora connection pressure). Re-introduce a reserved
-      // budget once the account quota is raised - see infra issue (ADR-0002).
+    // No VPC: the links edge reaches DynamoDB over public AWS endpoints and its sync
+    // retailer-proxy invoke is free from outside the VPC (ADR-0004 asymmetry).
+    // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and
+    // this function is DynamoDB-only (no Aurora connection pressure). Re-introduce a reserved
+    // budget once the account quota is raised - see infra issue (ADR-0002).
+    const appLinksFn = makeServiceFunction(this, wanthatEnv, "app-links", {
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
@@ -97,7 +85,7 @@ export class ApiStack extends Stack {
         // export -> deploy-order independent).
         PRODUCT_TABLE: props.productTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
-        RETAILER_PROXY_FUNCTION: `wanthat-${wanthatEnv.name}-retailer-proxy`,
+        RETAILER_PROXY_FUNCTION: physicalName(wanthatEnv, "retailer-proxy"),
         FX_RATE_TABLE: props.fxRateTable.tableName,
         // Dashboard metrics (spec 2026-07-12): presence stamps + daily counters in OpsCounters.
         OPS_COUNTERS_TABLE: props.opsCountersTable.tableName,
@@ -122,34 +110,19 @@ export class ApiStack extends Stack {
     appLinksFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["lambda:InvokeFunction"],
-        resources: [
-          this.formatArn({
-            service: "lambda",
-            resource: "function",
-            resourceName: `wanthat-${wanthatEnv.name}-retailer-proxy`,
-            arnFormat: ArnFormat.COLON_RESOURCE_NAME,
-          }),
-        ],
+        resources: [functionArnFor(this, wanthatEnv, "retailer-proxy")],
       }),
     );
 
     // --- app-core: IN-VPC wallet core (Aurora only; ADR-0006 makes Aurora money-only) ---
-    const appCoreFn = new NodejsFunction(this, "AppCore", {
-      functionName: `wanthat-${wanthatEnv.name}-app-core`,
-      entry: serviceEntry("app-core"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
+    // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and
+    // app-core's Aurora connection pressure is minimal vs max_connections=50. Re-introduce a
+    // reserved budget once the account quota is raised - see infra issue (ADR-0002).
+    const appCoreFn = makeServiceFunction(this, wanthatEnv, "app-core", {
       timeout: Duration.seconds(30), // first connect may resume a scale-to-zero cluster (up to ~30s)
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "AppCoreLogs", wanthatEnv),
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
-      // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and
-      // app-core's Aurora connection pressure is minimal vs max_connections=50. Re-introduce a
-      // reserved budget once the account quota is raised - see infra issue (ADR-0002).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         DB_HOST: props.cluster.clusterEndpoint.hostname,

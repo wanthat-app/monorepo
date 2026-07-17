@@ -1,8 +1,10 @@
 import * as path from "node:path";
 import { fileURLToPath } from "node:url";
-import { RemovalPolicy } from "aws-cdk-lib";
+import { ArnFormat, Duration, RemovalPolicy, type Stack } from "aws-cdk-lib";
 import type { CfnStage, HttpApi } from "aws-cdk-lib/aws-apigatewayv2";
+import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import * as lambda from "aws-cdk-lib/aws-lambda";
+import { type BundlingOptions, NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as logs from "aws-cdk-lib/aws-logs";
 import type { Construct } from "constructs";
 
@@ -149,8 +151,91 @@ export function applyThrottle(httpApi: HttpApi, throttle: Throttle): void {
 const here = path.dirname(fileURLToPath(import.meta.url)); // infra/lib
 export const REPO_ROOT = path.resolve(here, "..", "..");
 
+/** Per-service registry metadata — see {@link SERVICES}. */
+export interface ServiceMeta {
+  /**
+   * The service's CDK construct id (PascalCase). Construct ids drive CloudFormation logical ids,
+   * so changing one REPLACES the deployed function — renames are their own deliberate PR, never a
+   * side effect. Note the one irregular id: `whatsapp-dispatcher` -> `Dispatcher`.
+   */
+  readonly constructId: string;
+  /**
+   * Emits structured funnel events (impression/click/conversion/order_untracked) that the
+   * ObservabilityStack subscribes into the FunnelAnalytics pipeline.
+   */
+  readonly funnel: boolean;
+  /**
+   * Watched by the ObservabilityStack per-Lambda error alarms. Only the one-shot db-migrator is
+   * excluded: a failed migration surfaces via the deploy itself, not steady-state alarms.
+   */
+  readonly alarms: boolean;
+}
+
+/**
+ * The service registry — the single source of truth for service naming (slug -> construct id).
+ *
+ * The slug (key) is the directory name under `services/` AND the suffix of the function's physical
+ * name (`wanthat-{env}-{slug}`, {@link physicalName}); the construct id drives CFN logical ids
+ * ({@link constructId}). Key ORDER is load-bearing: {@link OBSERVED_SERVICES} derives the
+ * observability alarm/dashboard order from it.
+ */
+export const SERVICES = {
+  "app-links": { constructId: "AppLinks", funnel: false, alarms: true },
+  "app-core": { constructId: "AppCore", funnel: false, alarms: true },
+  "admin-api": { constructId: "AdminApi", funnel: false, alarms: true },
+  "admin-credentials": { constructId: "AdminCredentials", funnel: false, alarms: true },
+  landing: { constructId: "Landing", funnel: true, alarms: true },
+  "retailer-proxy": { constructId: "RetailerProxy", funnel: true, alarms: true },
+  "conversion-poller": { constructId: "ConversionPoller", funnel: true, alarms: true },
+  "fx-rates": { constructId: "FxRates", funnel: false, alarms: true },
+  "message-sender": { constructId: "MessageSender", funnel: false, alarms: true },
+  "post-confirmation": { constructId: "PostConfirmation", funnel: false, alarms: true },
+  "whatsapp-dispatcher": { constructId: "Dispatcher", funnel: false, alarms: true },
+  "db-migrator": { constructId: "DbMigrator", funnel: false, alarms: false },
+} as const satisfies Record<string, ServiceMeta>;
+
+/** A service slug — a key of {@link SERVICES} (and a directory name under `services/`). */
+export type ServiceSlug = keyof typeof SERVICES;
+
+/** The slugs whose Lambdas the ObservabilityStack alarms on (registry order = dashboard order). */
+export type AlarmedServiceSlug = {
+  [K in ServiceSlug]: (typeof SERVICES)[K]["alarms"] extends true ? K : never;
+}[ServiceSlug];
+
+/** The slugs that emit funnel events (their log groups feed the FunnelAnalytics pipeline). */
+export type FunnelServiceSlug = {
+  [K in ServiceSlug]: (typeof SERVICES)[K]["funnel"] extends true ? K : never;
+}[ServiceSlug];
+
+/**
+ * Alarm-watched slugs in registry order — the ObservabilityStack `{label, fn}` list derives its
+ * labels (and its alarm/dashboard order) from this, so a rename lands in the alarms for free.
+ */
+export const OBSERVED_SERVICES: readonly AlarmedServiceSlug[] = (
+  Object.keys(SERVICES) as ServiceSlug[]
+).filter((slug): slug is AlarmedServiceSlug => SERVICES[slug].alarms);
+
+/** A service Lambda's deterministic physical name — `wanthat-{env}-{slug}`. */
+export const physicalName = (env: WanthatEnv, slug: ServiceSlug): string =>
+  `wanthat-${env.name}-${slug}`;
+
+/** A service's CDK construct id (from {@link SERVICES} — drives the CFN logical id). */
+export const constructId = (slug: ServiceSlug): string => SERVICES[slug].constructId;
+
+/**
+ * A service Lambda's ARN built from its deterministic {@link physicalName} — for cross-stack
+ * invoke grants/env vars WITHOUT a CloudFormation export (deploy-order independent, ADR-0004).
+ */
+export const functionArnFor = (stack: Stack, env: WanthatEnv, slug: ServiceSlug): string =>
+  stack.formatArn({
+    service: "lambda",
+    resource: "function",
+    resourceName: physicalName(env, slug),
+    arnFormat: ArnFormat.COLON_RESOURCE_NAME,
+  });
+
 /** Absolute path to a service's Lambda handler entry (`src/handler.ts`), for NodejsFunction bundling. */
-export const serviceEntry = (service: string): string =>
+export const serviceEntry = (service: ServiceSlug): string =>
   path.join(REPO_ROOT, "services", service, "src", "handler.ts");
 
 /**
@@ -236,5 +321,55 @@ export function serviceLogGroup(scope: Construct, id: string, env: WanthatEnv): 
   return new logs.LogGroup(scope, id, {
     retention: isProd ? logs.RetentionDays.SIX_MONTHS : logs.RetentionDays.ONE_MONTH,
     removalPolicy: isProd ? RemovalPolicy.RETAIN : RemovalPolicy.DESTROY,
+  });
+}
+
+/** The per-service knobs of {@link makeServiceFunction}; everything else is the shared baseline. */
+export interface ServiceFunctionOpts {
+  /** Defaults to 15 seconds. */
+  readonly timeout?: Duration;
+  readonly environment?: Record<string, string>;
+  /**
+   * Passed through VERBATIM (no default): most services ship `{ minify: true, sourceMap: true }`,
+   * DB-touching ones {@link rdsCaBundling} / {@link migratorBundling}, and admin-credentials keeps
+   * NodejsFunction's own defaults by omitting it. Changing a function's bundling churns its asset
+   * hash (a real redeploy), so it stays an explicit per-service choice.
+   */
+  readonly bundling?: BundlingOptions;
+  // In-VPC placement (ADR-0004) — only the four Aurora-touching functions set these.
+  readonly vpc?: ec2.IVpc;
+  readonly vpcSubnets?: ec2.SubnetSelection;
+  readonly securityGroups?: ec2.ISecurityGroup[];
+}
+
+/**
+ * The shared shape of every service Lambda (ADR-0002/0010): registry-derived construct id +
+ * physical name + entry, the one runtime/architecture, 256 MB, X-Ray tracing, and an explicit
+ * retention-bounded log group with the CDK-GENERATED name (construct id `{ConstructId}Logs`;
+ * never set `logGroupName` — a named group would REPLACE the live one on deploy).
+ */
+export function makeServiceFunction(
+  scope: Construct,
+  env: WanthatEnv,
+  slug: ServiceSlug,
+  opts: ServiceFunctionOpts = {},
+): NodejsFunction {
+  const id = constructId(slug);
+  return new NodejsFunction(scope, id, {
+    functionName: physicalName(env, slug),
+    entry: serviceEntry(slug),
+    handler: "handler",
+    runtime: LAMBDA_RUNTIME,
+    architecture: LAMBDA_ARCHITECTURE,
+    memorySize: 256,
+    timeout: opts.timeout ?? Duration.seconds(15),
+    // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
+    tracing: lambda.Tracing.ACTIVE,
+    logGroup: serviceLogGroup(scope, `${id}Logs`, env),
+    environment: opts.environment,
+    bundling: opts.bundling,
+    vpc: opts.vpc,
+    vpcSubnets: opts.vpcSubnets,
+    securityGroups: opts.securityGroups,
   });
 }

@@ -7,19 +7,15 @@ import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
 import * as iam from "aws-cdk-lib/aws-iam";
-import * as lambda from "aws-cdk-lib/aws-lambda";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
+import type * as lambda from "aws-cdk-lib/aws-lambda";
 import type * as rds from "aws-cdk-lib/aws-rds";
 import type * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 import {
   applyThrottle,
-  LAMBDA_ARCHITECTURE,
-  LAMBDA_RUNTIME,
+  makeServiceFunction,
   RDS_CA_ENV,
   rdsCaBundling,
-  serviceEntry,
-  serviceLogGroup,
   THROTTLING,
   type WanthatEnv,
   webOrigins,
@@ -78,22 +74,13 @@ export class AdminStack extends Stack {
     super(scope, id, props);
     const { wanthatEnv } = props;
 
-    const fn = new NodejsFunction(this, "AdminApi", {
-      functionName: `wanthat-${wanthatEnv.name}-admin-api`,
-      entry: serviceEntry("admin-api"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
+    // No reserved concurrency: the account's Lambda concurrency limit (10) is the cap; admin traffic
+    // is tiny. Re-introduce app 7 / admin 2 / migrator 1 once the account quota is raised (ADR-0002).
+    const fn = makeServiceFunction(this, wanthatEnv, "admin-api", {
       timeout: Duration.seconds(30), // in-VPC Aurora: first connect may resume a scale-to-zero cluster
-      // X-Ray tracing + an explicit retention-bounded log group (ADR-0002 observability).
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "AdminApiLogs", wanthatEnv),
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
       securityGroups: [props.lambdaSg],
-      // No reserved concurrency: the account's Lambda concurrency limit (10) is the cap; admin traffic
-      // is tiny. Re-introduce app 7 / admin 2 / migrator 1 once the account quota is raised (ADR-0002).
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
@@ -138,16 +125,8 @@ export class AdminStack extends Stack {
     // reachable over its public endpoint, and the VPC is deliberately endpoint-free (ADR-0004;
     // the SM interface endpoint was removed once nothing in the VPC read secrets). Same HTTP API
     // and authorizer; only this function's role can touch the secret - and only write it.
-    const credentialsFn = new NodejsFunction(this, "AdminCredentials", {
-      functionName: `wanthat-${wanthatEnv.name}-admin-credentials`,
-      entry: serviceEntry("admin-credentials"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
+    const credentialsFn = makeServiceFunction(this, wanthatEnv, "admin-credentials", {
       timeout: Duration.seconds(10),
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "AdminCredentialsLogs", wanthatEnv),
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RETAILER_SECRET_ARN: props.retailerSecret.secretArn,

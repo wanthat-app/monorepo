@@ -3,16 +3,9 @@ import type * as dynamodb from "aws-cdk-lib/aws-dynamodb";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as lambda from "aws-cdk-lib/aws-lambda";
 import { DynamoEventSource, SqsDlq } from "aws-cdk-lib/aws-lambda-event-sources";
-import { NodejsFunction } from "aws-cdk-lib/aws-lambda-nodejs";
 import * as sqs from "aws-cdk-lib/aws-sqs";
 import type { Construct } from "constructs";
-import {
-  LAMBDA_ARCHITECTURE,
-  LAMBDA_RUNTIME,
-  serviceEntry,
-  serviceLogGroup,
-  type WanthatEnv,
-} from "./config";
+import { makeServiceFunction, physicalName, type WanthatEnv } from "./config";
 
 export interface WhatsAppStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -35,22 +28,14 @@ export class WhatsAppStack extends Stack {
 
     // Batches that still fail after the event-source retries land here (14 days to inspect/redrive).
     const dlq = new sqs.Queue(this, "DispatcherDlq", {
-      queueName: `wanthat-${wanthatEnv.name}-whatsapp-dispatcher-dlq`,
+      queueName: `${physicalName(wanthatEnv, "whatsapp-dispatcher")}-dlq`,
       retentionPeriod: Duration.days(14),
     });
 
-    const dispatcherFn = new NodejsFunction(this, "Dispatcher", {
-      functionName: `wanthat-${wanthatEnv.name}-whatsapp-dispatcher`,
-      entry: serviceEntry("whatsapp-dispatcher"),
-      handler: "handler",
-      runtime: LAMBDA_RUNTIME,
-      architecture: LAMBDA_ARCHITECTURE,
-      memorySize: 256,
+    // Non-VPC by design: this is ADR-0019's NAT-free bridge to the public End User Messaging
+    // Social endpoint. It must NOT be placed in the VPC.
+    const dispatcherFn = makeServiceFunction(this, wanthatEnv, "whatsapp-dispatcher", {
       timeout: Duration.seconds(30),
-      tracing: lambda.Tracing.ACTIVE,
-      logGroup: serviceLogGroup(this, "DispatcherLogs", wanthatEnv),
-      // Non-VPC by design: this is ADR-0019's NAT-free bridge to the public End User Messaging
-      // Social endpoint. It must NOT be placed in the VPC.
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
