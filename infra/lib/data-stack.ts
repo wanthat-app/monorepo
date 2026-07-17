@@ -63,7 +63,7 @@ export class DataStack extends Stack {
 
     // The shared retailer product (ADR-0003): fetched/minted once, reused across every member who
     // recommends it. Keyed by the store + its native product id; carries the product-level
-    // affiliate URL (ADR-0008: ONE link.generate per product). Written by retailer-proxy
+    // affiliate URL (ADR-0008: ONE link.generate per product). Written by retailer-linkgen
     // (ADR-0004), read by app-core's links module.
     this.productTable = new dynamodb.Table(this, "Product", {
       partitionKey: { name: "storeId", type: dynamodb.AttributeType.STRING },
@@ -98,7 +98,7 @@ export class DataStack extends Stack {
     });
 
     // Same-env orders the poller could not attribute (unattributed-cashback Phase 2): the admin
-    // claim queue. The poller upserts sightings, admin-api claims/dismisses, retailer-proxy
+    // claim queue. The poll upserts sightings, the admin console claims/dismisses, retailer-settlement
     // settles claims through the conversion writer.
     this.unattributedOrderTable = new dynamodb.Table(this, "UnattributedOrder", {
       partitionKey: { name: "orderId", type: dynamodb.AttributeType.STRING },

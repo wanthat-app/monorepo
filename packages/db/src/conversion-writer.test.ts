@@ -1,7 +1,11 @@
 import { type Kysely, sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appendAudit } from "./audit";
-import { appendWalletEntry, type WalletEntryInsert } from "./conversion-writer";
+import {
+  appendWalletEntry,
+  conversionTotalsFor,
+  type WalletEntryInsert,
+} from "./conversion-writer";
 import { createMigrator } from "./migrator";
 import type { Database } from "./schema";
 import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
@@ -55,6 +59,35 @@ describe("appendWalletEntry", () => {
     expect(rows).toHaveLength(3);
     const referrerRows = rows.filter((r) => r.kind === "referrer_cashback");
     expect(referrerRows.map((r) => r.status).sort()).toEqual(["confirmed", "pending"]);
+  });
+});
+
+describe("conversionTotalsFor", () => {
+  it("counts distinct orders per recommendation: multi-status once, clawback still counted", async () => {
+    const REC = "recTotalsAA1";
+    const OTHER = "recTotalsBB2";
+    // Order A walks the whole lifecycle — three rows, ONE converted order.
+    for (const status of ["pending", "confirmed", "clawback"] as const) {
+      await appendWalletEntry(db, { ...ENTRY, recommendationId: REC, orderId: "tot-A", status });
+    }
+    // Order B converts once; its consumer_reward row must NOT count toward the stat.
+    await appendWalletEntry(db, { ...ENTRY, recommendationId: REC, orderId: "tot-B" });
+    await appendWalletEntry(db, {
+      ...ENTRY,
+      recommendationId: REC,
+      orderId: "tot-B",
+      kind: "consumer_reward",
+      amountMinor: 31n,
+    });
+    // A different recommendation's order stays out of REC's total.
+    await appendWalletEntry(db, { ...ENTRY, recommendationId: OTHER, orderId: "tot-C" });
+
+    const totals = await conversionTotalsFor(db, [REC, OTHER, "recNoRows999"]);
+    expect(totals).toEqual({ [REC]: 2, [OTHER]: 1, recNoRows999: 0 });
+  });
+
+  it("answers an empty record for an empty id list", async () => {
+    expect(await conversionTotalsFor(db, [])).toEqual({});
   });
 });
 

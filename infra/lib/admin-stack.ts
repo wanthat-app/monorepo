@@ -47,7 +47,7 @@ export interface AdminStackProps extends StackProps {
   // message-sender parks each OTP before delivering, in every environment.
   readonly otpSinkTable: dynamodb.ITable;
   // Retailer credential secret — the console may WRITE it (credential drop from the admin panel)
-  // but never read it; retailer-proxy stays the sole reader (see the inline policy below).
+  // but never read it; the retailer-linkgen/settlement pair stays the sole reader (see the inline policy below).
   readonly retailerSecret: secretsmanager.ISecret;
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
@@ -165,7 +165,7 @@ export class AdminStack extends Stack {
     // OpsCounters: stats reads (customerCounter + daily/presence metrics) AND the moderation
     // counter moves (UpdateItems on the counter item).
     props.opsCountersTable.grantReadWriteData(consoleFn);
-    // The claim queue: list + claim/dismiss intents (the retailer-proxy settles them).
+    // The claim queue: list + claim/dismiss intents (retailer-settlement settles them).
     props.unattributedOrderTable.grantReadWriteData(consoleFn);
     // Stats reads (the transactional counters live in these tables).
     props.productTable.grantReadData(consoleFn);

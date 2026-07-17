@@ -1,9 +1,9 @@
 /**
- * Claimed-order settlement (unattributed-cashback Phase 2, 2026-07-10). The in-VPC admin-api
- * cannot invoke the writer (the VPC is endpoint-free, ADR-0004), so claiming is a two-step
- * dance: admin-api writes the claim INTENT to the `unattributed_order` item, and THIS op —
- * running on every retailer-proxy heartbeat, retailer API untouched — sweeps the claimed queue
- * and pushes each claim through the conversion writer, the one door money enters (ADR-0002).
+ * Claimed-order settlement (unattributed-cashback Phase 2, 2026-07-10). An in-VPC admin
+ * function cannot invoke the writer (the VPC is endpoint-free, ADR-0004), so claiming is a
+ * two-step dance: the admin console writes the claim INTENT to the `unattributed_order` item,
+ * and THIS sweep — running on every retailer-settlement heartbeat, retailer API untouched —
+ * pushes each claim through the ledger-writer, the one door money enters (ADR-0002).
  *
  * A claim binds the order to a recommendation: its owner is the credited referrer and its
  * SNAPSHOTTED split prices the reward (consumer: none — the click identity is gone; that is

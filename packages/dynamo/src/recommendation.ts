@@ -171,19 +171,22 @@ export class RecommendationRepo {
   }
 
   /**
-   * Fire-and-forget stat (ADR-0009: fed by the conversion writer on a first-sight order).
-   * Existence-conditional so a deleted recommendation no-ops instead of resurrecting as a
-   * counter-only ghost row; the miss is swallowed — stats never fail money.
+   * Fire-and-forget stat (ADR-0009 as reshaped by refactor PR-6): the `conversions` attribute
+   * is a projection DERIVED from the ledger — the writer answers absolute per-recommendation
+   * totals and the settlement applies them here as idempotent SETs (replacing the old
+   * `ADD conversions 1` first-sight increment; a lost application self-heals on the next
+   * batch). Existence-conditional so a deleted recommendation no-ops instead of resurrecting
+   * as a counter-only ghost row; the miss is swallowed — stats never fail money.
    */
-  async incrementConversions(recommendationId: string): Promise<void> {
+  async setConversions(recommendationId: string, total: number): Promise<void> {
     try {
       await this.doc.send(
         new UpdateCommand({
           TableName: this.tableName,
           Key: { recommendationId },
-          UpdateExpression: "ADD conversions :one",
+          UpdateExpression: "SET conversions = :total",
           ConditionExpression: "attribute_exists(recommendationId)",
-          ExpressionAttributeValues: { ":one": 1 },
+          ExpressionAttributeValues: { ":total": total },
         }),
       );
     } catch (err) {

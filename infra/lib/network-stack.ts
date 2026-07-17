@@ -19,7 +19,7 @@ export interface NetworkStackProps extends StackProps {
  * through a free gateway endpoint. NO interface endpoints (they bill hourly per AZ): `cognito-idp`
  * went with the ADR-0006 split, `secretsmanager` with the secretless in-VPC auth, and the brief
  * `lambda` endpoint (PR #110's link generation) went when the links module moved to the non-VPC
- * `app-links` edge — a non-VPC function invokes the retailer-proxy for free, so nothing in the VPC
+ * `app-links` edge — a non-VPC function invokes the retailer-linkgen for free, so nothing in the VPC
  * needs the Lambda Invoke API. Everything else stays out of the VPC.
  *
  * Two SGs split the trust boundary: `lambdaSg` (in-VPC functions) is allowed to reach `auroraSg`
@@ -68,7 +68,7 @@ export class NetworkStack extends Stack {
     // ADR-0006 split (app-core stopped calling Cognito); `secretsmanager` became unnecessary once
     // nothing in the VPC read secrets (Ed25519 PUBLIC keys in plain env + IAM DB auth migrator);
     // and the short-lived `lambda` endpoint (PR #110 link generation) went when the links module
-    // moved to the non-VPC app-links edge - the sync retailer-proxy invoke is free from there. The
+    // moved to the non-VPC app-links edge - the sync retailer-linkgen invoke is free from there. The
     // in-VPC functions' only AWS dependencies are Aurora (in-VPC) + DynamoDB (free gateway endpoint).
   }
 }

@@ -136,6 +136,12 @@ importers:
 
   packages/aliexpress:
     dependencies:
+      '@aws-sdk/client-secrets-manager':
+        specifier: ^3.600.0
+        version: 3.1076.0
+      '@wanthat/contracts':
+        specifier: workspace:*
+        version: link:../contracts
       zod:
         specifier: ^3.23.0
         version: 3.25.76
@@ -309,27 +315,6 @@ importers:
         specifier: workspace:*
         version: link:../../packages/db
 
-  services/conversion-poller:
-    dependencies:
-      '@aws-lambda-powertools/logger':
-        specifier: ^2.8.0
-        version: 2.33.1
-      '@wanthat/config':
-        specifier: workspace:*
-        version: link:../../packages/config
-      '@wanthat/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@wanthat/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@wanthat/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
-      '@wanthat/dynamo':
-        specifier: workspace:^
-        version: link:../../packages/dynamo
-
   services/db-migrator:
     dependencies:
       '@aws-lambda-powertools/logger':
@@ -374,6 +359,15 @@ importers:
       aws-jwt-verify:
         specifier: ^5.2.1
         version: 5.2.1
+
+  services/ledger-writer:
+    dependencies:
+      '@wanthat/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@wanthat/db':
+        specifier: workspace:*
+        version: link:../../packages/db
 
   services/message-sender:
     dependencies:
@@ -432,29 +426,17 @@ importers:
         specifier: workspace:*
         version: link:../../packages/dynamo
 
-  services/retailer-proxy:
+  services/retailer-linkgen:
     dependencies:
       '@aws-lambda-powertools/logger':
         specifier: ^2.8.0
         version: 2.33.1
-      '@aws-sdk/client-lambda':
-        specifier: ^3.600.0
-        version: 3.1081.0
-      '@aws-sdk/client-secrets-manager':
-        specifier: ^3.600.0
-        version: 3.1076.0
       '@wanthat/aliexpress':
         specifier: workspace:*
         version: link:../../packages/aliexpress
-      '@wanthat/config':
-        specifier: workspace:*
-        version: link:../../packages/config
       '@wanthat/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
-      '@wanthat/domain':
-        specifier: workspace:^
-        version: link:../../packages/domain
       '@wanthat/dynamo':
         specifier: workspace:*
         version: link:../../packages/dynamo
@@ -462,11 +444,35 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
 
+  services/retailer-settlement:
+    dependencies:
+      '@aws-lambda-powertools/logger':
+        specifier: ^2.8.0
+        version: 2.33.1
+      '@aws-sdk/client-lambda':
+        specifier: ^3.600.0
+        version: 3.1081.0
+      '@wanthat/aliexpress':
+        specifier: workspace:*
+        version: link:../../packages/aliexpress
+      '@wanthat/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@wanthat/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@wanthat/dynamo':
+        specifier: workspace:*
+        version: link:../../packages/dynamo
+
   services/role-bootstrap:
     dependencies:
       '@aws-lambda-powertools/logger':
         specifier: ^2.8.0
         version: 2.33.1
+      '@aws-sdk/client-secrets-manager':
+        specifier: ^3.652.0
+        version: 3.1076.0
       '@wanthat/db':
         specifier: workspace:*
         version: link:../../packages/db

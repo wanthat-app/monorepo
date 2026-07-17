@@ -201,7 +201,7 @@ export class IdentityStack extends Stack {
       timeout: Duration.seconds(10),
       environment: {
         // Async-invoke targets by deterministic physical name — no cross-stack refs (ADR-0004),
-        // same pattern as app-links -> retailer-proxy.
+        // same pattern as app-links -> retailer-linkgen.
         NOTIFICATION_SENDER_FUNCTION: physicalName(wanthatEnv, "notification-sender"),
         AUDIT_WRITER_FUNCTION: physicalName(wanthatEnv, "audit-writer"),
         GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,

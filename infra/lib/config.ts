@@ -190,8 +190,13 @@ export const SERVICES = {
   "admin-ledger-view": { constructId: "AdminLedgerView", funnel: false, alarms: true },
   "audit-writer": { constructId: "AuditWriter", funnel: false, alarms: true },
   landing: { constructId: "Landing", funnel: true, alarms: true },
-  "retailer-proxy": { constructId: "RetailerProxy", funnel: true, alarms: true },
-  "conversion-poller": { constructId: "ConversionPoller", funnel: true, alarms: true },
+  // The retailer egress, split by trust boundary (refactor PR-6): linkgen parses customer-pasted
+  // input and mints links (no funnel events in generate-link); settlement runs the scheduled
+  // poll + claim settlement (emits order_untracked) and is the only invoker of the ledger-writer
+  // (renamed from conversion-poller; emits the conversion events).
+  "retailer-linkgen": { constructId: "RetailerLinkgen", funnel: false, alarms: true },
+  "retailer-settlement": { constructId: "RetailerSettlement", funnel: true, alarms: true },
+  "ledger-writer": { constructId: "LedgerWriter", funnel: true, alarms: true },
   "fx-rates": { constructId: "FxRates", funnel: false, alarms: true },
   "message-sender": { constructId: "MessageSender", funnel: false, alarms: true },
   "post-confirmation": { constructId: "PostConfirmation", funnel: false, alarms: true },
@@ -222,6 +227,15 @@ export type FunnelServiceSlug = {
 export const OBSERVED_SERVICES: readonly AlarmedServiceSlug[] = (
   Object.keys(SERVICES) as ServiceSlug[]
 ).filter((slug): slug is AlarmedServiceSlug => SERVICES[slug].alarms);
+
+/**
+ * Funnel-emitting slugs in registry order — the FunnelAnalytics log-group subscription list
+ * derives from this (bin/wanthat.ts). ORDER is load-bearing: each log group binds to an
+ * indexed `Subscription{i}` logical id, so reordering rebinds live subscription filters.
+ */
+export const FUNNEL_SERVICES: readonly FunnelServiceSlug[] = (
+  Object.keys(SERVICES) as ServiceSlug[]
+).filter((slug): slug is FunnelServiceSlug => SERVICES[slug].funnel);
 
 /** A service Lambda's deterministic physical name — `wanthat-{env}-{slug}`. */
 export const physicalName = (env: WanthatEnv, slug: ServiceSlug): string =>

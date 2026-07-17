@@ -16,7 +16,7 @@ import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
  * Container startup lives in the shared harness (test-harness.ts).
  */
 
-const MIGRATION_COUNT = 8;
+const MIGRATION_COUNT = 9;
 
 let testDb: TestDb;
 let db: Kysely<Database>;
@@ -38,7 +38,7 @@ async function asRole<T>(role: string, fn: (trx: Kysely<Database>) => Promise<T>
   });
 }
 
-describe("migrations 0001-0008 on real PostgreSQL", () => {
+describe("migrations 0001-0009 on real PostgreSQL", () => {
   it("apply cleanly, in order, from an empty database (fresh-env bootstrap path)", async () => {
     const { error, results } = await createMigrator(db, MIGRATIONS_DIR).migrateToLatest();
     if (error) throw error;
@@ -259,6 +259,16 @@ describe("migrations 0001-0008 on real PostgreSQL", () => {
         /permission denied/,
       );
     }
+  });
+
+  it("creates the partial conversion-totals index (0009 — the derived projection's read path)", async () => {
+    const { rows } = await sql<{ indexdef: string }>`
+      SELECT indexdef FROM pg_indexes
+      WHERE tablename = 'wallet_entry' AND indexname = 'wallet_entry_recommendation_referrer_idx'
+    `.execute(db);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.indexdef).toContain("(recommendation_id)");
+    expect(rows[0]?.indexdef).toContain("referrer_cashback");
   });
 
   it("makes ledger_writer append-only: INSERT + audit_append yes, mutation never", async () => {

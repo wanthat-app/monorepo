@@ -55,7 +55,7 @@ export interface PollOrdersDeps {
   attribution: AttributionDeps;
   /** The admin claim queue: every same-env untracked order is projected here (best-effort). */
   unattributed: Pick<UnattributedOrderRepo, "recordSighting">;
-  /** Null = dry mode (CONVERSION_WRITER_FUNCTION unset): log resolved conversions, write nothing. */
+  /** Null = dry mode (LEDGER_WRITER_FUNCTION unset): log resolved conversions, write nothing. */
   invokeWriter: ((req: WriteConversionsRequest) => Promise<WriteConversionsResponse>) | null;
   now: () => Date;
   sleep?: (ms: number) => Promise<void>;

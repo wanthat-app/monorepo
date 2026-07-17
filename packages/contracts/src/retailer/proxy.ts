@@ -2,11 +2,13 @@ import { z } from "zod";
 import { Product, StoreId } from "../recommendations/product";
 
 /**
- * The retailer-proxy `generateLink` invoke contract (ADR-0002/0004) — the payload the in-VPC
- * links module sends over the synchronous Lambda invoke, and the shape the proxy returns.
- * Both sides validate with these schemas, exactly like an HTTP boundary.
+ * The retailer-linkgen `generateLink` invoke contract (ADR-0002/0004) — the payload the links
+ * module sends over the synchronous Lambda invoke, and the shape the linkgen answers. Both
+ * sides validate with these schemas, exactly like an HTTP boundary. The wire shape (incl. the
+ * `op` discriminator) predates the proxy split (refactor PR-6) and is deliberately KEPT so the
+ * caller's move to the split function was an env-var flip, not a payload migration.
  *
- * The proxy mints (or re-mints) the **product-level** affiliate URL (ADR-0008: one
+ * The linkgen mints (or re-mints) the **product-level** affiliate URL (ADR-0008: one
  * `link.generate` per product, shared across everyone who recommends it) and upserts the
  * Product in DynamoDB before returning (ADR-0004); the caller then writes the Recommendation.
  */
@@ -55,17 +57,12 @@ export const GenerateLinkResponse = z.discriminatedUnion("status", [
 export type GenerateLinkResponse = z.infer<typeof GenerateLinkResponse>;
 
 /**
- * The retailer-proxy `listOrders` (poll) invoke contract (ADR-0009). Fired by the EventBridge
- * heartbeat; the op computes its own window (runtime config + poller_state watermark) and gates
- * itself on `poller.intervalMinutes`, so the event carries no window. The summary is
- * observability, not data — money flows through the writer invoke, never this response.
+ * The retailer-settlement poll summary (ADR-0009). The EventBridge heartbeat fires the
+ * settlement function with no payload (refactor PR-6 dropped the `{op}` discriminator — the
+ * heartbeat is the function's only entry); the poll computes its own window (runtime config +
+ * poller_state watermark) and gates itself on `poller.intervalMinutes`. The summary is
+ * observability, not data — money flows through the ledger-writer invoke, never this response.
  */
-export const PollOrdersRequest = z.object({
-  op: z.literal("listOrders"),
-  retailer: StoreId,
-});
-export type PollOrdersRequest = z.infer<typeof PollOrdersRequest>;
-
 export const PollOrdersSummary = z.object({
   status: z.literal("ok"),
   /** False = the heartbeat fired before `poller.intervalMinutes` elapsed — nothing ran. */

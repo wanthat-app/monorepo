@@ -238,15 +238,16 @@ describe("RecommendationRepo.deleteByOwner", () => {
   });
 });
 
-describe("RecommendationRepo.incrementConversions", () => {
-  it("ADDs 1 existence-conditionally", async () => {
+describe("RecommendationRepo.setConversions", () => {
+  it("SETs the absolute total existence-conditionally (idempotent derived projection)", async () => {
     const { doc, calls } = stub(() => ({}));
-    await new RecommendationRepo(doc, "recommendation").incrementConversions(REC.recommendationId);
+    await new RecommendationRepo(doc, "recommendation").setConversions(REC.recommendationId, 7);
     expect(calls[0]?.name).toBe("UpdateCommand");
     expect(calls[0]?.input).toMatchObject({
       Key: { recommendationId: REC.recommendationId },
-      UpdateExpression: "ADD conversions :one",
+      UpdateExpression: "SET conversions = :total",
       ConditionExpression: "attribute_exists(recommendationId)",
+      ExpressionAttributeValues: { ":total": 7 },
     });
   });
 
@@ -255,14 +256,14 @@ describe("RecommendationRepo.incrementConversions", () => {
       throw new ConditionalCheckFailedException({ message: "gone", $metadata: {} });
     });
     await expect(
-      new RecommendationRepo(missing.doc, "recommendation").incrementConversions("rec-gone"),
+      new RecommendationRepo(missing.doc, "recommendation").setConversions("rec-gone", 3),
     ).resolves.toBeUndefined();
 
     const broken = stub(() => {
       throw new Error("dynamo down");
     });
     await expect(
-      new RecommendationRepo(broken.doc, "recommendation").incrementConversions("rec-x"),
+      new RecommendationRepo(broken.doc, "recommendation").setConversions("rec-x", 3),
     ).rejects.toThrow("dynamo down");
   });
 });

@@ -6,21 +6,23 @@ import { type WriterDeps, writeConversions } from "./writer";
 vi.mock("@wanthat/db", () => ({
   appendWalletEntry: vi.fn(),
   appendAudit: vi.fn(),
+  conversionTotalsFor: vi.fn(),
 }));
 
-import { appendAudit, appendWalletEntry } from "@wanthat/db";
+import { appendAudit, appendWalletEntry, conversionTotalsFor } from "@wanthat/db";
 
 const appendEntryMock = vi.mocked(appendWalletEntry);
 const appendAuditMock = vi.mocked(appendAudit);
+const totalsMock = vi.mocked(conversionTotalsFor);
 
 const SUB_REFERRER = "22222222-2222-2222-2222-222222222222";
 const SUB_MEMBER = "11111111-1111-1111-1111-111111111111";
 const NOW = new Date("2026-07-10T12:00:00.000Z");
 
-const memberWrite = (orderId: string): ConversionWrite => ({
+const memberWrite = (orderId: string, recommendationId = "abc123DEF45"): ConversionWrite => ({
   resolved: {
     orderId,
-    recommendationId: "abc123DEF45",
+    recommendationId,
     referrer: { sub: SUB_REFERRER, reward: { amountMinor: 62n, currency: "USD" } },
     consumer: { sub: SUB_MEMBER, reward: { amountMinor: 31n, currency: "USD" } },
     status: "pending",
@@ -30,12 +32,9 @@ const memberWrite = (orderId: string): ConversionWrite => ({
   consumer: "member",
 });
 
-function makeDeps(): WriterDeps & {
-  recommendations: { incrementConversions: ReturnType<typeof vi.fn> };
-} {
+function makeDeps(): WriterDeps {
   return {
     db: {} as never,
-    recommendations: { incrementConversions: vi.fn(async () => {}) },
     now: () => NOW,
   };
 }
@@ -44,6 +43,7 @@ let logSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.clearAllMocks();
   appendEntryMock.mockResolvedValue(true);
+  totalsMock.mockResolvedValue({ abc123DEF45: 1 });
   logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 });
 afterEach(() => logSpy.mockRestore());
@@ -55,8 +55,9 @@ const conversionEvents = () =>
     .map((l) => JSON.parse(l) as Record<string, unknown>);
 
 describe("writeConversions", () => {
-  it("appends both parties, audits each row, emits ONE event, bumps the counter", async () => {
+  it("appends both parties, audits each row, emits ONE event, answers derived totals", async () => {
     const deps = makeDeps();
+    totalsMock.mockResolvedValue({ abc123DEF45: 3 });
     const res = await writeConversions([memberWrite("o-1")], deps);
     expect(res.appended).toEqual([
       { orderId: "o-1", kind: "referrer_cashback", status: "pending" },
@@ -79,46 +80,55 @@ describe("writeConversions", () => {
       status: "pending",
       amount: { amountMinor: "124", currency: "USD" },
     });
-    expect(deps.recommendations.incrementConversions).toHaveBeenCalledWith("abc123DEF45");
+    // The projection query runs AFTER the appends, over the batch's recommendation ids.
+    expect(totalsMock).toHaveBeenCalledWith(deps.db, ["abc123DEF45"]);
+    expect(res.conversionTotals).toEqual({ abc123DEF45: 3 });
   });
 
-  it("no-ops a duplicate batch: no audit, no event, no counter", async () => {
+  it("still answers absolute totals for a fully-duplicate batch (no audit, no event)", async () => {
     appendEntryMock.mockResolvedValue(false);
-    const deps = makeDeps();
-    const res = await writeConversions([memberWrite("o-1")], deps);
+    totalsMock.mockResolvedValue({ abc123DEF45: 2 });
+    const res = await writeConversions([memberWrite("o-1")], makeDeps());
     expect(res.appended).toEqual([]);
     expect(appendAuditMock).not.toHaveBeenCalled();
     expect(conversionEvents()).toEqual([]);
-    expect(deps.recommendations.incrementConversions).not.toHaveBeenCalled();
+    // The absolute count is read from the ledger, so a duplicate re-offer re-answers it — that
+    // is what lets a previously-lost stat application self-heal.
+    expect(res.conversionTotals).toEqual({ abc123DEF45: 2 });
   });
 
-  it("writes a single row for a consumer-null conversion, and skips the counter off-pending", async () => {
-    const deps = makeDeps();
+  it("writes a single row for a consumer-null conversion", async () => {
     const write = memberWrite("o-2");
     write.resolved.consumer = null;
     write.resolved.status = "confirmed";
-    const res = await writeConversions([write], deps);
+    const res = await writeConversions([write], makeDeps());
     expect(res.appended).toEqual([
       { orderId: "o-2", kind: "referrer_cashback", status: "confirmed" },
     ]);
-    expect(deps.recommendations.incrementConversions).not.toHaveBeenCalled();
   });
 
-  it("isolates a failing conversion; the rest of the batch lands", async () => {
+  it("isolates a failing conversion; the rest of the batch lands, totals still cover both recs", async () => {
     appendEntryMock.mockRejectedValueOnce(new Error("aurora hiccup")).mockResolvedValue(true);
     const deps = makeDeps();
-    const res = await writeConversions([memberWrite("o-bad"), memberWrite("o-good")], deps);
+    totalsMock.mockResolvedValue({ recBadAA111: 0, recGoodBB22: 1 });
+    const res = await writeConversions(
+      [memberWrite("o-bad", "recBadAA111"), memberWrite("o-good", "recGoodBB22")],
+      deps,
+    );
     expect(res.failed).toEqual([{ orderId: "o-bad", error: "Error: aurora hiccup" }]);
     expect(res.appended.filter((a) => a.orderId === "o-good")).toHaveLength(2);
+    expect(totalsMock).toHaveBeenCalledWith(deps.db, ["recBadAA111", "recGoodBB22"]);
+    expect(res.conversionTotals).toEqual({ recBadAA111: 0, recGoodBB22: 1 });
   });
 
-  it("a counter failure never fails the conversion", async () => {
-    const deps = makeDeps();
-    deps.recommendations.incrementConversions.mockRejectedValue(new Error("ddb down"));
+  it("a totals-query failure never fails the batch — it degrades to an empty record", async () => {
+    totalsMock.mockRejectedValue(new Error("query timeout"));
     const errSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-    const res = await writeConversions([memberWrite("o-3")], deps);
+    const res = await writeConversions([memberWrite("o-3")], makeDeps());
     expect(res.failed).toEqual([]);
     expect(res.appended).toHaveLength(2);
+    expect(res.conversionTotals).toEqual({});
+    expect(errSpy).toHaveBeenCalledOnce();
     errSpy.mockRestore();
   });
 });

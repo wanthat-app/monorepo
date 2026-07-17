@@ -52,7 +52,7 @@ export interface ApiStackProps extends StackProps {
  * (SignUp / InitiateAuth / native WEB_AUTHN — ADR-0006), so this stack carries no `/auth/*` routes,
  * no ticket machinery, and no Cognito grants. What remains, sliced along the Aurora seam:
  *  - `app-links` (NON-VPC "links edge"): `/products/resolve` + `/recommendations*`. DynamoDB over
- *    the public endpoint; invokes the retailer-proxy synchronously (free from a non-VPC function,
+ *    the public endpoint; invokes the retailer-linkgen synchronously (free from a non-VPC function,
  *    ADR-0004). Holds no Aurora access.
  *  - `app-core` (IN-VPC "wallet core"): `/wallet*` + `/healthz/db`. Reaches Aurora as `app_rw` via
  *    IAM auth (no RDS Proxy); Aurora is money-only (ADR-0003 as amended by ADR-0006).
@@ -71,9 +71,9 @@ export class ApiStack extends Stack {
     super(scope, id, props);
     const { wanthatEnv } = props;
 
-    // --- app-links: NON-VPC links edge (DynamoDB + retailer-proxy invoke; no Cognito, no Aurora) ---
+    // --- app-links: NON-VPC links edge (DynamoDB + retailer-linkgen invoke; no Cognito, no Aurora) ---
     // No VPC: the links edge reaches DynamoDB over public AWS endpoints and its sync
-    // retailer-proxy invoke is free from outside the VPC (ADR-0004 asymmetry).
+    // retailer-linkgen invoke is free from outside the VPC (ADR-0004 asymmetry).
     // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and
     // this function is DynamoDB-only (no Aurora connection pressure). Re-introduce a reserved
     // budget once the account quota is raised - see infra issue (ADR-0002).
@@ -81,11 +81,12 @@ export class ApiStack extends Stack {
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
-        // Links module (ADR-0002). The proxy is invoked by its deterministic NAME (no cross-stack
-        // export -> deploy-order independent).
+        // Links module (ADR-0002). The linkgen (refactor PR-6: the sync half of the retailer
+        // split) is invoked by its deterministic NAME (no cross-stack export -> deploy-order
+        // independent).
         PRODUCT_TABLE: props.productTable.tableName,
         RECOMMENDATION_TABLE: props.recommendationTable.tableName,
-        RETAILER_PROXY_FUNCTION: physicalName(wanthatEnv, "retailer-proxy"),
+        RETAILER_LINKGEN_FUNCTION: physicalName(wanthatEnv, "retailer-linkgen"),
         FX_RATE_TABLE: props.fxRateTable.tableName,
         // Dashboard metrics (spec 2026-07-12): presence stamps + daily counters in OpsCounters.
         OPS_COUNTERS_TABLE: props.opsCountersTable.tableName,
@@ -95,7 +96,7 @@ export class ApiStack extends Stack {
     });
     this.appLinksFn = appLinksFn;
 
-    // DynamoDB (ADR-0004 division of writes): app-links READS products (retailer-proxy is the
+    // DynamoDB (ADR-0004 division of writes): app-links READS products (retailer-linkgen is the
     // sole product writer), WRITES recommendations, reads the fx cache for display conversion,
     // and reads the runtime config (cashback split policy).
     props.productTable.grantReadData(appLinksFn);
@@ -110,7 +111,7 @@ export class ApiStack extends Stack {
     appLinksFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["lambda:InvokeFunction"],
-        resources: [functionArnFor(this, wanthatEnv, "retailer-proxy")],
+        resources: [functionArnFor(this, wanthatEnv, "retailer-linkgen")],
       }),
     );
 
@@ -202,8 +203,8 @@ export class ApiStack extends Stack {
       integration: coreIntegration,
     });
 
-    // Links module (ADR-0002/0011) -> app-links (non-VPC — its sync retailer-proxy invoke is free
-    // there), behind the JWT authorizer. Resolve is a POST (it can mint via the retailer-proxy);
+    // Links module (ADR-0002/0011) -> app-links (non-VPC — its sync retailer-linkgen invoke is free
+    // there), behind the JWT authorizer. Resolve is a POST (it can mint via the retailer-linkgen);
     // recommendations carry POST create, GET list/detail and PATCH review — PATCH is already in
     // the CORS allowMethods above.
     this.httpApi.addRoutes({
