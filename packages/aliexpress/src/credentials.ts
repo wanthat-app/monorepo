@@ -2,11 +2,12 @@ import { GetSecretValueCommand, SecretsManagerClient } from "@aws-sdk/client-sec
 import { PutRetailerCredentialsBody } from "@wanthat/contracts";
 
 /**
- * Cached reader of the `wanthat/{env}/retailer/aliexpress` secret (ADR-0002: this function is
- * the sole reader; admin writes it write-only). The secret is created as an EMPTY placeholder
- * at deploy and populated out-of-band, so "not configured yet" is a normal state: `get()`
- * answers null for it. Success is memoized per warm container; a not-configured answer is NOT,
- * so the first invoke after the admin drop picks the credential up without a redeploy.
+ * Cached reader of the `wanthat/{env}/retailer/aliexpress` secret (ADR-0002: only the two
+ * retailer-egress functions — retailer-linkgen and retailer-settlement — read it; admin writes
+ * it write-only). The secret is created as an EMPTY placeholder at deploy and populated
+ * out-of-band, so "not configured yet" is a normal state: `get()` answers null for it. Success
+ * is memoized per warm container; a not-configured answer is NOT, so the first invoke after
+ * the admin drop picks the credential up without a redeploy.
  */
 export class RetailerCredentialsReader {
   private cached?: Promise<PutRetailerCredentialsBody>;

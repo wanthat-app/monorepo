@@ -1,7 +1,7 @@
 /**
  * Conversion attribution (ADR-0008/0009): one raw retailer order → who gets paid what. Resolved
- * HERE, in the non-VPC proxy (ADR-0003 assigns the conversion-time guest_attribution read to
- * it), from the `custom_parameters` our resolve endpoint bound at click-through (the env-prefixed
+ * HERE, in the non-VPC settlement (ADR-0003 assigns the conversion-time guest_attribution read
+ * to it), from the `custom_parameters` our resolve endpoint bound at click-through (the env-prefixed
  * af/dp wire format — see @wanthat/domain):
  *   af → env gate first (the shared retailer account serves every env; another env's click is
  *        untracked here), then the recommendation → the SNAPSHOTTED split (locked at creation,

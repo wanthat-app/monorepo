@@ -1,20 +1,23 @@
 /**
- * Retailer Proxy (ADR-0002, ADR-0004) — the single non-VPC egress to retailer APIs.
- * Sole holder of the secret-scoped retailer credential + HMAC client (packages/aliexpress).
- * Invoked by the Lambdalith (`generateLink`, synchronous) and by the EventBridge heartbeat
- * (`listOrders`, the ADR-0009 conversion poll). Never touches Aurora; the in-VPC
- * conversion-poller-writer persists the money (this proxy invokes it — the endpoint-free VPC
- * cannot invoke outward, so the chain runs proxy → writer, never the reverse).
+ * Retailer Settlement (ADR-0002/0009; refactor PR-6 split it out of the retailer proxy) — the
+ * scheduled half of the retailer egress. The EventBridge heartbeat fires this function every
+ * 15 minutes with NO payload (the pre-split `{op:"listOrders"}` discriminator is gone — the
+ * heartbeat is the only entry): each beat runs the window poll (self-gated on CONFIG
+ * `poller.intervalMinutes`) and then claim settlement (every beat, retailer API untouched).
  *
- * Known ops never throw — they answer a typed error the caller maps.
+ * The split rationale: linkgen parses customer-pasted input, so it never shares a role with
+ * THIS function's ledger-writer invoke — settlement's inputs are the retailer API and the
+ * admin-claimed queue only. Money still flows one way: settlement resolves conversions and
+ * invokes the in-VPC ledger-writer (the sole money mutator; the endpoint-free VPC cannot
+ * invoke outward, ADR-0004). Each writer response carries the derived per-recommendation
+ * conversion totals, applied here to DynamoDB as idempotent, self-healing SETs.
  */
 import { Logger } from "@aws-lambda-powertools/logger";
 import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
-import { AliExpressClient } from "@wanthat/aliexpress";
+import { AliExpressClient, RetailerCredentialsReader } from "@wanthat/aliexpress";
 import {
   CashbackConsumerBps,
   CashbackReferrerBps,
-  GenerateLinkRequest,
   type PollOrdersResponse,
   RetailerAliexpressTrackingId,
   RetailerDebugLogPayloads,
@@ -25,23 +28,16 @@ import {
   GuestAttributionRepo,
   getDocClient,
   PollerStateRepo,
-  ProductRepo,
   RecommendationRepo,
   RuntimeConfigRepo,
   UnattributedOrderRepo,
 } from "@wanthat/dynamo";
-import { RetailerCredentialsReader } from "./credentials";
-import { type GenerateLinkDeps, type GenerateLinkWire, generateLink } from "./generate-link";
+import { applyingConversionTotals, type InvokeWriter } from "./conversion-totals";
 import { type PollOrdersDeps, pollOrders } from "./poll-orders";
 import { type SettleClaimsDeps, settleClaims } from "./settle-claims";
 
-const SERVICE = "retailer-proxy";
+const SERVICE = "retailer-settlement";
 const logger = new Logger({ serviceName: SERVICE });
-
-export type RetailerProxyEvent =
-  | { op: "generateLink"; retailer: "aliexpress"; url: string }
-  // The poll op computes its own window (CONFIG + watermark) — the heartbeat carries none.
-  | { op: "listOrders"; retailer: "aliexpress" };
 
 function requireEnv(name: string): string {
   const value = process.env[name];
@@ -49,10 +45,10 @@ function requireEnv(name: string): string {
   return value;
 }
 
-let cached: { link: GenerateLinkDeps; poll: PollOrdersDeps; claims: SettleClaimsDeps } | undefined;
+let cached: { poll: PollOrdersDeps; claims: SettleClaimsDeps } | undefined;
 
 /** Per-container dependency graph; the credential fetch is memoized inside the reader. */
-function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps; claims: SettleClaimsDeps } {
+function getDeps(): { poll: PollOrdersDeps; claims: SettleClaimsDeps } {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
   const doc = getDocClient(region);
@@ -73,12 +69,14 @@ function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps; claims: Sett
     return new AliExpressClient({ ...creds, trackingId, debugPayloads });
   };
 
-  // Dry mode until the writer ships/wires: resolved conversions are logged, never written.
-  const writerFn = process.env.CONVERSION_WRITER_FUNCTION;
+  const recommendations = new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE"));
+
+  // Dry mode until the writer is wired: resolved conversions are logged, never written.
+  const writerFn = process.env.LEDGER_WRITER_FUNCTION;
   const lambda = writerFn ? new LambdaClient({}) : undefined;
-  const invokeWriter =
+  const rawInvoke: InvokeWriter | null =
     writerFn && lambda
-      ? async (req: WriteConversionsRequest): Promise<WriteConversionsResponse> => {
+      ? async (req: WriteConversionsRequest) => {
           const res = await lambda.send(
             new InvokeCommand({
               FunctionName: writerFn,
@@ -96,16 +94,15 @@ function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps; claims: Sett
           );
         }
       : null;
+  // Every successful writer answer carries the derived conversion totals — apply them to the
+  // recommendation stat (idempotent SETs, non-fatal) before the caller sees the response.
+  const invokeWriter = rawInvoke
+    ? applyingConversionTotals(rawInvoke, { recommendations, logger })
+    : null;
 
   const unattributed = new UnattributedOrderRepo(doc, requireEnv("UNATTRIBUTED_ORDER_TABLE"));
-  const recommendations = new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE"));
 
   cached = {
-    link: {
-      products: new ProductRepo(doc, requireEnv("PRODUCT_TABLE")),
-      client,
-      logger,
-    },
     poll: {
       client,
       state: new PollerStateRepo(doc, requireEnv("POLLER_STATE_TABLE")),
@@ -143,28 +140,14 @@ function getDeps(): { link: GenerateLinkDeps; poll: PollOrdersDeps; claims: Sett
   return cached;
 }
 
-export const handler = async (
-  event: RetailerProxyEvent,
-): Promise<GenerateLinkWire | PollOrdersResponse> => {
-  logger.appendKeys({ op: event.op, retailer: event.retailer });
-  switch (event.op) {
-    case "generateLink": {
-      const request = GenerateLinkRequest.safeParse(event);
-      if (!request.success) return { status: "error", code: "unsupported_url" };
-      return generateLink(request.data.url, getDeps().link);
-    }
-    case "listOrders": {
-      const summary = await pollOrders(getDeps().poll);
-      logger.info("poll_summary", { summary: JSON.stringify(summary) });
-      // Claim settlement rides EVERY heartbeat (retailer API untouched), so an admin claim
-      // lands in the ledger within ~15 minutes regardless of the poll gate.
-      const claims = await settleClaims(getDeps().claims);
-      if (claims.processed > 0) logger.info("claims_summary", { ...claims });
-      return summary;
-    }
-    default: {
-      const exhaustive: never = event;
-      throw new Error(`unknown op: ${JSON.stringify(exhaustive)}`);
-    }
-  }
+/** The heartbeat entry — the event carries nothing; every beat polls, then settles claims. */
+export const handler = async (): Promise<PollOrdersResponse> => {
+  const deps = getDeps();
+  const summary = await pollOrders(deps.poll);
+  logger.info("poll_summary", { summary: JSON.stringify(summary) });
+  // Claim settlement rides EVERY heartbeat (retailer API untouched), so an admin claim lands
+  // in the ledger within ~15 minutes regardless of the poll gate.
+  const claims = await settleClaims(deps.claims);
+  if (claims.processed > 0) logger.info("claims_summary", { ...claims });
+  return summary;
 };

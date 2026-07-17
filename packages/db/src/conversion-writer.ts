@@ -40,3 +40,35 @@ export async function appendWalletEntry(
     .executeTakeFirst();
   return inserted !== undefined;
 }
+
+/**
+ * The derived conversions projection (refactor PR-6): per recommendation, the ABSOLUTE number
+ * of distinct converted orders — `count(DISTINCT order_id)` over its `referrer_cashback` rows
+ * (served by the partial index `wallet_entry_recommendation_referrer_idx`, migration 0009).
+ * Semantics parity with the retired once-per-order first-sight increment: one order counts once
+ * however many status rows (pending → confirmed → clawback) it accumulates, and a clawback does
+ * NOT subtract. The caller applies these as idempotent SETs on the DynamoDB stat, so the ledger
+ * — not the counter — stays the source of truth and a lost application self-heals.
+ *
+ * Ids absent from the ledger answer 0 explicitly, so a SET can still repair a drifted counter.
+ */
+export async function conversionTotalsFor(
+  db: Kysely<Database>,
+  recommendationIds: readonly string[],
+): Promise<Record<string, number>> {
+  const totals: Record<string, number> = {};
+  const unique = [...new Set(recommendationIds)];
+  if (unique.length === 0) return totals;
+  for (const id of unique) totals[id] = 0;
+  const rows = await db
+    .selectFrom("wallet_entry")
+    .select((eb) => ["recommendation_id", eb.fn.count<string>("order_id").distinct().as("orders")])
+    .where("kind", "=", "referrer_cashback")
+    .where("recommendation_id", "in", unique)
+    .groupBy("recommendation_id")
+    .execute();
+  for (const row of rows) {
+    if (row.recommendation_id !== null) totals[row.recommendation_id] = Number(row.orders);
+  }
+  return totals;
+}

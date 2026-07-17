@@ -1,11 +1,16 @@
 /**
- * The conversion writer (ADR-0002/0009): the SOLE money mutator. Receives resolved conversions
- * from the retailer-proxy poll and appends the append-only ledger — one `wallet_entry` per
- * party per status, deduplicated by the `(order_id, kind, status)` unique index, each landed
- * row chained into the audit log. One `ConversionEvent` console.log line per conversion whose
- * status produced at least one new row (per order+status, not per party row) feeds the
- * Logs → Firehose → Athena funnel. A first-sight pending referrer row bumps the
- * recommendation's conversions stat (best-effort, never fails money).
+ * The ledger writer (ADR-0002/0009): the SOLE money mutator. Receives resolved conversions
+ * from the retailer-settlement poll and appends the append-only ledger — one `wallet_entry`
+ * per party per status, deduplicated by the `(order_id, kind, status)` unique index, each
+ * landed row chained into the audit log. One `ConversionEvent` console.log line per conversion
+ * whose status produced at least one new row (per order+status, not per party row) feeds the
+ * Logs → Firehose → Athena funnel.
+ *
+ * The conversions stat is a DERIVED projection (refactor PR-6): after the batch, the writer
+ * answers the ABSOLUTE per-recommendation `count(DISTINCT order_id)` from the ledger itself
+ * (`conversionTotals`), and the caller applies it to DynamoDB as idempotent SETs — this
+ * function is pure Aurora and never touches DynamoDB. A totals-query failure yields an empty
+ * record (logged): money already landed, and absolute totals self-heal on the next batch.
  * Per-conversion isolation: one bad order lands in `failed`, the batch survives.
  */
 import {
@@ -13,14 +18,19 @@ import {
   type ConversionWrite,
   type WriteConversionsResponse,
 } from "@wanthat/contracts";
-import { appendAudit, appendWalletEntry, type createDb, type WalletEntryInsert } from "@wanthat/db";
+import {
+  appendAudit,
+  appendWalletEntry,
+  conversionTotalsFor,
+  type createDb,
+  type WalletEntryInsert,
+} from "@wanthat/db";
 
 /** The Kysely handle type, derived from createDb so this service needs no direct kysely dep. */
 type Db = ReturnType<typeof createDb>;
 
 export interface WriterDeps {
   db: Db;
-  recommendations: { incrementConversions(recommendationId: string): Promise<void> };
   now: () => Date;
 }
 
@@ -81,7 +91,7 @@ export async function writeConversions(
         });
       }
       if (anyNew) {
-        // Funnel analytics (the poller log group's subscription filter ships this line).
+        // Funnel analytics (the writer log group's subscription filter ships this line).
         console.log(
           JSON.stringify(
             ConversionEvent.parse({
@@ -96,19 +106,25 @@ export async function writeConversions(
             bigintReplacer,
           ),
         );
-        // First sight of the order (its pending stage) → the recommendation's stat.
-        if (resolved.status === "pending") {
-          try {
-            await deps.recommendations.incrementConversions(resolved.recommendationId);
-          } catch (err) {
-            console.error("conversions counter increment failed", String(err));
-          }
-        }
       }
     } catch (err) {
       failed.push({ orderId: resolved.orderId, error: String(err) });
     }
   }
 
-  return { appended, failed };
+  // The derived conversions projection: absolute distinct-order counts for EVERY recommendation
+  // in the batch (failed orders included — the count is read from the ledger, so it is correct
+  // regardless of what this batch landed). Runs after the appends and never fails money: a
+  // query failure degrades to an empty record — the next batch's totals repair the stat.
+  let conversionTotals: Record<string, number> = {};
+  try {
+    conversionTotals = await conversionTotalsFor(
+      deps.db,
+      conversions.map((c) => c.resolved.recommendationId),
+    );
+  } catch (err) {
+    console.error("conversion totals query failed (stat self-heals next batch)", String(err));
+  }
+
+  return { appended, failed, conversionTotals };
 }

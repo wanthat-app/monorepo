@@ -20,7 +20,7 @@ export interface LinksContext {
   /** Read-only by design: the config table is single-writer (admin-api) — ADR-0019 spec.
    * Batched reads serve the public GET /config projection (config/router.ts). */
   config: RuntimeConfigBatchReader;
-  /** Links module (ADR-0002; served from this non-VPC edge so the retailer-proxy invoke is free —
+  /** Links module (ADR-0002; served from this non-VPC edge so the retailer-linkgen invoke is free —
    * the in-VPC placement would need a paid lambda interface endpoint, ADR-0004). */
   products: ProductRepo;
   recommendations: RecommendationRepo;
@@ -36,7 +36,7 @@ let cached: LinksContext | undefined;
 
 /**
  * Build the per-container dependency graph once and reuse it across warm invocations. The non-VPC
- * links edge (ADR-0004) reaches DynamoDB + the retailer-proxy over public AWS endpoints. No Aurora
+ * links edge (ADR-0004) reaches DynamoDB + the retailer-linkgen over public AWS endpoints. No Aurora
  * and no Cognito — authentication is browser-to-Cognito (ADR-0006); money is app-core's seam.
  */
 export function getContext(): LinksContext {
@@ -48,7 +48,7 @@ export function getContext(): LinksContext {
     config: new RuntimeConfigRepo(doc, requireEnv("RUNTIME_CONFIG_TABLE")),
     products: new ProductRepo(doc, requireEnv("PRODUCT_TABLE")),
     recommendations: new RecommendationRepo(doc, requireEnv("RECOMMENDATION_TABLE")),
-    retailerProxy: new RetailerProxyClient(requireEnv("RETAILER_PROXY_FUNCTION")),
+    retailerProxy: new RetailerProxyClient(requireEnv("RETAILER_LINKGEN_FUNCTION")),
     fx: new FxRateRepo(doc, requireEnv("FX_RATE_TABLE")),
     opsMetrics: new OpsMetricsRepo(doc, requireEnv("OPS_COUNTERS_TABLE")),
     appUrl: requireEnv("APP_URL"),

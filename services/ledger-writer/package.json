@@ -1,5 +1,5 @@
 {
-  "name": "@wanthat/conversion-poller",
+  "name": "@wanthat/ledger-writer",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -10,11 +10,7 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@aws-lambda-powertools/logger": "^2.8.0",
-    "@wanthat/config": "workspace:*",
     "@wanthat/contracts": "workspace:*",
-    "@wanthat/db": "workspace:*",
-    "@wanthat/domain": "workspace:*",
-    "@wanthat/dynamo": "workspace:^"
+    "@wanthat/db": "workspace:*"
   }
 }

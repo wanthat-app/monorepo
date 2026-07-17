@@ -3,9 +3,10 @@ import type { GenerateLinkRequest } from "@wanthat/contracts";
 import { GenerateLinkResponse } from "@wanthat/contracts";
 
 /**
- * Synchronous invoke of the non-VPC retailer-proxy (ADR-0004: the user waits for the affiliate
- * URL; the in-VPC side reaches the Lambda Invoke API over the VPC's Lambda interface endpoint).
- * The response is contract-validated exactly like an HTTP boundary.
+ * Synchronous invoke of the non-VPC retailer-linkgen (ADR-0004: the user waits for the
+ * affiliate URL). The class name predates the proxy split (refactor PR-6) and the wire shape is
+ * unchanged — only the target function moved (env `RETAILER_LINKGEN_FUNCTION`). The response is
+ * contract-validated exactly like an HTTP boundary.
  */
 export class RetailerProxyClient {
   constructor(
@@ -22,7 +23,7 @@ export class RetailerProxyClient {
       }),
     );
     if (res.FunctionError || !res.Payload) {
-      throw new Error(`retailer-proxy invoke failed: ${res.FunctionError ?? "empty payload"}`);
+      throw new Error(`retailer-linkgen invoke failed: ${res.FunctionError ?? "empty payload"}`);
     }
     return GenerateLinkResponse.parse(JSON.parse(Buffer.from(res.Payload).toString("utf8")));
   }

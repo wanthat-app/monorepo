@@ -5,7 +5,11 @@ export {
   listAuditLog,
 } from "./activity";
 export { appendAudit } from "./audit";
-export { appendWalletEntry, type WalletEntryInsert } from "./conversion-writer";
+export {
+  appendWalletEntry,
+  conversionTotalsFor,
+  type WalletEntryInsert,
+} from "./conversion-writer";
 export { createMigrator } from "./migrator";
 export { listRewardRows, type RewardRow } from "./money-stats";
 export { createDb, type DbConfig, waitForDb } from "./pool";

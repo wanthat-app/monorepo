@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { PollOrdersResponse } from "../retailer/proxy";
-import { WriteConversionsRequest } from "./order";
+import { WriteConversionsRequest, WriteConversionsResponse } from "./order";
 
 const WIRE_CONVERSION = {
   resolved: {
@@ -28,6 +28,28 @@ describe("WriteConversionsRequest", () => {
 
   it("rejects an empty batch", () => {
     expect(() => WriteConversionsRequest.parse({ conversions: [] })).toThrow();
+  });
+});
+
+describe("WriteConversionsResponse", () => {
+  it("carries absolute per-recommendation conversion totals (the derived projection)", () => {
+    const parsed = WriteConversionsResponse.parse({
+      appended: [{ orderId: "8123456789", kind: "referrer_cashback", status: "pending" }],
+      failed: [],
+      conversionTotals: { abc123DEF45: 3 },
+    });
+    expect(parsed.conversionTotals).toEqual({ abc123DEF45: 3 });
+  });
+
+  it("rejects negative or fractional totals and missing conversionTotals", () => {
+    const base = { appended: [], failed: [] };
+    expect(() =>
+      WriteConversionsResponse.parse({ ...base, conversionTotals: { abc123DEF45: -1 } }),
+    ).toThrow();
+    expect(() =>
+      WriteConversionsResponse.parse({ ...base, conversionTotals: { abc123DEF45: 1.5 } }),
+    ).toThrow();
+    expect(() => WriteConversionsResponse.parse(base)).toThrow();
   });
 });
 

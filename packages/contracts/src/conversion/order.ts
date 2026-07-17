@@ -53,11 +53,21 @@ export const WriteConversionsRequest = z.object({
 });
 export type WriteConversionsRequest = z.infer<typeof WriteConversionsRequest>;
 
-/** Per-conversion isolation: one bad order lands in `failed`, never poisons the batch. */
+/**
+ * Per-conversion isolation: one bad order lands in `failed`, never poisons the batch.
+ *
+ * `conversionTotals` (refactor PR-6) is the derived conversions projection: for every
+ * recommendation touched by this batch, the ABSOLUTE `count(DISTINCT order_id)` of its
+ * `referrer_cashback` ledger rows — semantics parity with the old once-per-order first-sight
+ * increment (multi-status rows of one order count once; clawbacks are not subtracted). The
+ * caller applies these to DynamoDB as idempotent SETs, so a lost application self-heals on the
+ * next batch — the ledger, not the counter, is the source of truth.
+ */
 export const WriteConversionsResponse = z.object({
   appended: z.array(
     z.object({ orderId: z.string(), kind: WalletEntryKind, status: WalletEntryStatus }),
   ),
   failed: z.array(z.object({ orderId: z.string(), error: z.string() })),
+  conversionTotals: z.record(RecommendationId, z.number().int().nonnegative()),
 });
 export type WriteConversionsResponse = z.infer<typeof WriteConversionsResponse>;

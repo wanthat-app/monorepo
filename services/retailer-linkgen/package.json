@@ -1,5 +1,5 @@
 {
-  "name": "@wanthat/retailer-proxy",
+  "name": "@wanthat/retailer-linkgen",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,12 +11,8 @@
   },
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.8.0",
-    "@aws-sdk/client-lambda": "^3.600.0",
-    "@aws-sdk/client-secrets-manager": "^3.600.0",
     "@wanthat/aliexpress": "workspace:*",
-    "@wanthat/config": "workspace:*",
     "@wanthat/contracts": "workspace:*",
-    "@wanthat/domain": "workspace:^",
     "@wanthat/dynamo": "workspace:*",
     "zod": "^3.23.0"
   }

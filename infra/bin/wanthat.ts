@@ -5,7 +5,7 @@ import { AdminStack } from "../lib/admin-stack";
 import { ApiStack } from "../lib/api-stack";
 import {
   type AlarmedServiceSlug,
-  type FunnelServiceSlug,
+  FUNNEL_SERVICES,
   OBSERVED_SERVICES,
   resolveEnv,
   stackName,
@@ -105,7 +105,7 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   fxRateTable: data.fxRateTable,
   productTable: data.productTable,
   recommendationTable: data.recommendationTable,
-  // The unattributed-order claim queue (list + claim/dismiss; the retailer-proxy settles).
+  // The unattributed-order claim queue (list + claim/dismiss; retailer-settlement settles).
   unattributedOrderTable: data.unattributedOrderTable,
   // OTP sink: GET /admin/otp-sink lists parked codes (signups arrive as audit rows).
   otpSinkTable: data.otpSinkTable,
@@ -130,7 +130,7 @@ const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-serv
   // Offline JWT verification on the landing resolve path (ADR-0007: JWKS, never a Cognito call).
   userPoolId: identity.userPool.userPoolId,
   userPoolClientId: identity.userPoolClient.userPoolClientId,
-  // The in-VPC conversion-poller-writer (ADR-0002): Aurora as poller_writer.
+  // The in-VPC ledger-writer (ADR-0002): Aurora as ledger_writer (refactor PR-6).
   vpc: network.vpc,
   lambdaSg: network.lambdaSg,
   cluster: data.cluster,
@@ -173,23 +173,20 @@ const serviceFns: Record<AlarmedServiceSlug, lambda.Function> = {
   "admin-ledger-view": admin.adminLedgerViewFn,
   "audit-writer": admin.auditWriterFn,
   landing: edgeServices.landingFn,
-  "retailer-proxy": edgeServices.retailerProxyFn,
-  "conversion-poller": edgeServices.conversionPollerFn,
+  "retailer-linkgen": edgeServices.retailerLinkgenFn,
+  "retailer-settlement": edgeServices.retailerSettlementFn,
+  "ledger-writer": edgeServices.ledgerWriterFn,
   "fx-rates": edgeServices.fxRatesFn,
   "message-sender": identity.messageSenderFn,
   "post-confirmation": identity.postConfirmationFn,
   "notification-sender": whatsapp.notificationSenderFn,
 };
 
-// Funnel events are emitted by landing (impression/click), the conversion poller (conversion)
-// and the retailer proxy (order_untracked — the unattributed-revenue stream). ORDER is
-// load-bearing: FunnelAnalytics binds each log group to an indexed Subscription{i} logical id,
-// so reordering would rebind live subscription filters.
-const funnelServices: readonly FunnelServiceSlug[] = [
-  "landing",
-  "conversion-poller",
-  "retailer-proxy",
-];
+// Funnel events are emitted by landing (impression/click), retailer-settlement
+// (order_untracked — the unattributed-revenue stream) and the ledger-writer (conversion);
+// retailer-linkgen emits none. The list is registry-derived (config.FUNNEL_SERVICES, registry
+// order) — ORDER is load-bearing: FunnelAnalytics binds each log group to an indexed
+// Subscription{i} logical id, so reordering would rebind live subscription filters.
 
 // ObservabilityStack deploys LAST — it only references resources the other il-central-1 stacks
 // already created (the HTTP APIs, the application Lambdas, and the Aurora cluster).
@@ -204,7 +201,7 @@ new ObservabilityStack(app, stackName(wanthatEnv, "observability"), {
   functions: OBSERVED_SERVICES.map((slug) => ({ label: slug, fn: serviceFns[slug] })),
   cluster: data.cluster,
   smsSpendLimitUsd: SMS_MONTHLY_SPEND_LIMIT_USD[wanthatEnv.name],
-  funnelLogGroups: funnelServices.map((slug) => serviceFns[slug].logGroup),
+  funnelLogGroups: FUNNEL_SERVICES.map((slug) => serviceFns[slug].logGroup),
 });
 
 // DnsStack — apex mail records (Zoho MX/SPF/DKIM/DMARC) for wanthat.app. Prod only: these belong to
