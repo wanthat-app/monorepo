@@ -5,8 +5,8 @@ import { buildRender, formatMinor, injectLanding, ogHead, pickLocale } from "./l
 const SHELL =
   '<!doctype html><html lang="en"><head><meta charset="utf-8" />' +
   "<title>Wanthat</title>" +
-  '<script type="module" crossorigin src="/assets/index-abc123.js"></script>' +
-  '<link rel="stylesheet" href="/assets/index-abc123.css" />' +
+  '<script type="module" crossorigin src="/landing-assets/landing-abc123.js"></script>' +
+  '<link rel="stylesheet" href="/landing-assets/landing-abc123.css" />' +
   '</head><body><div id="root"></div></body></html>';
 
 const NOW = "2026-07-01T00:00:00.000Z";
@@ -137,7 +137,7 @@ describe("injectLanding", () => {
       "en",
     );
     expect(html).toContain('property="og:title"');
-    expect(html).toContain('src="/assets/index-abc123.js"'); // the SPA still boots
+    expect(html).toContain('src="/landing-assets/landing-abc123.js"'); // the landing app still boots
     expect(html).toContain('window.__WANTHAT_LANDING__ = {"status":"ok"};');
     expect(html).toMatch(/<div id="root">.*Feeder.*<\/div>/s); // content-first card
     expect(html).toContain("Dana"); // attribution line

@@ -6,8 +6,8 @@
  * from. The SPA then mounts the identical card over this markup and adds the auth module
  * (`SharedProductPage`), so the swap is visually seamless.
  *
- * The card markup uses ONLY Tailwind classes that appear in the SPA source — the compiled CSS
- * bundle contains nothing else.
+ * The card markup uses ONLY Tailwind classes that appear in the landing app's source
+ * (apps/landing) — the compiled CSS bundle contains nothing else.
  */
 import { buildEstimate, convertMinor } from "@wanthat/domain";
 import type { RecommendationItem } from "@wanthat/dynamo";
@@ -28,7 +28,7 @@ export interface LandingRender {
 const MERCHANT_NAMES: Record<string, string> = { aliexpress: "AliExpress" };
 const merchantName = (storeId: string): string => MERCHANT_NAMES[storeId] ?? storeId;
 
-/** Mirrors the SPA's `shared.*` i18n copy (apps/web/src/i18n.ts) so server and SPA cards match. */
+/** Mirrors the landing app's `shared.*` i18n copy (apps/landing/src/i18n.ts) so server and app cards match. */
 const COPY: Record<
   Locale,
   { on: string; earn: string; recommends: string; sentYou: string; pitch: string }
@@ -73,8 +73,8 @@ export function pickLocale(lang: string | undefined, acceptLanguage: string | un
 const SYMBOLS: Record<string, string> = { ILS: "₪", USD: "$", EUR: "€", GBP: "£" };
 
 /**
- * Minor units → display string ("8750" ILS → "₪87.50"). A ~10-line sibling of the SPA's
- * `formatMoneyMinor` (apps/web/src/lib/money.ts) — bigint/string math only, never floats.
+ * Minor units → display string ("8750" ILS → "₪87.50"). A ~10-line sibling of the design
+ * system's `formatMoneyMinor` (packages/ui/src/money.ts) — bigint/string math only, never floats.
  */
 export function formatMinor(amountMinor: bigint, currency: string): string {
   const neg = amountMinor < 0n;
@@ -213,8 +213,9 @@ function serverCard(render: LandingRender, locale: Locale): string {
 }
 
 /**
- * Inject the OG head, the snapshot script, and the server card into the SPA's `index.html`
- * shell. Keeps the SPA's asset tags (hashed `<script>`/`<link>`) intact so the app boots and
+ * Inject the OG head, the snapshot script, and the server card into the landing app's
+ * `landing.html` shell (apps/landing — the member SPA's index.html is deliberately NOT used
+ * here). Keeps the shell's asset tags (hashed `<script>`/`<link>`) intact so the app boots and
  * `SharedProductPage` takes over on `/p/{id}`. `snapshotJson` MUST already have `<` escaped
  * (as <) so stored content can never break out of the script tag.
  */

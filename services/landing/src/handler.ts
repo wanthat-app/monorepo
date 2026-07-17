@@ -1,9 +1,10 @@
 /**
  * Landing service (ADR-0001, ADR-0007). Cookieless; behind CloudFront `/p/*`. Resolves the
- * recommendation projection in ONE DynamoDB lookup, then serves the SPA shell with three
- * injections: real OG/Twitter tags, a server-rendered content-first product card in `#root`,
- * and the `window.__WANTHAT_LANDING__` snapshot (`LandingSnapshot`) the SPA hydrates from.
- * Humans see the product before any JS runs; the SPA boots and `SharedProductPage` runs the
+ * recommendation projection in ONE DynamoDB lookup, then serves the LANDING app's shell
+ * (apps/landing's `landing.html` — lean and member-bundle-free) with three injections: real
+ * OG/Twitter tags, a server-rendered content-first product card in `#root`, and the
+ * `window.__WANTHAT_LANDING__` snapshot (`LandingSnapshot`) the landing app hydrates from.
+ * Humans see the product before any JS runs; the app boots and `SharedProductPage` runs the
  * session/passkey/guest mechanism client-side (identity never resolves on this server).
  *
  * A snapshot is ALWAYS injected — not-found and read failures serve `{status:"notFound"}` with
@@ -33,14 +34,19 @@ interface LandingResult {
   body: string;
 }
 
-/** The SPA shell (index.html), cached briefly so a redeploy's new asset hashes are picked up. */
+/**
+ * The LANDING app's shell (landing.html — apps/landing's build, published into the same site
+ * bucket as the member SPA), cached briefly so a redeploy's new asset hashes are picked up.
+ * NOT index.html: that is the member app, and serving it here would make every guest download
+ * the member bundle.
+ */
 let shellCache: { html: string; at: number } | undefined;
 const SHELL_TTL_MS = 30_000;
 
 async function fetchShell(origin: string): Promise<string> {
   const now = Date.now();
   if (shellCache && now - shellCache.at < SHELL_TTL_MS) return shellCache.html;
-  const res = await fetch(`${origin}/index.html`, { headers: { "cache-control": "no-cache" } });
+  const res = await fetch(`${origin}/landing.html`, { headers: { "cache-control": "no-cache" } });
   if (!res.ok) throw new Error(`shell fetch ${res.status}`);
   const html = await res.text();
   shellCache = { html, at: now };

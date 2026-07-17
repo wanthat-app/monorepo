@@ -13,10 +13,12 @@ vi.mock("./context", () => ({ getContext: () => fake }));
 
 import { handler, resetCachesForTests } from "./handler";
 
+// The landing app's shell (apps/landing/landing.html as built): its assets live under
+// /landing-assets/* so they can never collide with the member SPA's /assets/*.
 const SHELL =
-  '<!doctype html><html lang="en"><head><meta charset="utf-8" />' +
+  '<!doctype html><html lang="he" dir="rtl"><head><meta charset="utf-8" />' +
   "<title>Wanthat</title>" +
-  '<script type="module" crossorigin src="/assets/index-abc123.js"></script>' +
+  '<script type="module" crossorigin src="/landing-assets/landing-abc123.js"></script>' +
   '</head><body><div id="root"></div></body></html>';
 
 const NOW = "2026-07-01T00:00:00.000Z";
@@ -79,7 +81,7 @@ describe("handler", () => {
       '<meta property="og:title" content="Jebao Smart Aquarium Fish Feeder" />',
     );
     expect(res.body).toContain("₪87.50"); // 2500 USD-minor x 3.5, server-rendered
-    expect(res.body).toContain('src="/assets/index-abc123.js"'); // the SPA still boots
+    expect(res.body).toContain('src="/landing-assets/landing-abc123.js"'); // the landing app still boots
 
     const snap = snapshotOf(res.body);
     expect(snap.status).toBe("ok");
@@ -141,7 +143,7 @@ describe("handler", () => {
     } as never);
     expect(res.statusCode).toBe(200);
     const fetchMock = globalThis.fetch as unknown as { mock: { calls: unknown[][] } };
-    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://dev.wanthat.app/index.html");
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe("https://dev.wanthat.app/landing.html");
   });
 
   it("500s when SITE_ORIGIN is unset (fails closed, no header fallback)", async () => {

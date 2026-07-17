@@ -23,6 +23,7 @@
     "@wanthat/db": "workspace:*",
     "@wanthat/domain": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
+    "@wanthat/landing-app": "workspace:*",
     "@wanthat/web": "workspace:*",
     "@wanthat/whatsapp": "workspace:*",
     "aws-cdk": "^2.150.0",

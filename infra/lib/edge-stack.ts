@@ -53,8 +53,10 @@ export interface EdgeStackProps extends StackProps {
  * TWO CloudFront distributions per environment since the admin-origin split:
  *
  * The MEMBER distribution has two origins:
- * - **default** → a private S3 bucket (OAC) holding the Vite/React SPA (ADR-0016). SPA client-side
- *   routing is served by rewriting 403/404 to `/index.html`.
+ * - **default** → a private S3 bucket (OAC) holding the member Vite/React SPA (ADR-0016) AND the
+ *   lean landing app (apps/landing: `landing.html` + `/landing-assets/*` — the shell the landing
+ *   Lambda injects, so guests on `/p/*` never download the member bundle). SPA client-side routing
+ *   is served by rewriting 403/404 to `/index.html`.
  * - **`/p/*`** → the landing HTTP API (ADR-0007/0007), the viral redirect hot path.
  *
  * The ADMIN distribution (`admin.{domainName}`) serves the admin console — its own SPA (apps/admin)
@@ -306,11 +308,14 @@ export class EdgeStack extends Stack {
     // redirect stub forwards there, and it names the admin console itself.
     const adminOrigin = `https://${adminDomainName ?? this.adminDistribution.distributionDomainName}`;
 
-    // Upload the SPA build + a runtime `/config.json`, and invalidate the edge cache on each deploy.
-    // The asset dir must exist at synth time; infra build-depends on `@wanthat/web` (its
-    // `package.json`), so Turborepo's `^build` produces `apps/web/dist` before any infra synth/diff/
-    // deploy. `config.json` is a second source in the SAME deployment (not a separate BucketDeployment,
-    // which would prune the other's files); the SPA fetches it at load so it needs no build-time env.
+    // Upload the member SPA build + the LANDING app build + a runtime `/config.json`, and invalidate
+    // the edge cache on each deploy. The asset dirs must exist at synth time; infra build-depends on
+    // `@wanthat/web` and `@wanthat/landing-app` (its `package.json`), so Turborepo's `^build` produces
+    // both dists before any infra synth/diff/deploy. All three are sources of the SAME deployment (a
+    // second BucketDeployment would prune the other's files): the member SPA owns index.html +
+    // /assets/*, the landing app owns landing.html + /landing-assets/* (disjoint by construction —
+    // the landing Lambda fetches landing.html as its shell, so guests on /p/* never download the
+    // member bundle), and the SPA fetches config.json at load so it needs no build-time env.
     // Token values are substituted at deploy time by the BucketDeployment custom resource.
     //
     // Cache-Control: no-cache on EVERYTHING here. Without it S3 sends no Cache-Control and
@@ -323,6 +328,7 @@ export class EdgeStack extends Stack {
       destinationBucket: siteBucket,
       sources: [
         s3deploy.Source.asset(path.join(REPO_ROOT, "apps", "web", "dist")),
+        s3deploy.Source.asset(path.join(REPO_ROOT, "apps", "landing", "dist")),
         s3deploy.Source.jsonData("config.json", { ...props.spaConfig, adminOrigin }),
       ],
       cacheControl: [s3deploy.CacheControl.noCache()],

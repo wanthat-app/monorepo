@@ -7,7 +7,6 @@ import { ActivityPage } from "./features/activity/ActivityPage";
 import { AuthPage } from "./features/auth/AuthPage";
 import { CreateLinkPage } from "./features/create/CreateLinkPage";
 import { HomePage } from "./features/home/HomePage";
-import { SharedProductPage } from "./features/landing/SharedProductPage";
 import { LegalPage } from "./features/legal/LegalPage";
 import { NotFoundPage } from "./features/not-found/NotFoundPage";
 import { ProfilePage } from "./features/profile/ProfilePage";
@@ -34,8 +33,8 @@ const router = createBrowserRouter([
       { path: "/activity", element: <ActivityPage /> },
       { path: "/profile", element: <ProfilePage /> },
       { path: "/create", element: <CreateLinkPage /> },
-      // Referral landing (dynamic SPA page; the landing service server-renders only OG for bots).
-      { path: "/p/:id", element: <SharedProductPage /> },
+      // No /p/* route: the referral landing is its OWN lean app (apps/landing) — the landing
+      // service serves its `landing.html` shell on `/p/*`, so guests never download this bundle.
       // Sample legal pages — linked from the registration consent checkbox.
       { path: "/terms", element: <LegalPage kind="terms" /> },
       { path: "/privacy", element: <LegalPage kind="privacy" /> },
