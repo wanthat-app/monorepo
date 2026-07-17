@@ -72,6 +72,9 @@ describe("handler", () => {
     const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
     const res = await handler({ rawPath: "/p/abc123DEF45" } as never);
     expect(res.statusCode).toBe(200);
+    // The edge cache is origin-controlled (ADR-0018): this opt-in header is what CloudFront's
+    // max-60s policy keys on — losing it silently disables the viral-burst shield.
+    expect(res.headers["cache-control"]).toBe("public, max-age=60");
     expect(res.body).toContain(
       '<meta property="og:title" content="Jebao Smart Aquarium Fish Feeder" />',
     );

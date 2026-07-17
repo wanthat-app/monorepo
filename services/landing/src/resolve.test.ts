@@ -58,6 +58,9 @@ describe("resolve", () => {
   it("redirects a verified member with af + dp and emits a member click", async () => {
     const res = await call(makeDeps(), { auth: "Bearer good", body: {} });
     expect(res.statusCode).toBe(200);
+    // Per-consumer response: must never be edge-cached (the /p/* CloudFront policy honors
+    // origin Cache-Control - ADR-0018), so no-store is load-bearing, not hygiene.
+    expect(res.headers["cache-control"]).toBe("no-store");
     const parsed = ResolveResponse.parse(JSON.parse(res.body));
     if (parsed.outcome !== "redirect") throw new Error("expected redirect");
     const u = new URL(parsed.url);
