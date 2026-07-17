@@ -41,8 +41,9 @@ Two things changed:
    PREFERRED_CHALLENGE=SMS_OTP)` + `RespondToAuthChallenge` from the SPA against the public
    `cognito-idp` endpoint; new users self-register with the public `SignUp` +
    `ConfirmSignUp`. No app code proxies authentication. **`app-auth` loses its entire auth surface** (all
-   `/auth/*` routes) and survives only as the non-VPC `links` edge (ADR-0004) — rename to
-   `app-links` as part of the work. The Ed25519 ticket (+ `ticket-keygen` custom resource +
+   `/auth/*` routes) and survives only as the non-VPC `links` edge (ADR-0004) — renamed
+   `app-links` as part of the work (today's `member-catalog` after the 2026-07 refactor,
+   ADR-0002). The Ed25519 ticket (+ `ticket-keygen` custom resource +
    secret) and the `auth_challenge` and `phone_velocity` tables are deleted.
 2. **Passkeys are Cognito-native.** Enrolment via `StartWebAuthnRegistration` /
    `CompleteWebAuthnRegistration` (access-token authorized); login via
@@ -63,11 +64,11 @@ Two things changed:
 4. **Aurora holds money only** — wallet ledger + hash-chained audit log, keyed directly by
    the Cognito `sub` (ADR-0020). The `customer` table is dropped; `/auth/session`,
    `/auth/register`, and `/me` are deleted from `app-core`, which becomes the wallet
-   service. Nothing on the authentication path touches Aurora.
+   service (today's `member-wallet`). Nothing on the authentication path touches Aurora.
 5. **OTP channel is a sticky user preference, enforced in the sender.** Cognito forwards no
    `ClientMetadata` to custom-sender triggers, so the per-request channel write that
    `/auth/start` performed cannot exist. Instead: `custom:otpChannel` is set at `SignUp`
-   (rides `UserAttributes`) and edited post-auth from the profile; the **message-sender
+   (rides `UserAttributes`) and edited post-auth from the profile; the **`otp-sender`
    trigger becomes the enforcement point** — it reads the runtime-config kill switches
    (`auth.whatsappEnabled`, `auth.smsEnabled`, `whatsapp.phoneNumberId`,
    `auth.defaultOtpChannel`), honours the user's preference when available, and falls back
@@ -77,18 +78,21 @@ Two things changed:
    proxy; protection = AWS WAF web ACL on the user pool (rate-based rules on the
    unauthenticated operations) + Cognito's own request quotas + the SMS spend cap.
    (Verify WAF-for-Cognito availability in il-central-1 before build — spike task.)
-7. **Welcome message via Post-Confirmation trigger.** The welcome `notification_outbox`
-   write (previously in `/auth/register`) moves to a small non-VPC Cognito
-   Post-Confirmation trigger writing DynamoDB only. The former auth foundation's "no Post-Confirmation
+7. **Welcome message via Post-Confirmation trigger.** The welcome send (previously queued in
+   `/auth/register`) moves to a small non-VPC Cognito Post-Confirmation trigger — originally
+   a `notification_outbox` DynamoDB write; since the 2026-07 refactor a direct **async invoke
+   of `notification-sender`** plus an async `audit-writer` `user_registered` event
+   (ADR-0019 decision 4). The former auth foundation's "no Post-Confirmation
    trigger" stance existed to keep Aurora provisioning out of triggers; with no Aurora on
-   the path, that objection is void.
+   the trigger's own path, that objection is void.
 8. **Lifecycle & moderation.** Suspend = `AdminDisableUser` (reversible; profile, sub, and
    passkeys preserved); kick = `AdminUserGlobalSignOut`; erase = `AdminDeleteUser` (a
    returning user gets a NEW sub — a new identity, unlinkable from prior wallet history, so
    disable is the moderation tool and delete is for true erasure). Known caveat: the API
    Gateway JWT authorizer validates statelessly, so already-issued access tokens pass until
    expiry (1 h) after a disable; acceptable for MVP (wallet reads are the only customer
-   money surface; mutations flow through the poller). admin-api gains the disable / enable /
+   money surface; mutations flow through the poller). The admin surface (today's
+   `admin-console`) gains the disable / enable /
    global-sign-out grants beside its existing delete grant, and deleting a user also deletes
    their DynamoDB recommendations (by `byOwner` GSI) with a counter decrement.
 9. **Two Cognito pools stay** (carried from the former auth foundation): customers (phone, passwordless,
@@ -98,7 +102,7 @@ Two things changed:
 ## Decided flow (sequence)
 
 The end state - authentication needs zero backend calls; Aurora appears only at the wallet
-read:
+read (service names updated to the 2026-07 topology):
 
 ```mermaid
 sequenceDiagram
@@ -108,7 +112,7 @@ sequenceDiagram
     participant Cognito as Cognito public API<br/>https://cognito-idp<br/>.il-central-1.amazonaws.com
     participant Sender as Custom sender<br/>WhatsApp / SMS
     participant GW as API Gateway JWT authorizer<br/>execute-api domain
-    participant AppCore as app-core Lambda (in-VPC)
+    participant Wallet as member-wallet Lambda (in-VPC)
     participant Aurora as Aurora PG<br/>MONEY ONLY (ledger + audit, keyed by sub)
 
     rect rgb(245, 245, 245)
@@ -133,8 +137,8 @@ sequenceDiagram
     rect rgb(245, 245, 245)
         Note over SPA,Aurora: 3. Money and profile edits
         SPA->>GW: GET /wallet - Bearer access-JWT
-        GW->>AppCore: claims injected (sub)
-        AppCore->>Aurora: ledger read keyed by sub (first Aurora touch,<br/>behind the /home skeleton)
+        GW->>Wallet: claims injected (sub)
+        Wallet->>Aurora: ledger read keyed by sub (first Aurora touch,<br/>behind the /home skeleton)
         SPA->>Cognito: UpdateUserAttributes (self-service, access token)<br/>+ VerifyUserAttribute for email changes
         Note right of SPA: ID token claims are stale until the next refresh -<br/>re-fetch via GetUser after an edit
     end
@@ -180,7 +184,7 @@ sequenceDiagram
   the wallet read behind the `/home` skeleton. The idle-resume slow login is structurally
   gone.
 - **Deleted:** app-auth's auth routes (the function survives as the `links` edge, renamed
-  `app-links`), `packages/auth` (tickets),
+  `app-links` — today's `member-catalog`), `packages/auth` (tickets),
   `packages/webauthn`, `ticket-keygen` + secret, `auth_challenge`, `passkey_credential`,
   `phone_velocity`, `/auth/session`, `/auth/register`, `/me`, the Aurora `customer` table.
 - **Admin user views** move from SQL to `ListUsers`: one-attribute exact/prefix filter, no
@@ -204,6 +208,8 @@ sequenceDiagram
 ## Appendix - evaluated option space (diagrams and sourced comparison)
 
 Preserved from the pre-decision evaluation (2026-07-08/09). Sources inline.
+**Service names in this appendix predate the 2026-07 topology refactor** (`app-auth` /
+`app-core` etc. — see ADR-0002 for today's names); kept verbatim as the historical record.
 
 The current customer flow (see [auth-flows-customer.md](./auth-flows-customer.md)) is complex
 because the app owns the ceremonies: app-auth proxies every OTP step, runs the WebAuthn

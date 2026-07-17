@@ -17,7 +17,7 @@ change a decision by adding a new superseding ADR, not by editing an accepted on
   PII lives in Cognito attributes, ADR-0006), **Aurora Serverless v2** (PostgreSQL,
   scale-to-zero) for **money only** (append-only wallet ledger + hash-chained audit log),
   **DynamoDB** (on-demand) for everything non-money (product cache, recommendations, guest
-  attribution, runtime config/kill switches, counters, FX cache, notification outbox),
+  attribution, runtime config/kill switches, counters, FX cache — nine tables),
   Kinesis Firehose → S3 + Glue/Athena (funnel analytics), EventBridge Scheduler,
   CloudFront + WAF, Secrets Manager. **No RDS Proxy and no NAT Gateway**; in-VPC Lambdas use
   IAM database authentication.
@@ -29,18 +29,21 @@ change a decision by adding a new superseding ADR, not by editing an accepted on
 
 ```
 apps/web/                  Vite + React SPA (cookieless, Hebrew/RTL; runtime config.json)
-services/
-  app-links/               member catalog: products.resolve + recommendations (non-VPC)
-  app-core/                member wallet + activity (in-VPC → Aurora as app_rw)
-  admin-api/               admin stats/config/orders (in-VPC → Aurora as app_ro)
-  admin-credentials/       admin Cognito moderation + retailer-secret rotation (non-VPC)
+services/                    one dir per Lambda; slug = wanthat-{env}-{slug} (registry: infra/lib/config.ts)
   landing/                 public /p/ landing + attributed redirect (non-VPC → DynamoDB)
-  retailer-proxy/          sole retailer egress + order-poll fetcher (non-VPC, sole secret reader)
-  conversion-poller/       in-VPC writer — the ONLY money writer (invoked by retailer-proxy)
-  fx-rates/                scheduled FX rate cache updater (non-VPC → fx_rate)
-  message-sender/          Cognito custom SMS sender: WhatsApp/SMS OTP, kill-switched (non-VPC)
-  post-confirmation/       Cognito post-confirmation trigger: welcome outbox + guest attribution
-  whatsapp-dispatcher/     notification_outbox stream consumer (non-VPC, DLQ)
+  member-catalog/          member catalog: products.resolve + recommendations + /config (non-VPC)
+  member-wallet/           member wallet views (in-VPC → Aurora as wallet_reader, read-only)
+  admin-console/           ALL admin actions + Dynamo views: moderation, config, claims, secrets (non-VPC)
+  admin-ledger-view/       admin Aurora record-reads: money stats, activity, user wallet (in-VPC, ledger_reader)
+  retailer-linkgen/        sync link mint against the retailer API (invoke-only from member-catalog)
+  retailer-settlement/     scheduled order poll + attribution + claim settlement (15-min heartbeat)
+  ledger-writer/           the ONLY money writer (in-VPC, ledger_writer; invoked by retailer-settlement)
+  audit-writer/            hash-chained audit appends (in-VPC, audit_writer = EXECUTE audit_append only)
+  otp-sender/              Cognito custom SMS sender: WhatsApp/SMS OTP, kill-switched (non-VPC)
+  post-confirmation/       Cognito post-confirmation trigger: async welcome + audit + guest attribution
+  notification-sender/     WhatsApp notification worker (async-invoked; retry ×2 → SQS DLQ)
+  fx-rates/                FX rate cache updater (scheduled + admin-invoked, non-VPC → fx_rate)
+  role-bootstrap/          deploy-time Postgres role creator (in-VPC, CDK Trigger, runs before migrator)
   db-migrator/             deploy-time SQL migration runner (in-VPC, CDK Trigger)
 packages/
   contracts/  domain/  db/  dynamo/  aliexpress/  whatsapp/  config/
@@ -70,28 +73,32 @@ pnpm deploy              # cdk deploy
 
 ## Architecture (big picture)
 
-Compute is sliced by real seams (ADR-0002, reshaped by ADR-0006): the member surface is the
-non-VPC `app-links` (catalog + recommendations) + in-VPC `app-core` (wallet); the admin
-surface is the in-VPC `admin-api` (SQL stats + config) + non-VPC `admin-credentials` (Cognito
-moderation, secret writes); plus the public `landing`, the conversion pipeline
-(`retailer-proxy` fetcher → in-VPC `conversion-poller` writer, on a 15-min EventBridge
-heartbeat), and the messaging pair (`message-sender`, `whatsapp-dispatcher`). **There is no
+Compute is sliced by real seams (ADR-0002, rewritten for the 2026-07 fifteen-function
+topology): the member surface is the non-VPC `member-catalog` + in-VPC `member-wallet`
+(read-only; the activity feed is composed client-side in the SPA); the admin surface is the
+non-VPC `admin-console` (all actions + Dynamo views, audit-or-fail via `audit-writer`) +
+in-VPC `admin-ledger-view` (Aurora record-reads); plus the public `landing`, the conversion
+pipeline (`retailer-settlement` poll on a 15-min EventBridge heartbeat → in-VPC
+`ledger-writer`), and the messaging pair (`otp-sender`, `notification-sender`). **There is no
 auth service** — the browser calls Cognito directly (SignUp / InitiateAuth / WEB_AUTHN).
-Money mutations flow only through the poller-writer into the append-only ledger +
-hash-chained audit log, enforced by per-function Postgres roles.
+Money mutations flow only through `ledger-writer` into the append-only ledger + hash-chained
+audit log, enforced by one Postgres role per function; the only lambda-to-lambda arrows are
+the six of ADR-0002's invoke matrix.
 
 **Datastore is polyglot (ADR-0003 + ADR-0006):** Aurora holds **money only** —
-`wallet_entry` (append-only, keyed by the Cognito `sub`, ADR-0020) + `audit_log`. **All
-customer PII lives in Cognito user attributes.** Everything else — products,
-recommendations, guest attribution, runtime config, counters, FX cache, outbox — lives in
-DynamoDB (non-PII).
+`wallet_entry` (append-only, keyed by the Cognito `sub`, ADR-0020) + `audit_log`
+(`audit_append` is the only door in). **All customer PII lives in Cognito user attributes.**
+Everything else — products, recommendations, guest attribution, poller state, unattributed
+orders, runtime config, counters, FX cache, otp sink — lives in DynamoDB (nine tables,
+non-PII).
 
-**Network is NAT-free (ADR-0004):** the only things in the VPC are Aurora and the four
-functions that touch it (`app-core`, `admin-api`, `conversion-poller`, `db-migrator`) — they
-connect directly via IAM database auth (no RDS Proxy) and reach DynamoDB via the free gateway
+**Network is NAT-free (ADR-0004):** the only things in the VPC are Aurora and the six
+functions that touch it (`member-wallet`, `admin-ledger-view`, `ledger-writer`,
+`audit-writer`, plus the deploy-time `role-bootstrap` + `db-migrator`) — they connect
+directly via IAM database auth (no RDS Proxy) and reach DynamoDB via the free gateway
 endpoint. Everything else runs **outside** the VPC; all retailer calls (AliExpress et al.,
-IPv4-only) go through the single non-VPC `retailer-proxy`, which holds the secret-scoped
-retailer credential and invokes the in-VPC writer. The app is **cookieless** — the SPA
+IPv4-only) go through the non-VPC `retailer-linkgen` / `retailer-settlement` pair, which
+holds the secret-scoped retailer credential; settlement invokes the in-VPC writer. The app is **cookieless** — the SPA
 carries the Cognito JWT as a Bearer header; `landing` serves the OG landing page behind a
 public HTTP API fronted by CloudFront `/p/*` (il-central-1 has no Lambda Function URLs) and
 verifies member tokens offline via JWKS (ADR-0007). **Never reserve Lambda concurrency** —
@@ -104,13 +111,16 @@ the account limit is 10 until the quota is raised.
   `us-east-1` (control-plane only; traffic terminates at the edge). WhatsApp sends go through
   `eu-central-1` (End User Messaging Social is not in il-central-1). Everything else is
   `il-central-1`.
-- **Key decisions (ADRs):** monorepo + Zod contracts (0001); compute topology + DB-grant
-  least-privilege (0002); polyglot Aurora + DynamoDB, no RDS Proxy (0003); NAT-free non-VPC
-  chaining (0004); single-region active + cross-region backups (0005); Cognito-native auth +
-  customer PII in Cognito (0006); redirect resolves in DynamoDB, relaxed-but-reachable p95
-  (0007); attribution via `custom_parameters`, no click-log lookup (0008); conversion via
-  scheduled `order.listbyindex` poller, not a webhook (0009); currency: hold settlement
-  currency, ILS is a display estimate (0017); Cognito `sub` is the canonical user id (0020).
+- **Key decisions (ADRs):** monorepo + Zod contracts (0001); fifteen-function topology,
+  per-function Postgres roles, six-arrow invoke matrix + exposure rule (0002); polyglot
+  Aurora + DynamoDB, no RDS Proxy (0003); NAT-free non-VPC chaining (0004); single-region
+  active + cross-region backups (0005); Cognito-native auth + customer PII in Cognito (0006);
+  redirect resolves in DynamoDB, relaxed-but-reachable p95 (0007); attribution via
+  `custom_parameters`, no click-log lookup (0008); conversion via scheduled
+  `order.listbyindex` poller, not a webhook; conversion stats are a derived ledger projection
+  (0009); currency: hold settlement currency, ILS is a display estimate (0017); notifications
+  via direct async invoke + DLQ, no outbox (0019); Cognito `sub` is the canonical user id
+  (0020).
 - **Lambda layout:** function source in `services/*`, infra in `infra/`, shared logic in
   `packages/*`; CDK `NodejsFunction` bundles each handler from the same tree. New `packages/*`
   imported by a Lambda must also be added to infra devDependencies (the filtered Deploy build

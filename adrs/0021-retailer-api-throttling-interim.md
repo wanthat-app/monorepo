@@ -2,7 +2,7 @@
 
 - **Status:** Accepted (temporary — revise before scale; see *Revisit triggers*)
 - **Date:** 2026-07-08
-- **Related:** [ADR-0002](0002-app-compute-topology.md) (retailer proxy), [ADR-0009](0009-conversion-ingestion-poller.md) (poller — the future volume driver)
+- **Related:** [ADR-0002](0002-app-compute-topology.md) (retailer tier), [ADR-0009](0009-conversion-ingestion-poller.md) (poller — the future volume driver)
 
 ## Context
 
@@ -11,8 +11,8 @@ The AliExpress affiliate gateway rate-limits per app. Observed during create-lin
 seconds` — roughly one call per second. A single resolve needs two calls (`productdetail.get`,
 `link.generate`); fired in parallel they race for the same budget, and the throttle can land on
 either — including the essential one. Approved apps get higher limits, but the ceiling never
-disappears, and the conversion poller (ADR-0009) will add scheduled bulk calls to the same app
-key later.
+disappears, and the settlement poll (`retailer-settlement`, ADR-0009) adds scheduled bulk calls to the
+same app key.
 
 ## Decision (interim)
 
@@ -23,7 +23,7 @@ failure, or a second throttle, fails the flow with a typed error.
 
 This is deliberately minimal — correct for today's traffic (interactive, low-volume, one resolve
 at a time) and simple enough to delete. It is **not** a rate limiter: concurrent invokes do not
-coordinate, and nothing enforces a global calls-per-second budget across the proxy's containers.
+coordinate, and nothing enforces a global calls-per-second budget across the retailer functions' containers.
 
 ## Alternatives considered (the likely future shape)
 
@@ -36,7 +36,7 @@ coordinate, and nothing enforces a global calls-per-second budget across the pro
 ## Revisit triggers
 
 Revise this decision when any of these arrives:
-1. the **conversion poller** slice (bulk `order.listbyindex` sharing the same app key),
+1. real volume on the **settlement poll** (`retailer-settlement`: bulk `order.listbyindex` sharing the same app key),
 2. real concurrent user traffic on resolve,
 3. the app leaves test mode and the actual approved rate limits are known.
 

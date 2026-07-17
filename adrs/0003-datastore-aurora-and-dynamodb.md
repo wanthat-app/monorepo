@@ -34,7 +34,11 @@ Scale-to-zero means idle ≈ storage cost.
 
 ### DynamoDB (on-demand), `il-central-1` — catalog + operational
 
-Holds everything that isn't PII or money:
+Holds everything that isn't PII or money — **nine tables** as of the 2026-07 refactor
+(`notification_outbox` was deleted when notifications moved to direct async invokes,
+ADR-0019): `product`, `recommendation`, `guest_attribution`, `poller_state`,
+`unattributed_order`, `runtime_config`, `ops_counters`, `fx_rate`, `otp_sink`. The
+foundational three:
 - **Product** — shared catalog item keyed by `(store_id, store_product_id)`; fetched once and reused
   across members, carrying the product-level `affiliate_url` and cashback rates.
 - **Recommendation** — keyed by `recommendation_id` (uuid); a member's shareable rec of a product
@@ -43,7 +47,7 @@ Holds everything that isn't PII or money:
   relational layer.
 - **`guest_attribution` (guestId → sub)** — opaque→opaque, best-effort (ADR-0008); written
   after sign-up outside any transaction (allowed to fail), read at conversion by the
-  non-VPC Retailer Proxy.
+  non-VPC `retailer-settlement`.
 
 References from these items into Aurora (a recommendation's owner; a wallet entry's recommendation)
 are **soft** — plain id attributes, not enforced FKs (KV has none).
@@ -53,9 +57,11 @@ has PITR, and needs no VPC (free gateway endpoint for any in-VPC caller).
 
 ### No RDS Proxy
 
-With redirect on DynamoDB, Aurora never sees the viral burst. The remaining Aurora callers are
-low-concurrency / rate-limited and connect directly, with reserved-concurrency caps (ADR-0002)
-holding under `max_connections`.
+With redirect on DynamoDB, Aurora never sees the viral burst. The remaining Aurora callers
+(ADR-0002's in-VPC set, each under its own per-function Postgres role — `wallet_reader`,
+`ledger_reader`, `ledger_writer`, `audit_writer`, `wanthat_migrator`) are low-concurrency /
+rate-limited and connect directly; total connection pressure stays far under
+`max_connections` (a CloudWatch alarm watches 80% of the cap).
 
 ## Alternatives considered
 
@@ -82,5 +88,5 @@ holding under `max_connections`.
   recommendations, and `guest_attribution` are DynamoDB writes.
 - Aurora-touching functions are in-VPC; redirect is not — the public path touches only the
   non-PII DynamoDB table.
-- **Verify at provisioning:** `il-central-1` Aurora engine + scale-to-zero; reserved-concurrency
-  caps hold under `max_connections` at the chosen min ACU; DynamoDB PITR enabled.
+- **Verify at provisioning:** `il-central-1` Aurora engine + scale-to-zero; connection count
+  holds under `max_connections` at the chosen min ACU (alarmed at 80%); DynamoDB PITR enabled.

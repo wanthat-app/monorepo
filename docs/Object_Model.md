@@ -145,7 +145,7 @@ erDiagram
 - **`CONFIG` is a generic key-value store** for admin-tunable **runtime** settings (distinct from
   the boot-time `Env` contract), keyed by `config_key`. New parameters are added without new tables
   or endpoints; each value is validated against its key's schema in the contracts registry
-  (`CONFIG_SCHEMAS`). Written by `admin-api` (audited); read where needed — the redirect path reads
+  (`CONFIG_SCHEMAS`). Written by `admin-console` (audited via audit-writer); read where needed — the redirect path reads
   `landing.countdownSeconds`.
 
 ## Persistence mapping (ADR-0003)
@@ -182,8 +182,7 @@ erDiagram
 - Attribution mechanism + the `short_id → recommendation_id` rename are now in the ADRs (edited in
   place); ADR-0017 is no longer needed.
 - UC4–7 entities added here as designed.
-- **Poller cadence is admin-tunable** (CONFIG `poller.intervalMinutes` → EventBridge schedule via
-  `admin-api`; `poller.lookbackHours` read at run time to size the re-scan window).
+- **Poller cadence is admin-tunable** (CONFIG `poller.intervalMinutes` edited in `admin-console`, read by the poll; `poller.lookbackHours` read at run time to size the re-scan window).
 - **Open integration point — `poller.lookbackHours`:** the window must cover an order's full
   confirm/return maturation; the 72h default is a placeholder and **the value is deferred to
   integration** (admin-tunable, so widenable in prod without a redeploy). **Other integration risks

@@ -12,21 +12,24 @@ contracts/types across all of it. The codebase is TypeScript-only, owned by one 
 
 ## Decision
 
-**Single monorepo** — pnpm workspaces + Turborepo, with infrastructure folded in:
+**Single monorepo** — pnpm workspaces + Turborepo, with infrastructure folded in
+(service names as of the 2026-07 topology refactor — one directory per Lambda, ADR-0002):
 
 ```
 wanthat/
-├─ apps/web/                      # Next.js/React SPA
-├─ services/
-│  ├─ app-api/                    # identity+links+wallet Lambdalith
-│  ├─ admin-api/                  # admin Lambda
-│  ├─ landing/                    # landing service (non-VPC → DynamoDB)
-│  ├─ conversion-poller/          # scheduled poll writer (in-VPC)
-│  └─ retailer-proxy/             # sole non-VPC egress to retailer APIs
+├─ apps/web/                      # Vite/React SPA
+├─ services/                      # one directory per Lambda (slug = wanthat-{env}-{slug})
+│  ├─ landing/  member-catalog/  member-wallet/
+│  ├─ admin-console/  admin-ledger-view/
+│  ├─ retailer-linkgen/  retailer-settlement/  ledger-writer/  audit-writer/
+│  ├─ otp-sender/  post-confirmation/  notification-sender/  fx-rates/
+│  └─ role-bootstrap/  db-migrator/
 ├─ packages/
 │  ├─ contracts/                  # Zod schemas: domain model, API I/O, custom_parameters
 │  ├─ domain/                     # ledger math, commission split, attribution logic
+│  ├─ db/  dynamo/                # Aurora + DynamoDB access layers
 │  ├─ aliexpress/                 # signed retailer client (link.generate, order.listbyindex)
+│  ├─ whatsapp/                   # WhatsApp template registry + send client
 │  └─ config/                     # env schema + typed config (services AND infra)
 ├─ infra/                         # AWS CDK app (stacks)
 ├─ adrs/                          # decision records

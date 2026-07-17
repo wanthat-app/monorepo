@@ -28,7 +28,7 @@ on. No redeploys anywhere below.
 ## 4. Flip the switches (admin config, per env)
 1. `PUT /admin/config/whatsapp.phoneNumberId` -> the `phone-number-id-...` value.
 2. `PUT /admin/config/auth.whatsappEnabled` -> `true`. The SPA offers WhatsApp on the next
-   /auth/config fetch; smoke-test a login.
+   `/config` fetch; smoke-test a login.
 3. After PR 2: `PUT /admin/config/notifications.whatsappEnabled` -> `true`; register a test user
    and confirm the welcome message.
 
