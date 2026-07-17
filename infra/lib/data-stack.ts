@@ -1,6 +1,6 @@
 import { Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
-import * as ec2 from "aws-cdk-lib/aws-ec2";
+import type * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
@@ -183,27 +183,13 @@ export class DataStack extends Stack {
     // schema USAGE (packages/db runRoleBootstrap). wanthat_migrator has no CREATEROLE (0003), so
     // role creation is a master-only capability - exercised by exactly this one auditable,
     // deploy-time code path instead of a psql runbook (the psql equivalent stays in
-    // infra/lib/README.md as disaster-recovery reference). Master password comes from the
-    // cluster's generated secret, which needs the TRANSITIONAL interface endpoint below - the
-    // VPC otherwise has no Secrets Manager path (the migrator went IAM-auth in 0003 precisely to
-    // drop it). Endpoint + this function are removed together once the legacy-role drops (R2)
-    // have run through this same function (refactor PR-8/9).
-    const secretsEndpointSg = new ec2.SecurityGroup(this, "SecretsEndpointSg", {
-      vpc,
-      description: "TRANSITIONAL allow HTTPS from lambda SG to the Secrets Manager endpoint",
-      allowAllOutbound: false,
-    });
-    secretsEndpointSg.addIngressRule(
-      lambdaSg,
-      ec2.Port.tcp(443),
-      "role-bootstrap master-secret read",
-    );
-    const secretsEndpoint = new ec2.InterfaceVpcEndpoint(this, "SecretsManagerEndpoint", {
-      vpc,
-      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
-      subnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
-      securityGroups: [secretsEndpointSg],
-    });
+    // infra/lib/README.md as disaster-recovery reference).
+    // AUTH: IAM token as wanthat_master - NO password, NO Secrets Manager, NO interface
+    // endpoint. 0003 made master a member of wanthat_migrator (which holds rds_iam), and RDS
+    // routes any rds_iam member - even transitively - through IAM/PAM auth. That DISABLED
+    // master password login cluster-wide (the first version of this function died on
+    // "PAM authentication failed") and simultaneously enabled the same SigV4 path every other
+    // in-VPC function uses.
     const roleBootstrapFn = makeServiceFunction(this, wanthatEnv, "role-bootstrap", {
       timeout: Duration.minutes(5), // waitForDb rides out a cold scale-to-zero resume
       vpc,
@@ -211,20 +197,19 @@ export class DataStack extends Stack {
       securityGroups: [lambdaSg],
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
+        DB_USER: "wanthat_master",
         DB_HOST: this.cluster.clusterEndpoint.hostname,
         DB_PORT: String(this.cluster.clusterEndpoint.port),
         DB_NAME: "wanthat",
-        // biome-ignore lint/style/noNonNullAssertion: fromGeneratedSecret guarantees a secret
-        MASTER_SECRET_ARN: this.cluster.secret!.secretArn,
         ...RDS_CA_ENV,
       },
       bundling: rdsCaBundling,
     });
-    // biome-ignore lint/style/noNonNullAssertion: fromGeneratedSecret guarantees a secret
-    this.cluster.secret!.grantRead(roleBootstrapFn);
+    // IAM DB auth as the master user (see AUTH note above).
+    this.cluster.grantConnect(roleBootstrapFn, "wanthat_master");
     const roleBootstrapTrigger = new Trigger(this, "RoleBootstrapTrigger", {
       handler: roleBootstrapFn,
-      executeAfter: [this.cluster, secretsEndpoint],
+      executeAfter: [this.cluster],
       timeout: Duration.minutes(5),
     });
 
