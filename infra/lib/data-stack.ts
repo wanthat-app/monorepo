@@ -29,7 +29,7 @@ export interface DataStackProps extends StackProps {
  * DynamoDB (on-demand) holds everything that isn't money: the landing projection
  * (`recommendationId → affiliate url + product`, `byOwner` GSI), `guest_attribution`, the runtime
  * `config` table, the `OpsCounters` table (exact operational counters, e.g. the customer
- * counter), the `fx_rate` cache, and the notification outbox. The former auth working tables
+ * counter), and the `fx_rate` cache. The former auth working tables
  * (`auth_challenge`, `phone_velocity`, `passkey_credential`) died with the app-owned auth
  * ceremonies (ADR-0006: the browser talks to Cognito directly). Aurora Serverless v2
  * (scale-to-zero, IAM auth, no RDS Proxy) holds money only. A one-shot migrator Trigger runs the
@@ -46,7 +46,6 @@ export class DataStack extends Stack {
   /** Operational counters (exact entity totals), disjoint from config - see OpsCounters below. */
   readonly opsCountersTable: dynamodb.Table;
   readonly fxRateTable: dynamodb.Table;
-  readonly notificationOutboxTable: dynamodb.Table;
   /** OTP sink for admin-visible codes — see the construct below. */
   readonly otpSinkTable: dynamodb.Table;
   readonly retailerSecret: secretsmanager.Secret;
@@ -131,20 +130,6 @@ export class DataStack extends Stack {
     this.fxRateTable = new dynamodb.Table(this, "FxRate", {
       partitionKey: { name: "pair", type: dynamodb.AttributeType.STRING },
       ...common,
-    });
-
-    // ADR-0019: transactional outbox for WhatsApp notifications. In-VPC producers (app-core)
-    // write over the free DynamoDB gateway endpoint; the Stream triggers the NON-VPC
-    // whatsapp-dispatcher (the NAT-free bridge - no SQS interface endpoint). TTL ~30 days:
-    // items skipped while the kill switch is off age out by design.
-    this.notificationOutboxTable = new dynamodb.Table(this, "NotificationOutbox", {
-      partitionKey: { name: "outboxId", type: dynamodb.AttributeType.STRING },
-      timeToLiveAttribute: "ttl",
-      stream: dynamodb.StreamViewType.NEW_IMAGE,
-      ...common,
-      // DESTROY in ALL envs (overriding common's prod RETAIN): pre-deploys the DeletionPolicy
-      // so PR-4's removal of this table actually deletes it in prod instead of orphaning it.
-      removalPolicy: RemovalPolicy.DESTROY,
     });
 
     // OTP sink (docs/otp-sink.md): message-sender parks EVERY code here before its delivery
@@ -271,5 +256,34 @@ export class DataStack extends Stack {
       // even though the Lambda itself has 5 (the migrator now retries the connect via waitForDb).
       timeout: Duration.minutes(5),
     });
+
+    // TRANSITIONAL — dropped in refactor PR-8. The deployed identity/whatsapp/admin templates
+    // still import the deleted NotificationOutbox table's name/ARN/stream-ARN exports, and a
+    // single-pass `cdk deploy --all` updates `data` BEFORE those consumers — dropping an in-use
+    // export rolls the data deploy back ("cannot delete export ... in use"). An in-use export's
+    // VALUE is as frozen as its existence, so each is retained with the exact literal it exported
+    // while the table still existed (per env, captured from `aws cloudformation list-exports`);
+    // nothing evaluates them once the consumers redeploy without the imports.
+    const transitionalOutboxExports: Record<WanthatEnv["name"], Record<string, string>> = {
+      dev: {
+        ExportsOutputRefNotificationOutboxF565CEEECD77265C:
+          "wanthat-dev-data-NotificationOutboxF565CEEE-1GNZZUSOICNR8",
+        ExportsOutputFnGetAttNotificationOutboxF565CEEEArnCBE00B18:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-NotificationOutboxF565CEEE-1GNZZUSOICNR8",
+        ExportsOutputFnGetAttNotificationOutboxF565CEEEStreamArnC0F9DACD:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-dev-data-NotificationOutboxF565CEEE-1GNZZUSOICNR8/stream/2026-07-02T12:19:59.304",
+      },
+      prod: {
+        ExportsOutputRefNotificationOutboxF565CEEECD77265C:
+          "wanthat-prod-data-NotificationOutboxF565CEEE-1TX16YFE2O9B6",
+        ExportsOutputFnGetAttNotificationOutboxF565CEEEArnCBE00B18:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-NotificationOutboxF565CEEE-1TX16YFE2O9B6",
+        ExportsOutputFnGetAttNotificationOutboxF565CEEEStreamArnC0F9DACD:
+          "arn:aws:dynamodb:il-central-1:818913587533:table/wanthat-prod-data-NotificationOutboxF565CEEE-1TX16YFE2O9B6/stream/2026-07-07T00:17:22.467",
+      },
+    };
+    for (const [output, value] of Object.entries(transitionalOutboxExports[wanthatEnv.name])) {
+      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-data:${output}` });
+    }
   }
 }

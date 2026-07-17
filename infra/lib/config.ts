@@ -156,7 +156,7 @@ export interface ServiceMeta {
   /**
    * The service's CDK construct id (PascalCase). Construct ids drive CloudFormation logical ids,
    * so changing one REPLACES the deployed function — renames are their own deliberate PR, never a
-   * side effect. Note the one irregular id: `whatsapp-dispatcher` -> `Dispatcher`.
+   * side effect.
    */
   readonly constructId: string;
   /**
@@ -192,7 +192,7 @@ export const SERVICES = {
   "fx-rates": { constructId: "FxRates", funnel: false, alarms: true },
   "message-sender": { constructId: "MessageSender", funnel: false, alarms: true },
   "post-confirmation": { constructId: "PostConfirmation", funnel: false, alarms: true },
-  "whatsapp-dispatcher": { constructId: "Dispatcher", funnel: false, alarms: true },
+  "notification-sender": { constructId: "NotificationSender", funnel: false, alarms: true },
   "db-migrator": { constructId: "DbMigrator", funnel: false, alarms: false },
   // Deploy-time master-credential role bootstrap (R1 as code) - like the migrator, a failed run
   // fails the deploy itself, so it is excluded from steady-state alarms.

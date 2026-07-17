@@ -2,7 +2,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type ConfirmDeps, handleConfirmation, type PostConfirmationEvent } from "./confirm";
 
 const deps = {
-  outbox: { put: vi.fn().mockResolvedValue(undefined) },
+  notifications: { send: vi.fn().mockResolvedValue(undefined) },
+  audit: { write: vi.fn().mockResolvedValue(undefined) },
   guests: { claim: vi.fn().mockResolvedValue(true) },
   counter: { incrementTotal: vi.fn().mockResolvedValue(undefined) },
   metrics: { incrementDaily: vi.fn().mockResolvedValue(undefined) },
@@ -25,10 +26,12 @@ const ATTRS = {
   sub: "sub-1234",
   phone_number: "+972541234567",
   given_name: "Dana",
+  family_name: "Levi",
+  email: "dana@example.com",
   locale: "he-IL",
 };
 
-// Pinned clock: createdAt / claimedAt / ttl are asserted exactly, not with matchers.
+// Pinned clock: claimedAt is asserted exactly, not with matchers.
 const NOW = new Date("2026-07-09T10:00:00.000Z");
 
 beforeEach(() => {
@@ -36,7 +39,8 @@ beforeEach(() => {
   vi.useFakeTimers();
   vi.setSystemTime(NOW);
   // clearAllMocks() does not reset implementations; re-pin the happy path (see message-sender).
-  deps.outbox.put.mockResolvedValue(undefined);
+  deps.notifications.send.mockResolvedValue(undefined);
+  deps.audit.write.mockResolvedValue(undefined);
   deps.guests.claim.mockResolvedValue(true);
   deps.counter.incrementTotal.mockResolvedValue(undefined);
   deps.metrics.incrementDaily.mockResolvedValue(undefined);
@@ -46,23 +50,16 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-describe("handleConfirmation — welcome outbox (ADR-0006 decision 7)", () => {
-  it("writes the optin_welcome item exactly as /auth/register did", async () => {
+describe("handleConfirmation — welcome notification (direct async invoke)", () => {
+  it("invokes notification-sender with the optin_welcome payload the outbox used to carry", async () => {
     await handleConfirmation(deps, event(ATTRS));
-    expect(deps.outbox.put).toHaveBeenCalledWith({
-      outboxId: expect.any(String),
-      customerId: "sub-1234",
-      phone: "+972541234567",
+    expect(deps.notifications.send).toHaveBeenCalledWith({
       messageType: "optin_welcome",
+      phone: "+972541234567",
       language: "he",
       variables: { firstName: "Dana", appUrl: "https://dev.wanthat.app" },
-      status: "pending",
-      createdAt: NOW.toISOString(),
-      ttl: Math.floor(NOW.getTime() / 1000) + 30 * 24 * 3600,
     });
-    const { outboxId } = deps.outbox.put.mock.calls[0]?.[0] as { outboxId: string };
-    expect(deps.log.info).toHaveBeenCalledWith("optin_welcome_enqueued", {
-      outboxId,
+    expect(deps.log.info).toHaveBeenCalledWith("optin_welcome_invoked", {
       customerId: "sub-1234",
     });
     expect(deps.log.error).not.toHaveBeenCalled();
@@ -70,39 +67,94 @@ describe("handleConfirmation — welcome outbox (ADR-0006 decision 7)", () => {
 
   it("maps a non-Hebrew locale to en", async () => {
     await handleConfirmation(deps, event({ ...ATTRS, locale: "en-US" }));
-    expect(deps.outbox.put).toHaveBeenCalledWith(expect.objectContaining({ language: "en" }));
+    expect(deps.notifications.send).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "en" }),
+    );
   });
 
   it("defaults a MISSING locale to Hebrew (Israeli-first, like the old register default)", async () => {
     await handleConfirmation(deps, event({ ...ATTRS, locale: undefined }));
-    expect(deps.outbox.put).toHaveBeenCalledWith(expect.objectContaining({ language: "he" }));
+    expect(deps.notifications.send).toHaveBeenCalledWith(
+      expect.objectContaining({ language: "he" }),
+    );
   });
 
   it("sends an empty firstName when given_name is absent (attribute is optional at SignUp)", async () => {
     await handleConfirmation(deps, event({ ...ATTRS, given_name: undefined }));
-    expect(deps.outbox.put).toHaveBeenCalledWith(
+    expect(deps.notifications.send).toHaveBeenCalledWith(
       expect.objectContaining({ variables: { firstName: "", appUrl: "https://dev.wanthat.app" } }),
     );
   });
 
-  it("swallows an outbox write failure — logs, never throws", async () => {
-    deps.outbox.put.mockRejectedValue(new Error("dynamo down"));
+  it("swallows an invoke failure — logs, never throws", async () => {
+    deps.notifications.send.mockRejectedValue(new Error("lambda down"));
     await expect(handleConfirmation(deps, event(ATTRS))).resolves.toBeUndefined();
-    expect(deps.log.error).toHaveBeenCalledWith("optin_welcome_enqueue_failed", {
+    expect(deps.log.error).toHaveBeenCalledWith("optin_welcome_invoke_failed", {
       customerId: "sub-1234",
-      error: "dynamo down",
+      error: "lambda down",
     });
-    expect(deps.log.info).not.toHaveBeenCalledWith("optin_welcome_enqueued", expect.anything());
+    expect(deps.log.info).not.toHaveBeenCalledWith("optin_welcome_invoked", expect.anything());
   });
 
   it("logs (not throws) on an event without phone_number", async () => {
     await expect(
       handleConfirmation(deps, event({ ...ATTRS, phone_number: undefined })),
     ).resolves.toBeUndefined();
-    expect(deps.outbox.put).not.toHaveBeenCalled();
+    expect(deps.notifications.send).not.toHaveBeenCalled();
     expect(deps.log.error).toHaveBeenCalledWith(
-      "optin_welcome_enqueue_failed",
+      "optin_welcome_invoke_failed",
       expect.objectContaining({ customerId: "sub-1234" }),
+    );
+  });
+});
+
+describe("handleConfirmation — signup audit (user_registered)", () => {
+  it("invokes audit-writer with the profile fields from the Cognito attributes", async () => {
+    await handleConfirmation(deps, event(ATTRS));
+    expect(deps.audit.write).toHaveBeenCalledWith({
+      event: "user_registered",
+      sub: "sub-1234",
+      phone: "+972541234567",
+      firstName: "Dana",
+      lastName: "Levi",
+      email: "dana@example.com",
+    });
+    expect(deps.log.info).toHaveBeenCalledWith("signup_audit_invoked", { sub: "sub-1234" });
+  });
+
+  it("omits absent/empty profile attributes (the contract optionals are min(1))", async () => {
+    await handleConfirmation(
+      deps,
+      event({ ...ATTRS, given_name: undefined, family_name: "", email: undefined }),
+    );
+    expect(deps.audit.write).toHaveBeenCalledWith({
+      event: "user_registered",
+      sub: "sub-1234",
+      phone: "+972541234567",
+    });
+  });
+
+  it("swallows an audit invoke failure — logs, never throws", async () => {
+    deps.audit.write.mockRejectedValue(new Error("lambda down"));
+    await expect(handleConfirmation(deps, event(ATTRS))).resolves.toBeUndefined();
+    expect(deps.log.error).toHaveBeenCalledWith("signup_audit_invoke_failed", {
+      sub: "sub-1234",
+      error: "lambda down",
+    });
+  });
+
+  it("still writes the audit row when the welcome invoke failed (steps are independent)", async () => {
+    deps.notifications.send.mockRejectedValue(new Error("lambda down"));
+    await handleConfirmation(deps, event(ATTRS));
+    expect(deps.audit.write).toHaveBeenCalledTimes(1);
+  });
+
+  it("logs (not throws) on an event without phone_number", async () => {
+    await handleConfirmation(deps, event({ ...ATTRS, phone_number: undefined }));
+    expect(deps.audit.write).not.toHaveBeenCalled();
+    expect(deps.log.error).toHaveBeenCalledWith(
+      "signup_audit_invoke_failed",
+      expect.objectContaining({ sub: "sub-1234" }),
     );
   });
 });
@@ -136,8 +188,9 @@ describe("handleConfirmation — guest attribution (ADR-0008)", () => {
     });
   });
 
-  it("still attempts the claim when the outbox write failed (steps are independent)", async () => {
-    deps.outbox.put.mockRejectedValue(new Error("dynamo down"));
+  it("still attempts the claim when the earlier invokes failed (steps are independent)", async () => {
+    deps.notifications.send.mockRejectedValue(new Error("lambda down"));
+    deps.audit.write.mockRejectedValue(new Error("lambda down"));
     await handleConfirmation(deps, event(ATTRS, { guestId: "guest-42" }));
     expect(deps.guests.claim).toHaveBeenCalledWith("guest-42", "sub-1234", NOW.toISOString());
   });
@@ -173,7 +226,7 @@ describe("handleConfirmation — exact customer counter", () => {
   });
 
   it("still increments when the earlier steps failed (steps are independent)", async () => {
-    deps.outbox.put.mockRejectedValue(new Error("dynamo down"));
+    deps.notifications.send.mockRejectedValue(new Error("lambda down"));
     deps.guests.claim.mockRejectedValue(new Error("dynamo down"));
     await handleConfirmation(deps, event(ATTRS, { guestId: "guest-42" }));
     expect(deps.counter.incrementTotal).toHaveBeenCalledTimes(1);
@@ -209,7 +262,8 @@ describe("handleConfirmation — foreign trigger sources", () => {
       deps,
       event(ATTRS, { guestId: "guest-42" }, "PostConfirmation_ConfirmForgotPassword"),
     );
-    expect(deps.outbox.put).not.toHaveBeenCalled();
+    expect(deps.notifications.send).not.toHaveBeenCalled();
+    expect(deps.audit.write).not.toHaveBeenCalled();
     expect(deps.guests.claim).not.toHaveBeenCalled();
     expect(deps.counter.incrementTotal).not.toHaveBeenCalled();
     expect(deps.metrics.incrementDaily).not.toHaveBeenCalled();

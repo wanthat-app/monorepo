@@ -85,11 +85,11 @@ export const AuthDefaultOtpChannel = z.enum(["whatsapp", "sms"]);
 /**
  * AWS End User Messaging Social origination identity ("phone-number-id-..."), unknown until
  * onboarding. Empty string = WhatsApp inert regardless of the other switches. Runtime config
- * (not SSM) so flipping it needs no redeploy — read by message-sender and whatsapp-dispatcher.
+ * (not SSM) so flipping it needs no redeploy — read by message-sender and notification-sender.
  */
 export const WhatsappPhoneNumberId = z.string().max(120);
 
-/** Kill switch for the outbox-driven WhatsApp notifications (optin_welcome) — ADR-0019. */
+/** Kill switch for the WhatsApp notifications (optin_welcome, notification-sender) — ADR-0019. */
 export const NotificationsWhatsappEnabled = z.boolean();
 
 /**

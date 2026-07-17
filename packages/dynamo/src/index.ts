@@ -5,7 +5,7 @@
  *
  * Repositories are added per feature slice. Present: runtime `config`, the customer counter
  * (the `customerCounter` item in the dedicated `OpsCounters` table), the `fx_rate` cache,
- * `guest_attribution`, products/recommendations, the notification outbox, and the dev OTP sink.
+ * `guest_attribution`, products/recommendations, and the dev OTP sink.
  */
 export { getDocClient } from "./client";
 export {
@@ -15,11 +15,6 @@ export {
 } from "./customer-counter";
 export { FxRateRepo, fxPairKey } from "./fx-rate";
 export { type GuestAttribution, GuestAttributionRepo } from "./guest-attribution";
-export {
-  type NotificationOutboxItem,
-  NotificationOutboxRepo,
-  type NotificationStatus,
-} from "./notification-outbox";
 export {
   type DailyMetric,
   jerusalemDate,

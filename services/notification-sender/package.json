@@ -1,5 +1,5 @@
 {
-  "name": "@wanthat/whatsapp-dispatcher",
+  "name": "@wanthat/notification-sender",
   "version": "0.0.0",
   "private": true,
   "type": "module",
@@ -11,9 +11,7 @@
   },
   "dependencies": {
     "@aws-lambda-powertools/logger": "^2.8.0",
-    "@aws-sdk/client-dynamodb": "^3.600.0",
     "@aws-sdk/client-socialmessaging": "^3.600.0",
-    "@aws-sdk/util-dynamodb": "^3.600.0",
     "@wanthat/contracts": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
     "@wanthat/whatsapp": "workspace:*"

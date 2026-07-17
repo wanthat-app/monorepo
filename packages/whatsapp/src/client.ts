@@ -12,7 +12,7 @@ export const META_API_VERSION = "v20.0";
 /**
  * Pure executor over AWS End User Messaging Social (ADR-0019): build the approved-template
  * payload and submit it, or throw. No config reads and no fallbacks — the caller (message-sender,
- * whatsapp-dispatcher) supplies the origination identity per call and decides what a failure means.
+ * notification-sender) supplies the origination identity per call and decides what a failure means.
  */
 export class WhatsAppSender {
   constructor(private readonly client: SocialMessagingClient) {}

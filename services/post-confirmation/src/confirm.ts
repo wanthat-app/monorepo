@@ -1,5 +1,5 @@
-import { randomUUID } from "node:crypto";
-import { jerusalemDate, type NotificationOutboxItem } from "@wanthat/dynamo";
+import type { AuditWriteRequest, SendNotificationRequest } from "@wanthat/contracts";
+import { jerusalemDate } from "@wanthat/dynamo";
 
 /** The slice of Cognito's Post Confirmation event we consume. */
 export interface PostConfirmationEvent {
@@ -12,7 +12,10 @@ export interface PostConfirmationEvent {
 }
 
 export interface ConfirmDeps {
-  outbox: { put(item: NotificationOutboxItem): Promise<void> };
+  /** Fire-and-forget async invoke of notification-sender (InvocationType Event). */
+  notifications: { send(request: SendNotificationRequest): Promise<void> };
+  /** Fire-and-forget async invoke of audit-writer — the signup's user_registered audit row. */
+  audit: { write(request: AuditWriteRequest): Promise<void> };
   guests: {
     /** Map `guestId → sub` if unclaimed (first-claim-wins). Returns true if this call created it. */
     claim(guestId: string, sub: string, claimedAt: string): Promise<boolean>;
@@ -23,7 +26,7 @@ export interface ConfirmDeps {
   metrics: { incrementDaily(metric: "signupsDaily", date: string): Promise<void> };
   /** Canonical SPA origin for links in outbound messages (env APP_URL). */
   appUrl: string;
-  /** Structured log sink; `outboxId` correlates with the whatsapp-dispatcher's notification_* lines. */
+  /** Structured log sink; `sub` correlates with notification-sender's notification_* lines. */
   log: {
     info(msg: string, ctx?: Record<string, unknown>): void;
     error(msg: string, ctx?: Record<string, unknown>): void;
@@ -40,13 +43,16 @@ function messageLanguage(locale: string | undefined): "he" | "en" {
 }
 
 /**
- * Post-Confirmation side effects (ADR-0006 decision 7) — DynamoDB only, no Aurora:
+ * Post-Confirmation side effects (ADR-0006 decision 7) — DynamoDB + async Lambda invokes, no
+ * synchronous Aurora work:
  *
- * 1. Queue the `optin_welcome` WhatsApp message through the transactional outbox (ADR-0019),
- *    exactly as `/auth/register` did before registration became the public `SignUp` call.
- * 2. Claim the `guest_attribution` mapping (`guestId → sub`, ADR-0008/0020) when the confirming
+ * 1. Async-invoke notification-sender with the `optin_welcome` payload (the outbox + stream of
+ *    ADR-0019 became a direct InvocationType=Event invoke; the sender owns the kill switch).
+ * 2. Async-invoke audit-writer with the `user_registered` event — the signup row the admin
+ *    activity feed renders (the audit log itself is only reachable from in-VPC functions).
+ * 3. Claim the `guest_attribution` mapping (`guestId → sub`, ADR-0008/0020) when the confirming
  *    call carried a `guestId` in ClientMetadata.
- * 3. Increment the exact customer counter (`customerCounter` total, OpsCounters table) — the
+ * 4. Increment the exact customer counter (`customerCounter` total, OpsCounters table) — the
  *    dashboard's users KPI.
  *    Because ONLY this trigger increments, the counter counts CONFIRMED customers; the users
  *    page's approximate whole-pool total (incl. UNCONFIRMED) deliberately keeps a wider scope.
@@ -66,28 +72,42 @@ export async function handleConfirmation(
 
   const attrs = event.request.userAttributes;
   const sub = attrs.sub;
+  const phone = attrs.phone_number;
 
-  // ADR-0019: the producer owns WHAT to send and in which language; the non-VPC dispatcher does
-  // the egress. TTL self-cleans (~30 days) items skipped while the notifications switch is off.
-  const outboxId = randomUUID();
+  // The producer owns WHAT to send and in which language; the non-VPC notification-sender does
+  // the egress and the kill-switch decision. Event invoke: accepted-for-delivery, not delivered.
   try {
-    const phone = attrs.phone_number;
     if (!sub || !phone) throw new Error("event carries no sub or phone_number");
-    await deps.outbox.put({
-      outboxId,
-      customerId: sub,
-      phone,
+    await deps.notifications.send({
       messageType: "optin_welcome",
+      phone,
       language: messageLanguage(attrs.locale),
       variables: { firstName: attrs.given_name ?? "", appUrl: deps.appUrl },
-      status: "pending",
-      createdAt: new Date().toISOString(),
-      ttl: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
     });
-    deps.log.info("optin_welcome_enqueued", { outboxId, customerId: sub });
+    deps.log.info("optin_welcome_invoked", { customerId: sub });
   } catch (err) {
-    deps.log.error("optin_welcome_enqueue_failed", {
+    deps.log.error("optin_welcome_invoke_failed", {
       customerId: sub,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // The signup audit row (user_registered): profile fields from the Cognito attributes; empty
+  // strings are omitted (the AuditWriteRequest optionals are min(1)).
+  try {
+    if (!sub || !phone) throw new Error("event carries no sub or phone_number");
+    await deps.audit.write({
+      event: "user_registered",
+      sub,
+      phone,
+      ...(attrs.given_name ? { firstName: attrs.given_name } : {}),
+      ...(attrs.family_name ? { lastName: attrs.family_name } : {}),
+      ...(attrs.email ? { email: attrs.email } : {}),
+    });
+    deps.log.info("signup_audit_invoked", { sub });
+  } catch (err) {
+    deps.log.error("signup_audit_invoke_failed", {
+      sub,
       error: err instanceof Error ? err.message : String(err),
     });
   }
