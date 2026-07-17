@@ -172,6 +172,7 @@ const serviceFns: Record<AlarmedServiceSlug, lambda.Function> = {
   "app-core": api.appCoreFn,
   "admin-api": admin.adminApiFn,
   "admin-credentials": admin.adminCredentialsFn,
+  "audit-writer": admin.auditWriterFn,
   landing: edgeServices.landingFn,
   "retailer-proxy": edgeServices.retailerProxyFn,
   "conversion-poller": edgeServices.conversionPollerFn,

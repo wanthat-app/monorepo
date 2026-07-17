@@ -71,18 +71,19 @@ On first sign-in through the admin hosted UI (`AdminLoginBaseUrl`, reached via t
 route), the employee sets a permanent password and **enrols a TOTP authenticator** (MFA is mandatory
 on this pool). No further out-of-band steps; routine config/stats are managed in the console.
 
-## Runbook — Postgres service-role creation (R1) and legacy-role retirement (R2)
+## Postgres service-role creation (R1, AUTOMATED) and legacy-role retirement (R2)
 
 The db-migrator runs as `wanthat_migrator`, which deliberately has **no CREATEROLE** — a
-`CREATE ROLE` inside a migration fails the deploy. Roles are therefore created and dropped
-**out-of-band by an operator** (psql as the master user, per env); migrations only GRANT/REVOKE
-privileges on roles that already exist. Connect with the master credentials from Secrets Manager
-(`wanthat-<env>-data` cluster secret) from a machine that can reach the cluster (e.g.
-`aws rds-db` port-forward or a bastion of choice); every statement is auditable via Postgres logs.
+`CREATE ROLE` inside a migration fails the deploy; role creation is a master-only capability.
+**R1 is automated**: the `role-bootstrap` deploy Trigger (DataStack) runs as master on every
+deploy, BEFORE the migrator — it reads the cluster's generated master secret (via the
+TRANSITIONAL Secrets Manager interface endpoint; both are removed once R2 has run through the
+same function) and executes `runRoleBootstrap` (`packages/db/src/role-bootstrap.ts`):
+create-if-missing the four service roles + `GRANT rds_iam` + `GRANT USAGE ON SCHEMA public`,
+idempotently. Migration `0008_service_role_grants.sql` then GRANTs table privileges on roles
+the bootstrap guarantees exist. No operator steps in either env.
 
-**R1 — create the service roles (run in dev AND prod BEFORE the PR that ships migration
-`0008_service_role_grants.sql` deploys to that env; the migration fails with "role does not
-exist" otherwise):**
+**R1 psql equivalent — DISASTER-RECOVERY REFERENCE ONLY (what the bootstrap executes):**
 
 ```sql
 DO $$ BEGIN
@@ -101,9 +102,11 @@ Never `ALTER ROLE ... RENAME` an in-use role — IAM database auth binds tokens 
 rename path is always: create new role (R1) → migration GRANTs → CDK flips `grantConnect` +
 `DB_USER` → cleanup migration REVOKEs → drop old role (R2).
 
-**R2 — drop the legacy roles (run in each env only AFTER migration
-`0009_legacy_role_cleanup.sql` has applied there — it REVOKEs everything first; DROP ROLE
-fails while privileges remain):**
+**R2 — drop the legacy roles (refactor PR-8): also automated** — the cleanup migration
+REVOKEs everything first, then the role-bootstrap function is extended with the
+`DROP ROLE IF EXISTS app_rw / app_ro / poller_writer` step (master-only, same code path);
+after R2 has run in both envs, the bootstrap function and the transitional Secrets Manager
+endpoint are removed together. psql equivalent, for reference:
 
 ```sql
 DROP ROLE app_rw;
