@@ -281,23 +281,5 @@ export class ApiStack extends Stack {
     new CfnOutput(this, "AppApiUrl", { value: this.httpApi.apiEndpoint });
     new CfnOutput(this, "UserPoolId", { value: props.userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: props.userPoolClient.userPoolClientId });
-
-    // TRANSITIONAL (ADR-0006 split) - REMOVE in a follow-up once every env's observability stack has
-    // redeployed. The old `AppApi` Lambda was deleted, but wanthat-{env}-observability still imports its
-    // ref in the currently-deployed template. CloudFormation deploys `api` before `observability`, so
-    // `api` would try to delete this export while it is still in use -> "cannot delete export ... in
-    // use", the failure that rolled back the dev deploy. Retaining the export for one deploy lets
-    // observability migrate first; the follow-up PR drops this line + the export.
-    this.exportValue(`wanthat-${wanthatEnv.name}-app-api`, {
-      name: `wanthat-${wanthatEnv.name}-api:ExportsOutputRefAppApiE7BADA0120FBA170`,
-    });
-    // TRANSITIONAL (T8 rename) - REMOVE in a follow-up once every env's observability stack has
-    // redeployed. Same trap as above: the deployed observability template still imports the OLD
-    // `AppAuth` function ref export; deleting it while in use rolls the api deploy back. Retain the
-    // export (stale literal value - nothing evaluates it) for one deploy so observability can
-    // migrate to the `AppLinks` export first; the follow-up PR drops this line.
-    this.exportValue(`wanthat-${wanthatEnv.name}-app-auth`, {
-      name: `wanthat-${wanthatEnv.name}-api:ExportsOutputRefAppAuthB8BC94674D7C9325`,
-    });
   }
 }
