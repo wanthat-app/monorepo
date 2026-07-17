@@ -165,8 +165,9 @@ export interface ServiceMeta {
    */
   readonly funnel: boolean;
   /**
-   * Watched by the ObservabilityStack per-Lambda error alarms. Only the one-shot db-migrator is
-   * excluded: a failed migration surfaces via the deploy itself, not steady-state alarms.
+   * Watched by the ObservabilityStack per-Lambda error alarms. Only the one-shot deploy-time
+   * functions (db-migrator, role-bootstrap) are excluded: their failures fail the deploy itself,
+   * not steady-state alarms.
    */
   readonly alarms: boolean;
 }
@@ -193,6 +194,9 @@ export const SERVICES = {
   "post-confirmation": { constructId: "PostConfirmation", funnel: false, alarms: true },
   "whatsapp-dispatcher": { constructId: "Dispatcher", funnel: false, alarms: true },
   "db-migrator": { constructId: "DbMigrator", funnel: false, alarms: false },
+  // Deploy-time master-credential role bootstrap (R1 as code) - like the migrator, a failed run
+  // fails the deploy itself, so it is excluded from steady-state alarms.
+  "role-bootstrap": { constructId: "RoleBootstrap", funnel: false, alarms: false },
 } as const satisfies Record<string, ServiceMeta>;
 
 /** A service slug — a key of {@link SERVICES} (and a directory name under `services/`). */

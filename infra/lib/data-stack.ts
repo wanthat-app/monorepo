@@ -1,6 +1,6 @@
 import { Duration, RemovalPolicy, Stack, type StackProps } from "aws-cdk-lib";
 import * as dynamodb from "aws-cdk-lib/aws-dynamodb";
-import type * as ec2 from "aws-cdk-lib/aws-ec2";
+import * as ec2 from "aws-cdk-lib/aws-ec2";
 import { SubnetType } from "aws-cdk-lib/aws-ec2";
 import * as rds from "aws-cdk-lib/aws-rds";
 import * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
@@ -11,6 +11,7 @@ import {
   makeServiceFunction,
   migratorBundling,
   RDS_CA_ENV,
+  rdsCaBundling,
   type WanthatEnv,
 } from "./config";
 
@@ -192,6 +193,56 @@ export class DataStack extends Stack {
       removalPolicy,
     });
 
+    // --- One-shot service-role bootstrap (R1 as code; refactor 2026-07) ---
+    // Runs AS MASTER before the migrator: create-if-missing the four service roles + rds_iam +
+    // schema USAGE (packages/db runRoleBootstrap). wanthat_migrator has no CREATEROLE (0003), so
+    // role creation is a master-only capability - exercised by exactly this one auditable,
+    // deploy-time code path instead of a psql runbook (the psql equivalent stays in
+    // infra/lib/README.md as disaster-recovery reference). Master password comes from the
+    // cluster's generated secret, which needs the TRANSITIONAL interface endpoint below - the
+    // VPC otherwise has no Secrets Manager path (the migrator went IAM-auth in 0003 precisely to
+    // drop it). Endpoint + this function are removed together once the legacy-role drops (R2)
+    // have run through this same function (refactor PR-8/9).
+    const secretsEndpointSg = new ec2.SecurityGroup(this, "SecretsEndpointSg", {
+      vpc,
+      description: "TRANSITIONAL allow HTTPS from lambda SG to the Secrets Manager endpoint",
+      allowAllOutbound: false,
+    });
+    secretsEndpointSg.addIngressRule(
+      lambdaSg,
+      ec2.Port.tcp(443),
+      "role-bootstrap master-secret read",
+    );
+    const secretsEndpoint = new ec2.InterfaceVpcEndpoint(this, "SecretsManagerEndpoint", {
+      vpc,
+      service: ec2.InterfaceVpcEndpointAwsService.SECRETS_MANAGER,
+      subnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [secretsEndpointSg],
+    });
+    const roleBootstrapFn = makeServiceFunction(this, wanthatEnv, "role-bootstrap", {
+      timeout: Duration.minutes(5), // waitForDb rides out a cold scale-to-zero resume
+      vpc,
+      vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
+      securityGroups: [lambdaSg],
+      environment: {
+        WANTHAT_ENV: wanthatEnv.name,
+        DB_HOST: this.cluster.clusterEndpoint.hostname,
+        DB_PORT: String(this.cluster.clusterEndpoint.port),
+        DB_NAME: "wanthat",
+        // biome-ignore lint/style/noNonNullAssertion: fromGeneratedSecret guarantees a secret
+        MASTER_SECRET_ARN: this.cluster.secret!.secretArn,
+        ...RDS_CA_ENV,
+      },
+      bundling: rdsCaBundling,
+    });
+    // biome-ignore lint/style/noNonNullAssertion: fromGeneratedSecret guarantees a secret
+    this.cluster.secret!.grantRead(roleBootstrapFn);
+    const roleBootstrapTrigger = new Trigger(this, "RoleBootstrapTrigger", {
+      handler: roleBootstrapFn,
+      executeAfter: [this.cluster, secretsEndpoint],
+      timeout: Duration.minutes(5),
+    });
+
     // --- One-shot migration runner (ADR-0012/0006) ---
     // A NodejsFunction (so esbuild bundles the TS handler + pg/kysely) wrapped by triggers.Trigger,
     // NOT triggers.TriggerFunction (which is a plain lambda.Function and would not bundle). Connects
@@ -228,7 +279,8 @@ export class DataStack extends Stack {
 
     new Trigger(this, "MigrateTrigger", {
       handler: migratorFn,
-      executeAfter: [this.cluster],
+      // The bootstrap Trigger runs first: migration 0008 GRANTs on roles the bootstrap creates.
+      executeAfter: [this.cluster, roleBootstrapTrigger],
       // Match the migrator's 5-min Lambda timeout. The Trigger's invocation timeout defaults to 2 min,
       // which would fail the deploy if a cold Aurora resume + migrations legitimately run past 2 min
       // even though the Lambda itself has 5 (the migrator now retries the connect via waitForDb).

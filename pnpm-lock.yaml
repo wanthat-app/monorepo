@@ -441,6 +441,18 @@ importers:
         specifier: ^3.23.0
         version: 3.25.76
 
+  services/role-bootstrap:
+    dependencies:
+      '@aws-lambda-powertools/logger':
+        specifier: ^2.8.0
+        version: 2.33.1
+      '@aws-sdk/client-secrets-manager':
+        specifier: ^3.652.0
+        version: 3.1076.0
+      '@wanthat/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+
   services/whatsapp-dispatcher:
     dependencies:
       '@aws-lambda-powertools/logger':
