@@ -7,7 +7,7 @@ import {
 import type { OtpChannel } from "@wanthat/contracts";
 
 /**
- * The OTP sink (docs/otp-sink.md): message-sender parks EVERY decrypted code here before its
+ * The OTP sink (docs/otp-sink.md): otp-sender parks EVERY decrypted code here before its
  * delivery attempt — a permanent feature in every environment, so the admin activity feed can
  * show current codes (and sign-in stays completable while the SMS sandbox blocks real
  * delivery). Items self-expire (5-minute TTL, the OTP lifetime). Read paths: admin-api's

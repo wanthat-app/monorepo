@@ -181,8 +181,8 @@ export interface ServiceMeta {
  * observability alarm/dashboard order from it.
  */
 export const SERVICES = {
-  "app-links": { constructId: "AppLinks", funnel: false, alarms: true },
-  "app-core": { constructId: "AppCore", funnel: false, alarms: true },
+  "member-catalog": { constructId: "MemberCatalog", funnel: false, alarms: true },
+  "member-wallet": { constructId: "MemberWallet", funnel: false, alarms: true },
   // The admin surface, regrouped by actions-vs-record-reads (refactor PR-5): admin-console
   // (non-VPC — ALL actions + Dynamo views; absorbed admin-credentials) + admin-ledger-view
   // (in-VPC — Aurora reads only, as ledger_reader).
@@ -198,7 +198,7 @@ export const SERVICES = {
   "retailer-settlement": { constructId: "RetailerSettlement", funnel: true, alarms: true },
   "ledger-writer": { constructId: "LedgerWriter", funnel: true, alarms: true },
   "fx-rates": { constructId: "FxRates", funnel: false, alarms: true },
-  "message-sender": { constructId: "MessageSender", funnel: false, alarms: true },
+  "otp-sender": { constructId: "OtpSender", funnel: false, alarms: true },
   "post-confirmation": { constructId: "PostConfirmation", funnel: false, alarms: true },
   "notification-sender": { constructId: "NotificationSender", funnel: false, alarms: true },
   "db-migrator": { constructId: "DbMigrator", funnel: false, alarms: false },

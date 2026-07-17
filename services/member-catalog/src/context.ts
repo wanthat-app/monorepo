@@ -37,7 +37,7 @@ let cached: LinksContext | undefined;
 /**
  * Build the per-container dependency graph once and reuse it across warm invocations. The non-VPC
  * links edge (ADR-0004) reaches DynamoDB + the retailer-linkgen over public AWS endpoints. No Aurora
- * and no Cognito — authentication is browser-to-Cognito (ADR-0006); money is app-core's seam.
+ * and no Cognito — authentication is browser-to-Cognito (ADR-0006); money is member-wallet's seam.
  */
 export function getContext(): LinksContext {
   if (cached) return cached;

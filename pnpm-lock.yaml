@@ -261,48 +261,6 @@ importers:
         specifier: ^4.6.0
         version: 4.12.27
 
-  services/app-core:
-    dependencies:
-      '@wanthat/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@wanthat/db':
-        specifier: workspace:*
-        version: link:../../packages/db
-      '@wanthat/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
-      '@wanthat/dynamo':
-        specifier: workspace:*
-        version: link:../../packages/dynamo
-      hono:
-        specifier: ^4.6.0
-        version: 4.12.27
-
-  services/app-links:
-    dependencies:
-      '@aws-sdk/client-cognito-identity-provider':
-        specifier: ^3.600.0
-        version: 3.1076.0
-      '@aws-sdk/client-lambda':
-        specifier: ^3.600.0
-        version: 3.1081.0
-      '@wanthat/aliexpress':
-        specifier: workspace:*
-        version: link:../../packages/aliexpress
-      '@wanthat/contracts':
-        specifier: workspace:*
-        version: link:../../packages/contracts
-      '@wanthat/domain':
-        specifier: workspace:*
-        version: link:../../packages/domain
-      '@wanthat/dynamo':
-        specifier: workspace:*
-        version: link:../../packages/dynamo
-      hono:
-        specifier: ^4.6.0
-        version: 4.12.27
-
   services/audit-writer:
     dependencies:
       '@aws-lambda-powertools/logger':
@@ -369,17 +327,53 @@ importers:
         specifier: workspace:*
         version: link:../../packages/db
 
-  services/message-sender:
+  services/member-catalog:
     dependencies:
-      '@aws-crypto/client-node':
-        specifier: ^5.0.0
-        version: 5.0.0
+      '@aws-sdk/client-cognito-identity-provider':
+        specifier: ^3.600.0
+        version: 3.1076.0
+      '@aws-sdk/client-lambda':
+        specifier: ^3.600.0
+        version: 3.1081.0
+      '@wanthat/aliexpress':
+        specifier: workspace:*
+        version: link:../../packages/aliexpress
+      '@wanthat/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@wanthat/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@wanthat/dynamo':
+        specifier: workspace:*
+        version: link:../../packages/dynamo
+      hono:
+        specifier: ^4.6.0
+        version: 4.12.27
+
+  services/member-wallet:
+    dependencies:
+      '@wanthat/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
+      '@wanthat/db':
+        specifier: workspace:*
+        version: link:../../packages/db
+      '@wanthat/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
+      '@wanthat/dynamo':
+        specifier: workspace:*
+        version: link:../../packages/dynamo
+      hono:
+        specifier: ^4.6.0
+        version: 4.12.27
+
+  services/notification-sender:
+    dependencies:
       '@aws-lambda-powertools/logger':
         specifier: ^2.8.0
         version: 2.33.1
-      '@aws-sdk/client-sns':
-        specifier: ^3.600.0
-        version: 3.1078.0
       '@aws-sdk/client-socialmessaging':
         specifier: ^3.600.0
         version: 3.1078.0
@@ -393,11 +387,17 @@ importers:
         specifier: workspace:*
         version: link:../../packages/whatsapp
 
-  services/notification-sender:
+  services/otp-sender:
     dependencies:
+      '@aws-crypto/client-node':
+        specifier: ^5.0.0
+        version: 5.0.0
       '@aws-lambda-powertools/logger':
         specifier: ^2.8.0
         version: 2.33.1
+      '@aws-sdk/client-sns':
+        specifier: ^3.600.0
+        version: 3.1078.0
       '@aws-sdk/client-socialmessaging':
         specifier: ^3.600.0
         version: 3.1078.0
@@ -470,9 +470,6 @@ importers:
       '@aws-lambda-powertools/logger':
         specifier: ^2.8.0
         version: 2.33.1
-      '@aws-sdk/client-secrets-manager':
-        specifier: ^3.652.0
-        version: 3.1076.0
       '@wanthat/db':
         specifier: workspace:*
         version: link:../../packages/db
@@ -3676,8 +3673,8 @@ snapshots:
 
   '@aws-sdk/client-kms@3.1078.0':
     dependencies:
-      '@aws-sdk/core': 3.974.26
-      '@aws-sdk/credential-provider-node': 3.972.61
+      '@aws-sdk/core': 3.974.29
+      '@aws-sdk/credential-provider-node': 3.972.64
       '@aws-sdk/types': 3.973.15
       '@smithy/core': 3.29.0
       '@smithy/fetch-http-handler': 5.6.2
@@ -3711,8 +3708,8 @@ snapshots:
 
   '@aws-sdk/client-sns@3.1078.0':
     dependencies:
-      '@aws-sdk/core': 3.974.26
-      '@aws-sdk/credential-provider-node': 3.972.61
+      '@aws-sdk/core': 3.974.29
+      '@aws-sdk/credential-provider-node': 3.972.64
       '@aws-sdk/types': 3.973.15
       '@smithy/core': 3.29.0
       '@smithy/fetch-http-handler': 5.6.2

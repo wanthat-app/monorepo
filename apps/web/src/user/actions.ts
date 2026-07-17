@@ -94,7 +94,7 @@ async function startSmsChallenge(phone: string): Promise<{ session: string; user
 
 /**
  * Start an OTP sign-in for a known phone: `InitiateAuth(USER_AUTH, SMS_OTP)` sends the code
- * (WhatsApp/SMS — the message-sender enforces the sticky channel preference, ADR-0019).
+ * (WhatsApp/SMS — the otp-sender enforces the sticky channel preference, ADR-0019).
  * Throws `CognitoError` with code `user_not_found` for an unknown phone — the caller
  * branches to sign-up (ADR-0006 unified phone-first flow) — and `user_not_confirmed` for an
  * abandoned sign-up — the caller resumes confirmation via {@link resumeSignUp}.
@@ -137,7 +137,7 @@ export interface SignUpInput {
   firstName: string;
   lastName: string;
   email?: string;
-  /** BCP-47, e.g. "he-IL" — drives the message-sender template language. */
+  /** BCP-47, e.g. "he-IL" — drives the otp-sender template language. */
   locale: string;
   otpChannel: OtpChannel;
 }

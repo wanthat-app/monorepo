@@ -17,7 +17,7 @@ export interface WhatsAppStackProps extends StackProps {
  * the WhatsApp capability: the NON-VPC notification-sender, async-invoked directly by producers
  * (InvocationType Event) with the full SendNotificationRequest payload — the outbox table and its
  * stream are gone. Failed invokes retry twice and then land the ORIGINAL payload in the SQS DLQ
- * via the async on-failure destination. The OTP side (message-sender) lives in IdentityStack with
+ * via the async on-failure destination. The OTP side (otp-sender) lives in IdentityStack with
  * the pool trigger. Depends only on DataStack.
  */
 export class WhatsAppStack extends Stack {
@@ -42,7 +42,7 @@ export class WhatsAppStack extends Stack {
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
-        // End User Messaging Social is not in il-central-1; matches IdentityStack's message-sender.
+        // End User Messaging Social is not in il-central-1; matches IdentityStack's otp-sender.
         WHATSAPP_SOCIAL_REGION: "eu-central-1",
       },
       bundling: { minify: true, sourceMap: true },

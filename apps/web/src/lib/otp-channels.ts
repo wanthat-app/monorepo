@@ -3,7 +3,7 @@ import { configApi } from "./api";
 
 /**
  * OTP channel options for the register screen, derived from the PUBLIC config keys — the same
- * kill switches the message-sender enforces (`otpChannelAvailability`). The SPA-visible
+ * kill switches the otp-sender enforces (`otpChannelAvailability`). The SPA-visible
  * predicate is deliberately narrower: `whatsapp.phoneNumberId` is private, so the UI offers
  * WhatsApp on `auth.whatsappEnabled` alone — the sender still enforces the full predicate (an
  * onboarded origination identity) and falls back, so the worst case of the difference is a

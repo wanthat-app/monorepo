@@ -1,6 +1,6 @@
 /**
  * Retailer Linkgen (ADR-0002/0004; refactor PR-6 split it out of the retailer proxy) — the
- * synchronous link-minting egress to retailer APIs. Invoked by app-links (`generateLink`) with
+ * synchronous link-minting egress to retailer APIs. Invoked by member-catalog (`generateLink`) with
  * customer-pasted input; deliberately holds NO poller state, no attribution reads, and no
  * ledger-writer invoke — the function that parses customer input never shares a role with the
  * money path (that is retailer-settlement's charter). Holds the secret-scoped retailer

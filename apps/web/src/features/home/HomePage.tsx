@@ -21,7 +21,7 @@ const ROW_STATUS = { confirmed: "confirmed", pending: "pending", clawback: "reje
 
 /**
  * Member home — the wallet dashboard (design handoff: Wallet flow, Home). Balance comes from the
- * wallet endpoint (Bearer access token via useSession — app-core is wallet-only after ADR-0006);
+ * wallet endpoint (Bearer access token via useSession — member-wallet is wallet-only after ADR-0006);
  * the recent-activity strip is the CLIENT-SIDE merge of /wallet/entries + /recommendations
  * (useActivityFeed — the server's GET /activity is deleted, refactor PR 2b).
  * The profile is the module's ID-token claims; the avatar is the module's UserChip

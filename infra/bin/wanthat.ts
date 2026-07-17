@@ -81,7 +81,7 @@ const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
   recommendationTable: data.recommendationTable,
   fxRateTable: data.fxRateTable,
   runtimeConfigTable: data.runtimeConfigTable,
-  // Dashboard metrics: app-core + app-links stamp presence / bump daily counters.
+  // Dashboard metrics: member-wallet + member-catalog stamp presence / bump daily counters.
   opsCountersTable: data.opsCountersTable,
   vpc: network.vpc,
   lambdaSg: network.lambdaSg,
@@ -167,8 +167,8 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
 // is intentionally NOT here (SERVICES["db-migrator"].alarms = false): a failed migration surfaces
 // via the deploy, not steady-state alarms.
 const serviceFns: Record<AlarmedServiceSlug, lambda.Function> = {
-  "app-links": api.appLinksFn,
-  "app-core": api.appCoreFn,
+  "member-catalog": api.memberCatalogFn,
+  "member-wallet": api.memberWalletFn,
   "admin-console": admin.adminConsoleFn,
   "admin-ledger-view": admin.adminLedgerViewFn,
   "audit-writer": admin.auditWriterFn,
@@ -177,7 +177,7 @@ const serviceFns: Record<AlarmedServiceSlug, lambda.Function> = {
   "retailer-settlement": edgeServices.retailerSettlementFn,
   "ledger-writer": edgeServices.ledgerWriterFn,
   "fx-rates": edgeServices.fxRatesFn,
-  "message-sender": identity.messageSenderFn,
+  "otp-sender": identity.otpSenderFn,
   "post-confirmation": identity.postConfirmationFn,
   "notification-sender": whatsapp.notificationSenderFn,
 };

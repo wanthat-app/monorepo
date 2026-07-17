@@ -38,7 +38,7 @@ export interface ApiStackProps extends StackProps {
   readonly runtimeConfigTable: dynamodb.ITable;
   /** Dashboard metrics: daily counters + presence stamps (see packages/dynamo ops-metrics). */
   readonly opsCountersTable: dynamodb.ITable;
-  // In-VPC placement + Aurora (ADR-0004/0003) — app-core only.
+  // In-VPC placement + Aurora (ADR-0004/0003) — member-wallet only.
   readonly vpc: ec2.IVpc;
   readonly lambdaSg: ec2.ISecurityGroup;
   readonly cluster: rds.IDatabaseCluster;
@@ -51,11 +51,12 @@ export interface ApiStackProps extends StackProps {
  * Authentication has NO backend surface here: the SPA talks to Cognito's public endpoint directly
  * (SignUp / InitiateAuth / native WEB_AUTHN — ADR-0006), so this stack carries no `/auth/*` routes,
  * no ticket machinery, and no Cognito grants. What remains, sliced along the Aurora seam:
- *  - `app-links` (NON-VPC "links edge"): `/products/resolve` + `/recommendations*`. DynamoDB over
+ *  - `member-catalog` (NON-VPC "links edge"): `/products/resolve` + `/recommendations*`. DynamoDB over
  *    the public endpoint; invokes the retailer-linkgen synchronously (free from a non-VPC function,
  *    ADR-0004). Holds no Aurora access.
- *  - `app-core` (IN-VPC "wallet core"): `/wallet*` + `/healthz/db`. Reaches Aurora as `app_rw` via
- *    IAM auth (no RDS Proxy); Aurora is money-only (ADR-0003 as amended by ADR-0006).
+ *  - `member-wallet` (IN-VPC "wallet core"): `/wallet*` + `/healthz/db`. Reaches Aurora as
+ *    `wallet_reader` via IAM auth (no RDS Proxy); Aurora is money-only (ADR-0003 as amended by
+ *    ADR-0006).
  *
  * The Cognito JWT authorizer guards the links + wallet routes; only `GET /healthz` (+ the db probe)
  * stays public.
@@ -63,21 +64,21 @@ export interface ApiStackProps extends StackProps {
 export class ApiStack extends Stack {
   readonly httpApi: HttpApi;
   /** The non-VPC links edge — observed by the ObservabilityStack (errors/throttles/duration). */
-  readonly appLinksFn: lambda.Function;
+  readonly memberCatalogFn: lambda.Function;
   /** The in-VPC wallet core — observed by the ObservabilityStack (errors/throttles/duration). */
-  readonly appCoreFn: lambda.Function;
+  readonly memberWalletFn: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ApiStackProps) {
     super(scope, id, props);
     const { wanthatEnv } = props;
 
-    // --- app-links: NON-VPC links edge (DynamoDB + retailer-linkgen invoke; no Cognito, no Aurora) ---
+    // --- member-catalog: NON-VPC links edge (DynamoDB + retailer-linkgen invoke; no Cognito, no Aurora) ---
     // No VPC: the links edge reaches DynamoDB over public AWS endpoints and its sync
     // retailer-linkgen invoke is free from outside the VPC (ADR-0004 asymmetry).
     // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and
     // this function is DynamoDB-only (no Aurora connection pressure). Re-introduce a reserved
     // budget once the account quota is raised - see infra issue (ADR-0002).
-    const appLinksFn = makeServiceFunction(this, wanthatEnv, "app-links", {
+    const memberCatalogFn = makeServiceFunction(this, wanthatEnv, "member-catalog", {
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RUNTIME_CONFIG_TABLE: props.runtimeConfigTable.tableName,
@@ -94,32 +95,32 @@ export class ApiStack extends Stack {
       },
       bundling: { minify: true, sourceMap: true },
     });
-    this.appLinksFn = appLinksFn;
+    this.memberCatalogFn = memberCatalogFn;
 
-    // DynamoDB (ADR-0004 division of writes): app-links READS products (retailer-linkgen is the
+    // DynamoDB (ADR-0004 division of writes): member-catalog READS products (retailer-linkgen is the
     // sole product writer), WRITES recommendations, reads the fx cache for display conversion,
     // and reads the runtime config (cashback split policy).
-    props.productTable.grantReadData(appLinksFn);
-    props.recommendationTable.grantReadWriteData(appLinksFn);
-    props.fxRateTable.grantReadData(appLinksFn);
-    props.runtimeConfigTable.grantReadData(appLinksFn);
+    props.productTable.grantReadData(memberCatalogFn);
+    props.recommendationTable.grantReadWriteData(memberCatalogFn);
+    props.fxRateTable.grantReadData(memberCatalogFn);
+    props.runtimeConfigTable.grantReadData(memberCatalogFn);
     // Write-only on OpsCounters: presence stamps + daily counter ADDs are UpdateItems.
-    props.opsCountersTable.grantWriteData(appLinksFn);
+    props.opsCountersTable.grantWriteData(memberCatalogFn);
     // Synchronous generateLink invoke — free from a non-VPC function (ADR-0004 asymmetry). ARN
     // constructed from the deterministic function name so no CloudFormation export ties this
     // stack to EdgeServices.
-    appLinksFn.addToRolePolicy(
+    memberCatalogFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["lambda:InvokeFunction"],
         resources: [functionArnFor(this, wanthatEnv, "retailer-linkgen")],
       }),
     );
 
-    // --- app-core: IN-VPC wallet core (Aurora only; ADR-0006 makes Aurora money-only) ---
+    // --- member-wallet: IN-VPC wallet core (Aurora only; ADR-0006 makes Aurora money-only) ---
     // No reserved concurrency: the account Lambda concurrency limit (10) is itself the cap, and
-    // app-core's Aurora connection pressure is minimal vs max_connections=50. Re-introduce a
+    // member-wallet's Aurora connection pressure is minimal vs max_connections=50. Re-introduce a
     // reserved budget once the account quota is raised - see infra issue (ADR-0002).
-    const appCoreFn = makeServiceFunction(this, wanthatEnv, "app-core", {
+    const memberWalletFn = makeServiceFunction(this, wanthatEnv, "member-wallet", {
       timeout: Duration.seconds(30), // first connect may resume a scale-to-zero cluster (up to ~30s)
       vpc: props.vpc,
       vpcSubnets: { subnetType: SubnetType.PRIVATE_ISOLATED },
@@ -128,7 +129,9 @@ export class ApiStack extends Stack {
         WANTHAT_ENV: wanthatEnv.name,
         DB_HOST: props.cluster.clusterEndpoint.hostname,
         DB_NAME: "wanthat",
-        DB_USER: "app_rw",
+        // Least-privilege role flip (refactor PR-7): the wallet surface is SELECT-only over the
+        // ledger, so it connects as wallet_reader (granted in migration 0008), not app_rw.
+        DB_USER: "wallet_reader",
         // Wallet ILS estimate (ADR-0017): the cached USD-ILS rate + the conversion-commission
         // config, read through the VPC's free DynamoDB gateway endpoint (ADR-0004).
         FX_RATE_TABLE: props.fxRateTable.tableName,
@@ -139,18 +142,18 @@ export class ApiStack extends Stack {
       },
       bundling: rdsCaBundling,
     });
-    this.appCoreFn = appCoreFn;
+    this.memberWalletFn = memberWalletFn;
 
-    // Aurora as app_rw via IAM auth (ADR-0003) - no RDS Proxy, no static credential.
-    props.cluster.grantConnect(appCoreFn, "app_rw");
-    props.fxRateTable.grantReadData(appCoreFn);
-    props.runtimeConfigTable.grantReadData(appCoreFn);
+    // Aurora as wallet_reader via IAM auth (ADR-0003) - no RDS Proxy, no static credential.
+    props.cluster.grantConnect(memberWalletFn, "wallet_reader");
+    props.fxRateTable.grantReadData(memberWalletFn);
+    props.runtimeConfigTable.grantReadData(memberWalletFn);
     // Write-only on OpsCounters: presence stamps + the activeDaily ADD are UpdateItems.
-    props.opsCountersTable.grantWriteData(appCoreFn);
+    props.opsCountersTable.grantWriteData(memberWalletFn);
 
     // --- One HTTP API fronting both functions ---
-    const linksIntegration = new HttpLambdaIntegration("AppLinksIntegration", appLinksFn);
-    const coreIntegration = new HttpLambdaIntegration("AppCoreIntegration", appCoreFn);
+    const linksIntegration = new HttpLambdaIntegration("MemberCatalogIntegration", memberCatalogFn);
+    const coreIntegration = new HttpLambdaIntegration("MemberWalletIntegration", memberWalletFn);
     const authorizer = new HttpJwtAuthorizer(
       "CognitoAuthorizer",
       `https://cognito-idp.${this.region}.amazonaws.com/${props.userPool.userPoolId}`,
@@ -194,7 +197,7 @@ export class ApiStack extends Stack {
       integration: linksIntegration,
     });
 
-    // DB warm-up probe -> app-core (touches Aurora). Public; the SPA fires it (fire-and-forget) on
+    // DB warm-up probe -> member-wallet (touches Aurora). Public; the SPA fires it (fire-and-forget) on
     // load so the scale-to-zero resume overlaps the human reading the page instead of serialising
     // in front of the wallet read.
     this.httpApi.addRoutes({
@@ -203,7 +206,7 @@ export class ApiStack extends Stack {
       integration: coreIntegration,
     });
 
-    // Links module (ADR-0002/0011) -> app-links (non-VPC — its sync retailer-linkgen invoke is free
+    // Links module (ADR-0002/0011) -> member-catalog (non-VPC — its sync retailer-linkgen invoke is free
     // there), behind the JWT authorizer. Resolve is a POST (it can mint via the retailer-linkgen);
     // recommendations carry POST create, GET list/detail and PATCH review — PATCH is already in
     // the CORS allowMethods above.
@@ -226,7 +229,7 @@ export class ApiStack extends Stack {
       authorizer,
     });
 
-    // Wallet reads -> app-core, behind the JWT authorizer. The handlers are stubs this slice
+    // Wallet reads -> member-wallet, behind the JWT authorizer. The handlers are stubs this slice
     // (member-home spec); routes and contract are final, the poller slice fills the data in.
     this.httpApi.addRoutes({
       path: "/wallet",
@@ -240,7 +243,7 @@ export class ApiStack extends Stack {
       integration: coreIntegration,
       authorizer,
     });
-    // The member activity feed (recommendation creations + wallet movements, merged) -> app-core.
+    // The member activity feed (recommendation creations + wallet movements, merged) -> member-wallet.
     this.httpApi.addRoutes({
       path: "/activity",
       methods: [HttpMethod.GET],
@@ -251,5 +254,27 @@ export class ApiStack extends Stack {
     new CfnOutput(this, "AppApiUrl", { value: this.httpApi.apiEndpoint });
     new CfnOutput(this, "UserPoolId", { value: props.userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: props.userPoolClient.userPoolClientId });
+
+    // TRANSITIONAL — dropped in refactor PR-8. The deployed observability template still imports
+    // the old AppLinks/AppCore function-Ref exports (its alarms + dashboard watched the functions
+    // this PR renames), and a single-pass `cdk deploy --all` updates `api` BEFORE
+    // `observability` — dropping an in-use export rolls the deploy back ("cannot delete export
+    // ... in use"). The values are the old functions' PHYSICAL NAMES (deterministic
+    // `wanthat-{env}-app-links` / `wanthat-{env}-app-core`), frozen as per-env literals captured
+    // from `aws cloudformation list-exports --region il-central-1` (2026-07-17); nothing
+    // evaluates them once observability redeploys without the imports.
+    const transitionalApiExports: Record<WanthatEnv["name"], Record<string, string>> = {
+      dev: {
+        ExportsOutputRefAppLinks59919860467031AE: "wanthat-dev-app-links",
+        ExportsOutputRefAppCore4ECC985A96B54444: "wanthat-dev-app-core",
+      },
+      prod: {
+        ExportsOutputRefAppLinks59919860467031AE: "wanthat-prod-app-links",
+        ExportsOutputRefAppCore4ECC985A96B54444: "wanthat-prod-app-core",
+      },
+    };
+    for (const [output, value] of Object.entries(transitionalApiExports[wanthatEnv.name])) {
+      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-api:${output}` });
+    }
   }
 }

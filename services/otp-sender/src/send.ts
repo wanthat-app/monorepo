@@ -61,7 +61,7 @@ export async function deliverOtp(deps: SendDeps, event: CustomSmsSenderEvent): P
   const attrs = event.request.userAttributes;
 
   const to = attrs.phone_number;
-  if (!to) throw new Error("message-sender: event carries no phone_number");
+  if (!to) throw new Error("otp-sender: event carries no phone_number");
 
   const avail = await otpChannelAvailability(deps.config);
   const preference = OtpChannel.safeParse(attrs["custom:otpChannel"]);
@@ -71,7 +71,7 @@ export async function deliverOtp(deps: SendDeps, event: CustomSmsSenderEvent): P
       : avail.defaultChannel;
   if (channel === null)
     throw new Error(
-      "message-sender: no OTP channel is enabled (auth.smsEnabled off; auth.whatsappEnabled off or whatsapp.phoneNumberId unset)",
+      "otp-sender: no OTP channel is enabled (auth.smsEnabled off; auth.whatsappEnabled off or whatsapp.phoneNumberId unset)",
     );
 
   const code = await deps.decryptCode(event.request.code);
@@ -104,7 +104,7 @@ export async function deliverOtp(deps: SendDeps, event: CustomSmsSenderEvent): P
       // guard is a belt against a future refactor breaking that invariant.
       const phoneNumberId = avail.whatsappPhoneNumberId;
       if (!phoneNumberId)
-        throw new Error("message-sender: whatsapp.phoneNumberId is unset (onboarding incomplete)");
+        throw new Error("otp-sender: whatsapp.phoneNumberId is unset (onboarding incomplete)");
       const locale = MessageLanguage.safeParse(attrs.locale);
       await deps.whatsapp.sendTemplate({
         phoneNumberId,
@@ -137,6 +137,6 @@ export async function deliverOtp(deps: SendDeps, event: CustomSmsSenderEvent): P
       sub: attrs.sub,
       error: String(err),
     });
-    if (!parked) throw new Error("message-sender: OTP was neither parked nor delivered");
+    if (!parked) throw new Error("otp-sender: OTP was neither parked nor delivered");
   }
 }

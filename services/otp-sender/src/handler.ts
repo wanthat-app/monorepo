@@ -7,7 +7,7 @@ import { WhatsAppSender } from "@wanthat/whatsapp";
 import { cachedConfigReader } from "./config-cache";
 import { type CustomSmsSenderEvent, deliverOtp, type SendDeps } from "./send";
 
-const logger = new Logger({ serviceName: "message-sender" });
+const logger = new Logger({ serviceName: "otp-sender" });
 
 function requireEnv(name: string): string {
   const value = process.env[name];

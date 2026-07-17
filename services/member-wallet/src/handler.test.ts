@@ -16,11 +16,11 @@ import { app } from "./handler";
  * client-side). Those requests must fall through to Hono's default 404 — never a crash and
  * never a stale handler.
  */
-describe("app-core routing after the auth-surface removal", () => {
+describe("member-wallet routing after the auth-surface removal", () => {
   it("serves the liveness probe", async () => {
     const res = await app.request("/healthz");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, service: "app-core" });
+    expect(await res.json()).toEqual({ ok: true, service: "member-wallet" });
   });
 
   it.each([

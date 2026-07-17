@@ -18,11 +18,11 @@ import {
 
 export interface IdentityStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
-  /** From DataStack — message-sender reads whatsapp.phoneNumberId at send time (ADR-0019). */
+  /** From DataStack — otp-sender reads whatsapp.phoneNumberId at send time (ADR-0019). */
   readonly runtimeConfigTable: dynamodb.ITable;
   /** From DataStack — the post-confirmation trigger increments the exact customer counter here. */
   readonly opsCountersTable: dynamodb.ITable;
-  /** From DataStack — message-sender's OTP park (docs/otp-sink.md), write-only grant. */
+  /** From DataStack — otp-sender's OTP park (docs/otp-sink.md), write-only grant. */
   readonly otpSinkTable: dynamodb.ITable;
   /** From DataStack — guestId -> sub mapping, claimed best-effort at confirmation (ADR-0008). */
   readonly guestAttributionTable: dynamodb.ITable;
@@ -54,7 +54,7 @@ export const SMS_MONTHLY_SPEND_LIMIT_USD: Record<WanthatEnv["name"], number> = {
  * All customer PII lives in Cognito user attributes (ADR-0006 decision 3): `phone_number`,
  * `given_name`, `family_name`, `email`, `locale`, plus `custom:otpChannel`. The kill switches
  * (`auth.smsEnabled`, `auth.whatsappEnabled`, ...) are DynamoDB runtime-config keys enforced by
- * the message-sender trigger, backstopped here by the SNS monthly spend cap.
+ * the otp-sender trigger, backstopped here by the SNS monthly spend cap.
  *
  * **Two pools, by population (ADR-0006 §two-pool).** Customers and employees are different
  * populations with different trust levels and lifecycles, so they get separate user pools rather than
@@ -72,7 +72,7 @@ export class IdentityStack extends Stack {
   readonly employeePoolClient: cognito.UserPoolClient;
   readonly employeePoolDomain: cognito.UserPoolDomain;
   /** ADR-0019: the Cognito custom-SMS-sender executor — observed by ObservabilityStack. */
-  readonly messageSenderFn: lambda.Function;
+  readonly otpSenderFn: lambda.Function;
   /** ADR-0006 decision 7: the Post-Confirmation welcome/attribution trigger — observed by ObservabilityStack. */
   readonly postConfirmationFn: lambda.Function;
 
@@ -82,7 +82,7 @@ export class IdentityStack extends Stack {
     const isProd = wanthatEnv.name === "prod";
 
     // ADR-0019: Cognito encrypts the OTP code for the custom sender trigger with this key (via
-    // the AWS Encryption SDK); message-sender holds the decrypt grant. Fixed cost ~1 USD/month.
+    // the AWS Encryption SDK); otp-sender holds the decrypt grant. Fixed cost ~1 USD/month.
     const customSenderKey = new kms.Key(this, "CustomSenderKey", {
       enableKeyRotation: true,
       description: `wanthat-${wanthatEnv.name} Cognito custom-sender OTP code encryption (ADR-0019)`,
@@ -107,7 +107,7 @@ export class IdentityStack extends Stack {
         email: { required: false, mutable: true },
       },
       // ADR-0006 decision 5: the OTP delivery channel preference. Set at SignUp (rides
-      // UserAttributes), edited post-auth from the profile; the message-sender trigger is the
+      // UserAttributes), edited post-auth from the profile; the otp-sender trigger is the
       // enforcement point (honours it when that channel is enabled, else falls back).
       customAttributes: {
         otpChannel: new cognito.StringAttribute({ mutable: true, minLen: 3, maxLen: 8 }),
@@ -151,7 +151,7 @@ export class IdentityStack extends Stack {
     // that channel is enabled, and falls back to the other enabled channel otherwise.
     // Non-VPC: Cognito-invoked; reaches KMS, DynamoDB, SNS and the End User Messaging Social
     // endpoint over public AWS endpoints (ADR-0004 NAT-free).
-    const messageSenderFn = makeServiceFunction(this, wanthatEnv, "message-sender", {
+    const otpSenderFn = makeServiceFunction(this, wanthatEnv, "otp-sender", {
       timeout: Duration.seconds(10),
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
@@ -164,14 +164,14 @@ export class IdentityStack extends Stack {
       },
       bundling: { minify: true, sourceMap: true },
     });
-    this.messageSenderFn = messageSenderFn;
-    customSenderKey.grantDecrypt(messageSenderFn);
-    props.runtimeConfigTable.grantReadData(messageSenderFn);
+    this.otpSenderFn = otpSenderFn;
+    customSenderKey.grantDecrypt(otpSenderFn);
+    props.runtimeConfigTable.grantReadData(otpSenderFn);
     // Write-only — the read paths are admin-api's activity feed and the developer AWS CLI
     // (docs/otp-sink.md), never this function.
-    props.otpSinkTable.grantWriteData(messageSenderFn);
+    props.otpSinkTable.grantWriteData(otpSenderFn);
     // sns:Publish scoped away from every topic ARN = direct-to-phone SMS only.
-    messageSenderFn.addToRolePolicy(
+    otpSenderFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["sns:Publish"],
         notResources: ["arn:aws:sns:*:*:*"],
@@ -180,13 +180,13 @@ export class IdentityStack extends Stack {
     // Region+account+resource-type-scoped: the phone-number-id resource exists only after Meta
     // onboarding, so the id itself is a wildcard — but the grant is pinned to phone-number-id
     // resources in the one region (eu-central-1) and account we send from (matches WhatsAppStack).
-    messageSenderFn.addToRolePolicy(
+    otpSenderFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["social-messaging:SendWhatsAppMessage"],
         resources: [`arn:aws:social-messaging:eu-central-1:${this.account}:phone-number-id/*`],
       }),
     );
-    this.userPool.addTrigger(cognito.UserPoolOperation.CUSTOM_SMS_SENDER, messageSenderFn);
+    this.userPool.addTrigger(cognito.UserPoolOperation.CUSTOM_SMS_SENDER, otpSenderFn);
 
     // ADR-0006 decision 7: the welcome notification (formerly /auth/register, then the ADR-0019
     // outbox — now a direct async invoke of notification-sender) plus the best-effort
@@ -201,7 +201,7 @@ export class IdentityStack extends Stack {
       timeout: Duration.seconds(10),
       environment: {
         // Async-invoke targets by deterministic physical name — no cross-stack refs (ADR-0004),
-        // same pattern as app-links -> retailer-linkgen.
+        // same pattern as member-catalog -> retailer-linkgen.
         NOTIFICATION_SENDER_FUNCTION: physicalName(wanthatEnv, "notification-sender"),
         AUDIT_WRITER_FUNCTION: physicalName(wanthatEnv, "audit-writer"),
         GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
@@ -485,5 +485,25 @@ export class IdentityStack extends Stack {
     new CfnOutput(this, "AdminSpaClientIdOut", {
       value: this.employeePoolClient.userPoolClientId,
     });
+
+    // TRANSITIONAL — dropped in refactor PR-8. The deployed observability template still imports
+    // the old MessageSender function-Ref export (its alarms + dashboard watched the function this
+    // PR renames), and a single-pass `cdk deploy --all` updates `identity` BEFORE
+    // `observability` — dropping an in-use export rolls the deploy back ("cannot delete export
+    // ... in use"). The value is the old function's PHYSICAL NAME (deterministic
+    // `wanthat-{env}-message-sender`), frozen as a per-env literal captured from
+    // `aws cloudformation list-exports --region il-central-1` (2026-07-17); nothing evaluates it
+    // once observability redeploys without the import.
+    const transitionalIdentityExports: Record<WanthatEnv["name"], Record<string, string>> = {
+      dev: {
+        ExportsOutputRefMessageSenderC8564C19C7EC2751: "wanthat-dev-message-sender",
+      },
+      prod: {
+        ExportsOutputRefMessageSenderC8564C19C7EC2751: "wanthat-prod-message-sender",
+      },
+    };
+    for (const [output, value] of Object.entries(transitionalIdentityExports[wanthatEnv.name])) {
+      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-identity:${output}` });
+    }
   }
 }

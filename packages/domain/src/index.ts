@@ -65,7 +65,7 @@ export function splitCommission(
 /**
  * Derived per-side estimate (display only, never stored): price × network commission × split,
  * exact bigint math in the retailer's settlement currency. Null when the price is unknown.
- * Shared by the create flow (app-links) and the landing render (ADR-0007) so both show the
+ * Shared by the create flow (member-catalog) and the landing render (ADR-0007) so both show the
  * same figures for the same snapshot.
  */
 export function buildEstimate(
