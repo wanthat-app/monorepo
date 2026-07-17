@@ -24,7 +24,6 @@ export interface EdgeStackProps extends StackProps {
    * backend URLs + Cognito client ids **at load time** (it can't read build-time `VITE_*` — the bundle
    * is built before these stacks' outputs exist). All values are public (client ids, endpoint hosts).
    * These come from il-central-1 stacks, so they cross regions (crossRegionReferences on both ends).
-   * The stack itself adds `adminOrigin` (the admin console's origin) for the /admin* redirect stub.
    */
   readonly spaConfig: {
     readonly apiUrl: string;
@@ -38,6 +37,8 @@ export interface EdgeStackProps extends StackProps {
    * member config no longer carries any admin values.
    */
   readonly adminSpaConfig: {
+    /** Env name rendered as the console's environment badge - dev vs prod at a glance. */
+    readonly environment: string;
     readonly adminApiUrl: string;
     readonly adminManagedLoginUrl: string;
     readonly adminPoolClientId: string;
@@ -306,7 +307,6 @@ export class EdgeStack extends Stack {
 
     // The console's public origin — written into BOTH config.json files: the member SPA's /admin*
     // redirect stub forwards there, and it names the admin console itself.
-    const adminOrigin = `https://${adminDomainName ?? this.adminDistribution.distributionDomainName}`;
 
     // Upload the member SPA build + the LANDING app build + a runtime `/config.json`, and invalidate
     // the edge cache on each deploy. The asset dirs must exist at synth time; infra build-depends on
@@ -329,7 +329,7 @@ export class EdgeStack extends Stack {
       sources: [
         s3deploy.Source.asset(path.join(REPO_ROOT, "apps", "web", "dist")),
         s3deploy.Source.asset(path.join(REPO_ROOT, "apps", "landing", "dist")),
-        s3deploy.Source.jsonData("config.json", { ...props.spaConfig, adminOrigin }),
+        s3deploy.Source.jsonData("config.json", props.spaConfig),
       ],
       cacheControl: [s3deploy.CacheControl.noCache()],
       distribution: this.distribution,
@@ -444,6 +444,8 @@ export class EdgeStack extends Stack {
     new CfnOutput(this, "AdminDistributionId", {
       value: this.adminDistribution.distributionId,
     });
-    new CfnOutput(this, "AdminSiteUrl", { value: adminOrigin });
+    new CfnOutput(this, "AdminSiteUrl", {
+      value: `https://${adminDomainName ?? this.adminDistribution.distributionDomainName}`,
+    });
   }
 }
