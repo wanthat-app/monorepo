@@ -33,7 +33,9 @@ export async function startTestDb(): Promise<TestDb> {
   const db = new Kysely<Database>({ dialect: new PostgresDialect({ pool }) });
   // The four service roles are created by the role-bootstrap deploy Trigger in AWS (as master —
   // wanthat_migrator has no CREATEROLE, so migration 0008 only GRANTs on them). Run the REAL
-  // bootstrap here so the harness can never drift from what deploys actually do.
+  // bootstrap here so the harness can never drift from what deploys actually do. Its R2
+  // legacy-retirement step no-ops on this fresh container (no legacy roles exist yet); the
+  // legacy roles the tests exercise are the ones migration 0001 then creates.
   await runRoleBootstrap(db);
   return {
     db,

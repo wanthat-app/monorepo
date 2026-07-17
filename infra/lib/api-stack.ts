@@ -254,27 +254,5 @@ export class ApiStack extends Stack {
     new CfnOutput(this, "AppApiUrl", { value: this.httpApi.apiEndpoint });
     new CfnOutput(this, "UserPoolId", { value: props.userPool.userPoolId });
     new CfnOutput(this, "UserPoolClientId", { value: props.userPoolClient.userPoolClientId });
-
-    // TRANSITIONAL — dropped in refactor PR-8. The deployed observability template still imports
-    // the old AppLinks/AppCore function-Ref exports (its alarms + dashboard watched the functions
-    // this PR renames), and a single-pass `cdk deploy --all` updates `api` BEFORE
-    // `observability` — dropping an in-use export rolls the deploy back ("cannot delete export
-    // ... in use"). The values are the old functions' PHYSICAL NAMES (deterministic
-    // `wanthat-{env}-app-links` / `wanthat-{env}-app-core`), frozen as per-env literals captured
-    // from `aws cloudformation list-exports --region il-central-1` (2026-07-17); nothing
-    // evaluates them once observability redeploys without the imports.
-    const transitionalApiExports: Record<WanthatEnv["name"], Record<string, string>> = {
-      dev: {
-        ExportsOutputRefAppLinks59919860467031AE: "wanthat-dev-app-links",
-        ExportsOutputRefAppCore4ECC985A96B54444: "wanthat-dev-app-core",
-      },
-      prod: {
-        ExportsOutputRefAppLinks59919860467031AE: "wanthat-prod-app-links",
-        ExportsOutputRefAppCore4ECC985A96B54444: "wanthat-prod-app-core",
-      },
-    };
-    for (const [output, value] of Object.entries(transitionalApiExports[wanthatEnv.name])) {
-      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-api:${output}` });
-    }
   }
 }

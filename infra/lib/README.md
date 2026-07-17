@@ -20,7 +20,7 @@ Observability` (+ a prod-only `Dns` stack). The consolidated overview with the f
 | Stack | Owns | ADR |
 |---|---|---|
 | `NetworkStack` | VPC (2 AZs, isolated subnets, **no NAT**), SGs scoped Lambda→Aurora:5432, free DynamoDB gateway endpoint; **zero interface endpoints** | 0004 |
-| `DataStack` | Aurora Serverless v2 (PG 16.13, 0–2 ACU, **IAM auth, no RDS Proxy**, `max_connections=50`) + per-function Postgres roles (`wallet_reader`, `ledger_reader`, `ledger_writer`, `audit_writer`, `wanthat_migrator` — created by the deploy-time **role-bootstrap** Trigger as `wanthat_master` over IAM auth, run BEFORE the in-VPC **db-migrator** + its Trigger); **all 9 DynamoDB tables** (product, recommendation, guest_attribution, poller_state, unattributed_order, runtime_config, ops_counters, fx_rate, otp_sink); the retailer secret (readers: retailer-linkgen + retailer-settlement only) | 0003, 0005, 0002 |
+| `DataStack` | Aurora Serverless v2 (PG 16.13, 0–2 ACU, **IAM auth, no RDS Proxy**, `max_connections=50`) + per-function Postgres roles (`wallet_reader`, `ledger_reader`, `ledger_writer`, `audit_writer`, `wanthat_migrator` — created by the deploy-time **role-bootstrap** Trigger as `wanthat_master` over IAM auth, run BEFORE the in-VPC **db-migrator** + its Trigger; the same step retired the legacy `app_rw`/`app_ro`/`poller_writer`); **all 9 DynamoDB tables** (product, recommendation, guest_attribution, poller_state, unattributed_order, runtime_config, ops_counters, fx_rate, otp_sink); the retailer secret (readers: retailer-linkgen + retailer-settlement only) | 0003, 0005, 0002 |
 | `IdentityStack` | Cognito **customer pool** (ESSENTIALS, phone+email aliases, SMS-OTP + native passkeys via `USER_AUTH`, PII in attributes) + **employee pool** (email + mandatory TOTP, Managed Login + PKCE, branded); `otp-sender` (custom SMS sender, KMS key) + `post-confirmation` triggers (the latter async-invokes notification-sender + audit-writer); **REGIONAL WAF on the customer pool** (rate-limits the unauth Cognito ops); SNS monthly SMS spend cap (account-wide, $1 while in the SMS sandbox) | 0006, 0019 |
 | `ApiStack` | App HTTP API + customer-pool JWT authorizer; **member-catalog** (non-VPC: products.resolve, recommendations, public /config, invokes retailer-linkgen) + **member-wallet** (in-VPC: wallet views, Aurora as `wallet_reader` — read-only; the activity feed is composed client-side); throttling on `$default` | 0002, 0006 |
 | `AdminStack` | Admin HTTP API + employee-pool JWT authorizer; **admin-console** (non-VPC: ALL admin actions + Dynamo views — moderation, sole runtime_config writer, claim queue, ops stats, otp-sink, retailer-secret rotation write-only, FX refresh; sync-invokes audit-writer + fx-rates) + **admin-ledger-view** (in-VPC: the four Aurora record-read routes, as `ledger_reader`) + **audit-writer** (in-VPC: `audit_writer` = EXECUTE audit_append only) | 0002, 0006 |
@@ -75,10 +75,11 @@ On first sign-in through the admin hosted UI (`AdminLoginBaseUrl`, reached via t
 route), the employee sets a permanent password and **enrols a TOTP authenticator** (MFA is mandatory
 on this pool). No further out-of-band steps; routine config/stats are managed in the console.
 
-## Postgres service-role creation (R1, AUTOMATED) and legacy-role retirement (R2)
+## Postgres service-role creation (R1, AUTOMATED) and legacy-role retirement (R2, AUTOMATED)
 
 The db-migrator runs as `wanthat_migrator`, which deliberately has **no CREATEROLE** — a
-`CREATE ROLE` inside a migration fails the deploy; role creation is a master-only capability.
+`CREATE ROLE` inside a migration fails the deploy; role creation (and destruction) is a
+master-only capability.
 **R1 is automated**: the `role-bootstrap` deploy Trigger (DataStack) runs as master on every
 deploy, BEFORE the migrator — connecting via **IAM token auth as `wanthat_master`** (no
 password, no Secrets Manager: 0003 made master a member of `wanthat_migrator`, which holds
@@ -88,6 +89,10 @@ also means master PASSWORD login is disabled cluster-wide) and executes `runRole
 create-if-missing the four service roles + `GRANT rds_iam` + `GRANT USAGE ON SCHEMA public`,
 idempotently. Migration `0008_service_role_grants.sql` then GRANTs table privileges on roles
 the bootstrap guarantees exist. No operator steps in either env.
+
+The bootstrap is **permanent infrastructure**, not refactor scaffolding: it is also the
+fresh-env R1 mechanism (a new environment has no service roles until it runs), so it is never
+removed.
 
 **R1 psql equivalent — DISASTER-RECOVERY REFERENCE ONLY (what the bootstrap executes):**
 
@@ -108,16 +113,27 @@ Never `ALTER ROLE ... RENAME` an in-use role — IAM database auth binds tokens 
 rename path is always: create new role (R1) → migration GRANTs → CDK flips `grantConnect` +
 `DB_USER` → cleanup migration REVOKEs → drop old role (R2).
 
-**R2 — drop the legacy roles (refactor PR-8): also automated** — the cleanup migration
-REVOKEs everything first, then the role-bootstrap function is extended with the
-`DROP ROLE IF EXISTS app_rw / app_ro / poller_writer` step (master-only, same code path);
-after R2 has run in both envs, the bootstrap function and the transitional Secrets Manager
-endpoint are removed together. psql equivalent, for reference:
+**R2 — drop the legacy roles (refactor PR-8): also automated** — `runRoleBootstrap` ends
+with an idempotent retirement step (same master-only code path): per legacy role
+(`app_rw` / `app_ro` / `poller_writer`), guarded on `pg_roles` existence so fresh envs and
+re-runs no-op, it REVOKEs everything master can revoke, clears stray grants with
+`DROP OWNED`, then `DROP ROLE`. Migration `0010_drop_admin_audit_wrapper.sql` separately
+drops the retired `admin_audit_config_change` SQL wrapper (audit shaping moved into the
+audit-writer service). psql equivalent, for reference:
 
 ```sql
-DROP ROLE app_rw;
-DROP ROLE app_ro;
-DROP ROLE poller_writer;
+DO $$ BEGIN
+  IF EXISTS (SELECT FROM pg_roles WHERE rolname = 'app_rw') THEN
+    REVOKE ALL ON ALL TABLES IN SCHEMA public FROM app_rw;
+    REVOKE ALL ON ALL SEQUENCES IN SCHEMA public FROM app_rw;
+    REVOKE EXECUTE ON FUNCTION audit_append(jsonb, timestamptz) FROM app_rw;
+    REVOKE USAGE ON SCHEMA public FROM app_rw;
+    GRANT app_rw TO CURRENT_USER; -- DROP OWNED needs membership; master holds ADMIN OPTION
+    DROP OWNED BY app_rw;         -- clears stray grants (e.g. 0007's wrapper EXECUTE)
+    DROP ROLE app_rw;
+  END IF;
+END $$;
+-- ... same block for app_ro and poller_writer
 ```
 
 **Retailer secret rotation is NOT a runbook** — it stays an admin-panel feature (write-only

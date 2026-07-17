@@ -204,46 +204,15 @@ export class EdgeServicesStack extends Stack {
     // the prod retailer credential is populated and prod order ingestion is live.
     this.addSchedule("OrderPollHeartbeat", settlement, "rate(15 minutes)", true);
     // fx-rates is live: refresh on the CONFIG default cadence (fx.updateIntervalMinutes = 720m).
-    // admin-api retunes this schedule when the config key changes (later slice).
+    // admin-console retunes this schedule when the config key changes (later slice).
     this.addSchedule("FxRatesSchedule", fxRates, "rate(720 minutes)", true);
 
     new CfnOutput(this, "LandingApiUrl", { value: landingApi.apiEndpoint });
-
-    // TRANSITIONAL — dropped in refactor PR-8. The deployed observability template still
-    // imports the old RetailerProxy/ConversionPoller function Refs (alarms + dashboard) AND
-    // their LOG-GROUP Refs (funnel subscription filters), and a single-pass `cdk deploy --all`
-    // updates `edge-services` BEFORE `observability` — dropping an in-use export rolls the
-    // deploy back ("cannot delete export ... in use"). Values are frozen per-env literals
-    // captured from `aws cloudformation list-exports --region il-central-1` (2026-07-17): the
-    // function Refs are the old deterministic physical names, the log-group Refs are the
-    // CDK-GENERATED group names of the deleted log groups. Nothing evaluates them once
-    // observability redeploys without the imports.
-    const transitionalEdgeExports: Record<WanthatEnv["name"], Record<string, string>> = {
-      dev: {
-        ExportsOutputRefRetailerProxyA66CCEDE760D8557: "wanthat-dev-retailer-proxy",
-        ExportsOutputRefRetailerProxyLogs4B1573CFB238D1EB:
-          "wanthat-dev-edge-services-RetailerProxyLogs4B1573CF-lZkS2pjlW9aM",
-        ExportsOutputRefConversionPoller24BBF790CD7D102E: "wanthat-dev-conversion-poller",
-        ExportsOutputRefConversionPollerLogs66E22CDDDE1B6F52:
-          "wanthat-dev-edge-services-ConversionPollerLogs66E22CDD-bJF9s2dQBWKH",
-      },
-      prod: {
-        ExportsOutputRefRetailerProxyA66CCEDE760D8557: "wanthat-prod-retailer-proxy",
-        ExportsOutputRefRetailerProxyLogs4B1573CFB238D1EB:
-          "wanthat-prod-edge-services-RetailerProxyLogs4B1573CF-PTFcMJykfUNN",
-        ExportsOutputRefConversionPoller24BBF790CD7D102E: "wanthat-prod-conversion-poller",
-        ExportsOutputRefConversionPollerLogs66E22CDDDE1B6F52:
-          "wanthat-prod-edge-services-ConversionPollerLogs66E22CDD-9tGuuTdH4mwo",
-      },
-    };
-    for (const [output, value] of Object.entries(transitionalEdgeExports[wanthatEnv.name])) {
-      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-edge-services:${output}` });
-    }
   }
 
   /**
    * An EventBridge schedule that invokes `fn`. `enabled` is false while a target is still a 501 stub
-   * (ADR-0009) and flips true as its slice lands; admin-api retunes the expression at runtime.
+   * (ADR-0009) and flips true as its slice lands; admin-console retunes the expression at runtime.
    */
   private addSchedule(
     id: string,

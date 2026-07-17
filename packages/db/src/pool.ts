@@ -7,7 +7,7 @@ export interface DbConfig {
   host: string;
   port: number;
   database: string;
-  /** Per-function Postgres role: app_rw | app_ro | poller_writer (ADR-0002). */
+  /** Per-function Postgres role: wallet_reader | ledger_reader | ledger_writer | audit_writer (ADR-0002, refactor 2026-07). */
   user: string;
   region: string;
   /** Disable TLS only for local Testcontainers; Aurora IAM auth requires it. */

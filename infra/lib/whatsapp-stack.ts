@@ -56,7 +56,7 @@ export class WhatsAppStack extends Stack {
       onFailure: new SqsDestination(dlq),
     });
 
-    // Config stays read-only (single-writer: admin-api).
+    // Config stays read-only (single-writer: admin-console).
     props.runtimeConfigTable.grantReadData(notificationSenderFn);
     // Region+account+resource-type-scoped: the phone-number-id resource exists only after Meta
     // onboarding, so the id itself is a wildcard — but the grant is pinned to phone-number-id
@@ -67,23 +67,5 @@ export class WhatsAppStack extends Stack {
         resources: [`arn:aws:social-messaging:eu-central-1:${this.account}:phone-number-id/*`],
       }),
     );
-
-    // TRANSITIONAL — dropped in refactor PR-8. The deployed observability template still imports
-    // the old Dispatcher function-Ref export (its alarms watched the function this PR replaces),
-    // and a single-pass `cdk deploy --all` updates `whatsapp` BEFORE `observability` — dropping an
-    // in-use export rolls the deploy back ("cannot delete export ... in use"). The value is the
-    // old function's PHYSICAL NAME (deterministic `wanthat-{env}-whatsapp-dispatcher`), frozen as
-    // a literal per env; nothing evaluates it once observability redeploys without the import.
-    const transitionalDispatcherExports: Record<WanthatEnv["name"], Record<string, string>> = {
-      dev: {
-        ExportsOutputRefDispatcherD4A1297245CDA2AE: "wanthat-dev-whatsapp-dispatcher",
-      },
-      prod: {
-        ExportsOutputRefDispatcherD4A1297245CDA2AE: "wanthat-prod-whatsapp-dispatcher",
-      },
-    };
-    for (const [output, value] of Object.entries(transitionalDispatcherExports[wanthatEnv.name])) {
-      this.exportValue(value, { name: `wanthat-${wanthatEnv.name}-whatsapp:${output}` });
-    }
   }
 }

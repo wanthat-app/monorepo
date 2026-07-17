@@ -10,13 +10,18 @@ import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
  * (ADR-0006 decision 4): customer gone, the ledger keyed by `cognito_sub`, append-only grants
  * intact, and the audit chain appendable by the poller role — plus the 0008 service-role grant
  * surface (wallet_reader / ledger_reader / ledger_writer / audit_writer; the roles themselves
- * are created out-of-band by runbook R1, mirrored in the test harness).
+ * are created by the role-bootstrap, which the test harness runs exactly as deploys do).
+ *
+ * The legacy roles (app_rw / app_ro / poller_writer) assert HISTORICAL migration behavior:
+ * 0001 creates them, so they exist at the end of a full migration run here. In deployed envs
+ * the bootstrap's R2 step retires them (see role-bootstrap.test.ts) — the migrations
+ * themselves never drop a role (wanthat_migrator has no CREATEROLE).
  *
  * Requires Docker (ADR-0013 accepts this: integration tests run on a Docker-enabled runner).
  * Container startup lives in the shared harness (test-harness.ts).
  */
 
-const MIGRATION_COUNT = 9;
+const MIGRATION_COUNT = 10;
 
 let testDb: TestDb;
 let db: Kysely<Database>;
@@ -38,7 +43,7 @@ async function asRole<T>(role: string, fn: (trx: Kysely<Database>) => Promise<T>
   });
 }
 
-describe("migrations 0001-0009 on real PostgreSQL", () => {
+describe("migrations 0001-0010 on real PostgreSQL", () => {
   it("apply cleanly, in order, from an empty database (fresh-env bootstrap path)", async () => {
     const { error, results } = await createMigrator(db, MIGRATIONS_DIR).migrateToLatest();
     if (error) throw error;
@@ -151,32 +156,14 @@ describe("migrations 0001-0009 on real PostgreSQL", () => {
     ).rejects.toThrow(/permission denied/);
   });
 
-  it("lets app_ro chain a config_changed audit event, but never call audit_append directly", async () => {
-    // The narrow SECURITY DEFINER wrapper (0007) is app_ro's ONLY append path: the payload
-    // shape is fixed server-side, and the row must chain onto the existing audit trail.
-    const appended = await asRole("app_ro", (trx) =>
-      sql<{ admin_audit_config_change: string }>`
-        SELECT admin_audit_config_change(
-          'auth.smsEnabled', 'false'::jsonb, 'true'::jsonb, 'admin@wanthat.co.il'
-        )
-      `.execute(trx),
-    );
-    expect(appended.rows).toHaveLength(1);
-
-    const { rows } = await sql<{
-      prev_hash: string | null;
-      entry_hash: string;
-      payload: Record<string, unknown>;
-    }>`SELECT prev_hash, entry_hash, payload FROM audit_log ORDER BY id DESC LIMIT 2`.execute(db);
-    expect(rows[0]?.payload).toEqual({
-      type: "config_changed",
-      key: "auth.smsEnabled",
-      value: false,
-      previous: true,
-      actor: "admin@wanthat.co.il",
-    });
-    // The new row chains onto the previous one - the hash chain holds across writer roles.
-    expect(rows[0]?.prev_hash).toBe(rows[1]?.entry_hash);
+  it("drops the admin_audit_config_change wrapper (0010 — audit-writer shapes payloads now)", async () => {
+    // 0007's SECURITY DEFINER wrapper was app_ro's only append path; the refactor moved the
+    // config_changed shaping into the audit-writer service (TypeScript + audit_append as
+    // audit_writer), so 0010 removes the SQL wrapper entirely.
+    const { rows } = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM pg_proc WHERE proname = 'admin_audit_config_change'
+    `.execute(db);
+    expect(Number(rows[0]?.n)).toBe(0);
 
     // Raw audit_append stays out of reach: app_ro cannot append arbitrary payloads.
     await expect(
@@ -184,7 +171,7 @@ describe("migrations 0001-0009 on real PostgreSQL", () => {
     ).rejects.toThrow(/permission denied/);
   });
 
-  // --- 0008 service-role grants (roles pre-exist via runbook R1, infra/lib/README.md) ---
+  // --- 0008 service-role grants (roles pre-exist via the harness's role-bootstrap run) ---
 
   it("lets audit_writer chain via audit_append, and nothing else", async () => {
     await asRole("audit_writer", (trx) =>
