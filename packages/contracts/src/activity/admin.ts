@@ -4,9 +4,11 @@ import { OtpChannel } from "../identity/channel";
 /**
  * Admin activity feed (GET /admin/activity) — one paged list, newest first, over the Aurora
  * audit_log (wallet_entry / user_registered / user_deleted / config_changed / future audited
- * actions) plus one DynamoDB merge into page 1: live OTP codes from the sink
- * (docs/otp-sink.md, every env). Member signups arrive as user_registered audit rows
- * (post-confirmation async-invokes the audit-writer).
+ * actions). Member signups arrive as user_registered audit rows (post-confirmation
+ * async-invokes the audit-writer). Live OTP codes from the sink (docs/otp-sink.md, every env)
+ * are NO LONGER merged into page 1 — since refactor PR-5 they are their own admin-console
+ * route (GET /admin/otp-sink, {@link ListOtpSinkResponse}) and the SPA fetches both in
+ * parallel.
  */
 
 /** Query for GET /admin/activity — 1-based paging, no filters in v1. */
@@ -52,3 +54,11 @@ export const ListActivityResponse = z.object({
   pageSize: z.number().int().min(1),
 });
 export type ListActivityResponse = z.infer<typeof ListActivityResponse>;
+
+/**
+ * GET /admin/otp-sink (admin-console, refactor PR-5) — every currently-parked OTP code, newest
+ * first, as `otp_sent` {@link ActivityItem}s (the shape the activity UI already renders). The
+ * sink holds at most one 5-minute-TTL item per phone, so this is a tiny unpaginated list.
+ */
+export const ListOtpSinkResponse = z.object({ items: z.array(ActivityItem) });
+export type ListOtpSinkResponse = z.infer<typeof ListOtpSinkResponse>;

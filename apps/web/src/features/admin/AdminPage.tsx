@@ -304,11 +304,7 @@ function DashboardView({ token }: { token: string | null }) {
         />
         <KpiCard
           label={t("admin.stats.perActive30d")}
-          value={moneyValue(money, (m) =>
-            m.cashbackPerActive30d
-              ? formatMoneyMinor(m.cashbackPerActive30d.amountMinor, "ILS")
-              : "—",
-          )}
+          value={perActive30d(money, users, failed)}
           live
           icon={
             <>
@@ -345,6 +341,29 @@ function moneyValue(
   if (money === undefined) return <Skeleton className="h-[30px] w-16" />;
   if (money === null) return "—";
   return format(money);
+}
+
+/**
+ * ₪ confirmed-in-window ÷ active members (30d) — the PRD §3.2 go/no-go metric, computed
+ * CLIENT-side since refactor PR-5: /admin/stats/money is a pure ledger read carrying the ₪
+ * numerator (`ilsEstimate.confirmedInWindow`); the denominator is the `active30d` the dashboard
+ * already fetches from /admin/stats/users. Same integer semantics the server used (bigint
+ * floor division); em-dash when either fetch failed, the rate is missing, or active30d is 0.
+ */
+function perActive30d(
+  money: MoneyStatsWire | null | undefined,
+  users: UsersStats | null,
+  usersFailed: boolean,
+): ReactNode {
+  // Still waiting on either fetch (users === null means loading unless the fetch failed).
+  if (money === undefined || (users === null && !usersFailed)) {
+    return <Skeleton className="h-[30px] w-16" />;
+  }
+  if (money === null || money.ilsEstimate === null || users === null || users.active30d === 0) {
+    return "—";
+  }
+  const per = BigInt(money.ilsEstimate.confirmedInWindow.amountMinor) / BigInt(users.active30d);
+  return formatMoneyMinor(per.toString(), "ILS");
 }
 
 /** The ₪ estimate when a rate is cached; falls back to the first raw currency total. */

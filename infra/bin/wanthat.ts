@@ -95,18 +95,19 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   // pool above. A customer token therefore can't reach /admin.
   employeePool: identity.employeePool,
   employeePoolClient: identity.employeePoolClient,
-  // Customer pool: the users page deletes member accounts (non-VPC credentials fn only).
+  // Customer pool: the users page moderates/deletes member accounts (non-VPC console only).
   customerPool: identity.userPool,
   runtimeConfigTable: data.runtimeConfigTable,
-  // Exact customer counter: admin-api reads the stats; admin-credentials writes moderation moves.
+  // Exact customer counter + daily/presence metrics: the console reads the stats AND writes the
+  // moderation moves (refactor PR-5: actions and Dynamo views live on one function).
   opsCountersTable: data.opsCountersTable,
-  // Cached FX rates: the money KPIs' display-only ILS estimate (ADR-0017).
+  // Cached FX rates: the money KPIs' display-only ILS estimate (ADR-0017, ledger-view).
   fxRateTable: data.fxRateTable,
   productTable: data.productTable,
   recommendationTable: data.recommendationTable,
   // The unattributed-order claim queue (list + claim/dismiss; the retailer-proxy settles).
   unattributedOrderTable: data.unattributedOrderTable,
-  // OTP sink: the activity page lists parked codes (signups arrive as audit rows).
+  // OTP sink: GET /admin/otp-sink lists parked codes (signups arrive as audit rows).
   otpSinkTable: data.otpSinkTable,
   // Write-only credential drop (PutSecretValue + DescribeSecret; never read) — see AdminStack.
   retailerSecret: data.retailerSecret,
@@ -168,8 +169,8 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
 const serviceFns: Record<AlarmedServiceSlug, lambda.Function> = {
   "app-links": api.appLinksFn,
   "app-core": api.appCoreFn,
-  "admin-api": admin.adminApiFn,
-  "admin-credentials": admin.adminCredentialsFn,
+  "admin-console": admin.adminConsoleFn,
+  "admin-ledger-view": admin.adminLedgerViewFn,
   "audit-writer": admin.auditWriterFn,
   landing: edgeServices.landingFn,
   "retailer-proxy": edgeServices.retailerProxyFn,

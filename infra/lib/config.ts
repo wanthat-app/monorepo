@@ -183,8 +183,11 @@ export interface ServiceMeta {
 export const SERVICES = {
   "app-links": { constructId: "AppLinks", funnel: false, alarms: true },
   "app-core": { constructId: "AppCore", funnel: false, alarms: true },
-  "admin-api": { constructId: "AdminApi", funnel: false, alarms: true },
-  "admin-credentials": { constructId: "AdminCredentials", funnel: false, alarms: true },
+  // The admin surface, regrouped by actions-vs-record-reads (refactor PR-5): admin-console
+  // (non-VPC — ALL actions + Dynamo views; absorbed admin-credentials) + admin-ledger-view
+  // (in-VPC — Aurora reads only, as ledger_reader).
+  "admin-console": { constructId: "AdminConsole", funnel: false, alarms: true },
+  "admin-ledger-view": { constructId: "AdminLedgerView", funnel: false, alarms: true },
   "audit-writer": { constructId: "AuditWriter", funnel: false, alarms: true },
   landing: { constructId: "Landing", funnel: true, alarms: true },
   "retailer-proxy": { constructId: "RetailerProxy", funnel: true, alarms: true },
@@ -336,7 +339,7 @@ export interface ServiceFunctionOpts {
   readonly environment?: Record<string, string>;
   /**
    * Passed through VERBATIM (no default): most services ship `{ minify: true, sourceMap: true }`,
-   * DB-touching ones {@link rdsCaBundling} / {@link migratorBundling}, and admin-credentials keeps
+   * DB-touching ones {@link rdsCaBundling} / {@link migratorBundling}, and admin-console keeps
    * NodejsFunction's own defaults by omitting it. Changing a function's bundling churns its asset
    * hash (a real redeploy), so it stays an explicit per-service choice.
    */

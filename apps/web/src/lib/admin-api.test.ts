@@ -103,6 +103,33 @@ describe("users surface (Cognito-backed, ADR-0006)", () => {
   });
 });
 
+describe("activity page sources (PR-5: audit feed + OTP sink are separate routes)", () => {
+  const ok = (body: unknown = {}) => ({ ok: true, status: 200, json: async () => body });
+
+  it("listOtpSink GETs /admin/otp-sink", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok({ items: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await adminApi.listOtpSink("tok");
+    expect(res.items).toEqual([]);
+    const [url, init] = fetchMock.mock.calls[0] as [string, { method: string }];
+    expect(url.endsWith("/admin/otp-sink")).toBe(true);
+    expect(init.method).toBe("GET");
+  });
+
+  it("refreshFxRates POSTs /admin/fx-rates/refresh with no body", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(ok({ rates: [] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const res = await adminApi.refreshFxRates("tok");
+    expect(res.rates).toEqual([]);
+    const [url, init] = fetchMock.mock.calls[0] as [string, { method: string; body?: string }];
+    expect(url.endsWith("/admin/fx-rates/refresh")).toBe(true);
+    expect(init.method).toBe("POST");
+    expect(init.body).toBeUndefined();
+  });
+});
+
 describe("normalizePhonePrefix", () => {
   it.each([
     ["05", "+9725"],

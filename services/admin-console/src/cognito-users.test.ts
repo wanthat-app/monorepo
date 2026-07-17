@@ -3,6 +3,7 @@ import {
   AdminDisableUserCommand,
   AdminEnableUserCommand,
   AdminGetUserCommand,
+  AdminUserGlobalSignOutCommand,
   type CognitoIdentityProviderClient,
   DescribeUserPoolCommand,
   ListUsersCommand,
@@ -128,7 +129,49 @@ describe("CognitoUserAdmin", () => {
     const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
     expect(await admin.disable("+972501234567")).toEqual({ found: false, wasEnabled: false });
     expect(await admin.enable("+972501234567")).toEqual({ found: false, wasDisabled: false });
-    expect(await admin.globalSignOut("+972501234567")).toBe(false);
+    expect(await admin.globalSignOut("+972501234567")).toEqual({ found: false });
+  });
+
+  it("lifecycle actions hand back the member's sub for the audit event", async () => {
+    const send = vi.fn(async (cmd: object) =>
+      cmd instanceof AdminGetUserCommand
+        ? {
+            Username: "+972501234567",
+            Enabled: true,
+            UserAttributes: [{ Name: "sub", Value: SUB }],
+          }
+        : {},
+    );
+    const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
+    expect(await admin.disable("+972501234567")).toEqual({
+      found: true,
+      wasEnabled: true,
+      sub: SUB,
+    });
+    expect(await admin.enable("+972501234567")).toEqual({
+      found: true,
+      wasDisabled: false,
+      sub: SUB,
+    });
+    expect(await admin.globalSignOut("+972501234567")).toEqual({ found: true, sub: SUB });
+  });
+
+  it("globalSignOut resolves the user FIRST, then sends the sign-out", async () => {
+    const order: string[] = [];
+    const send = vi.fn(async (cmd: object) => {
+      if (cmd instanceof AdminGetUserCommand) {
+        order.push("get");
+        return { Username: "+972501234567", Enabled: true };
+      }
+      if (cmd instanceof AdminUserGlobalSignOutCommand) {
+        order.push("signout");
+        return {};
+      }
+      throw new Error("unexpected command");
+    });
+    const admin = new CognitoUserAdmin(fakeClient(send), "pool-1");
+    expect(await admin.globalSignOut("+972501234567")).toEqual({ found: true });
+    expect(order).toEqual(["get", "signout"]);
   });
 
   it("disable reads the prior state via AdminGetUser, THEN sends AdminDisableUser", async () => {

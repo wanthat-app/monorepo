@@ -19,22 +19,21 @@ describe("MoneyStats contract", () => {
       ilsEstimate: {
         confirmed: { amountMinor: "1690", currency: "ILS" },
         pending: { amountMinor: "676", currency: "ILS" },
+        confirmedInWindow: { amountMinor: "1690", currency: "ILS" },
       },
       conversions30d: 1,
       dailyConversions: dense,
-      cashbackPerActive30d: { amountMinor: "56", currency: "ILS" },
     });
     expect(parsed.totals[0]?.confirmed.amountMinor).toBe(500n);
-    expect(parsed.cashbackPerActive30d?.amountMinor).toBe(56n);
+    expect(parsed.ilsEstimate?.confirmedInWindow.amountMinor).toBe(1690n);
   });
 
-  it("accepts the null fallbacks (no FX rate / no actives)", () => {
+  it("accepts the null ilsEstimate fallback (USD held, no FX rate)", () => {
     const ok = MoneyStats.safeParse({
       totals: [],
       ilsEstimate: null,
       conversions30d: 0,
       dailyConversions: dense,
-      cashbackPerActive30d: null,
     });
     expect(ok.success).toBe(true);
   });
@@ -45,7 +44,6 @@ describe("MoneyStats contract", () => {
       ilsEstimate: null,
       conversions30d: 0,
       dailyConversions: dense.slice(0, 29),
-      cashbackPerActive30d: null,
     });
     expect(bad.success).toBe(false);
   });

@@ -23,7 +23,10 @@ function claimsFrom(c: Context<{ Bindings: Bindings }>): Record<string, unknown>
   return (c.env?.event as any)?.requestContext?.authorizer?.jwt?.claims ?? {};
 }
 
-/** The audit-friendly actor: the admin's email (ID-token claim), falling back to sub. */
+/**
+ * The audit-friendly actor: the admin's email (ID-token claim — the admin SPA deliberately
+ * sends the ID token so audit actors are readable emails), falling back to username/sub.
+ */
 export function actorFrom(c: Context<{ Bindings: Bindings }>): string {
   const claims = claimsFrom(c);
   return (
