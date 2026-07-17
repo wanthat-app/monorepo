@@ -1,10 +1,9 @@
 import type { UnattributedOrderState, UnattributedOrderView } from "@wanthat/contracts";
+import { formatMoneyMinor, Segmented, Skeleton } from "@wanthat/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { adminApi } from "../../lib/admin-api";
-import { formatMoneyMinor } from "../../lib/money";
-import { Segmented, Skeleton } from "../../ui/components";
+import { adminApi } from "../lib/admin-api";
 
 const STATES: UnattributedOrderState[] = ["open", "claimed", "settled", "dismissed"];
 
@@ -159,7 +158,7 @@ export function OrdersView({ token }: { token: string | null }) {
                 <td className="px-4 py-3 font-mono text-[12.5px]" dir="ltr">
                   <button
                     type="button"
-                    onClick={() => navigate(`/admin/orders/${encodeURIComponent(o.orderId)}`)}
+                    onClick={() => navigate(`/orders/${encodeURIComponent(o.orderId)}`)}
                     className="font-mono text-accent underline-offset-2 hover:underline"
                   >
                     {o.orderId}

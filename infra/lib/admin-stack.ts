@@ -12,6 +12,7 @@ import type * as rds from "aws-cdk-lib/aws-rds";
 import type * as secretsmanager from "aws-cdk-lib/aws-secretsmanager";
 import type { Construct } from "constructs";
 import {
+  adminWebOrigins,
   applyThrottle,
   functionArnFor,
   makeServiceFunction,
@@ -20,7 +21,6 @@ import {
   rdsCaBundling,
   THROTTLING,
   type WanthatEnv,
-  webOrigins,
 } from "./config";
 
 export interface AdminStackProps extends StackProps {
@@ -243,13 +243,16 @@ export class AdminStack extends Stack {
 
     // CORS so the admin SPA (a different origin than execute-api) can call /admin/*. Without it the
     // preflight OPTIONS is rejected 401 by the authorizer and the console's data calls never fire.
-    // API Gateway answers OPTIONS itself once this is set. Origins shared with config.webOrigins.
-    // allowMethods MUST cover every method in use (GET/PUT/POST/DELETE today) — a new method
-    // without a matching entry fails browser-only with zero server-side evidence.
+    // API Gateway answers OPTIONS itself once this is set. Origins are the ADMIN console's own
+    // (config.adminWebOrigins — admin.{domain} + localhost:5174 non-prod, shared with the employee
+    // client's callback list): the member origins are deliberately NOT allowed here since the
+    // console moved off them. allowMethods MUST cover every method in use (GET/PUT/POST/DELETE
+    // today) — a new method without a matching entry fails browser-only with zero server-side
+    // evidence.
     this.httpApi = new HttpApi(this, "HttpApi", {
       apiName: `wanthat-${wanthatEnv.name}-admin`,
       corsPreflight: {
-        allowOrigins: webOrigins(wanthatEnv),
+        allowOrigins: adminWebOrigins(wanthatEnv),
         allowMethods: [
           CorsHttpMethod.GET,
           CorsHttpMethod.PUT,

@@ -87,6 +87,18 @@ export function webOrigins(env: WanthatEnv): string[] {
   return env.name === "prod" ? site : ["http://localhost:5173", ...site];
 }
 
+/**
+ * The ADMIN console's browser origins — the console is its own SPA on its own origin
+ * (`admin.{domainName}`, apps/admin), so employee-pool tokens are storage-isolated from the
+ * member app. Same single-source-of-truth contract as {@link webOrigins}: the admin API's CORS
+ * list and the employee-pool client's callback URLs both derive from this, so they can't drift.
+ * Local dev runs the admin app on port 5174 (web keeps 5173).
+ */
+export function adminWebOrigins(env: WanthatEnv): string[] {
+  const site = env.domainName ? [`https://admin.${env.domainName}`] : [];
+  return env.name === "prod" ? site : ["http://localhost:5174", ...site];
+}
+
 export function resolveEnv(name: string | undefined): WanthatEnv {
   const key = (name ?? "dev") as EnvName;
   const env = ENVIRONMENTS[key];

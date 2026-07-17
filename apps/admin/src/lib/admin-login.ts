@@ -4,9 +4,10 @@ import { isAdminToken } from "./jwt";
 /**
  * Admin (employee) login via the **employee** Cognito pool's Managed Login (ADR-0006 §two-pool):
  * email + password + mandatory TOTP, OAuth authorization-code + PKCE completed in the browser,
- * callback at `/admin/callback`. This mirrors the consumer `managed-login.ts` passkey flow but points
- * at a different pool/client, so an admin session is structurally separate from a customer session —
- * the admin-api authorizer only trusts the employee pool.
+ * callback at `/callback` on the console's own origin (admin.{domain}). The console runs on a
+ * separate origin from the member app, so an admin session is storage-isolated as well as
+ * structurally separate from a customer session — the admin-api authorizer only trusts the
+ * employee pool.
  *
  * The resulting tokens are kept in sessionStorage (cleared on tab close); the **id token** is sent as
  * the Bearer to admin-api — the JWT authorizer verifies it like the access token (aud = client id),
@@ -26,7 +27,7 @@ export interface AdminTokens {
 }
 
 // Computed lazily (not at module load) so the module is importable in a DOM-less context.
-const redirectUri = () => `${window.location.origin}/admin/callback`;
+const redirectUri = () => `${window.location.origin}/callback`;
 
 function base64url(bytes: ArrayBuffer): string {
   return btoa(String.fromCharCode(...new Uint8Array(bytes)))
@@ -78,13 +79,13 @@ export function verifyAdminOauthState(received: string | null): boolean {
 }
 
 /**
- * The admin path stashed by `beginAdminLogin`, single-use, restricted to admin views — anything
- * else (nothing stored, the callback itself, a non-admin path) falls back to the dashboard.
+ * The console path stashed by `beginAdminLogin`, single-use, restricted to console views —
+ * anything else (nothing stored, the callback itself) falls back to the dashboard at `/`.
  */
 export function consumeAdminReturnPath(): string {
   const stored = sessionStorage.getItem(RETURN_TO_KEY);
   sessionStorage.removeItem(RETURN_TO_KEY);
-  return stored?.startsWith("/admin") && stored !== "/admin/callback" ? stored : "/admin";
+  return stored?.startsWith("/") && stored !== "/callback" ? stored : "/";
 }
 
 /**

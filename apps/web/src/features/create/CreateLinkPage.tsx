@@ -1,5 +1,6 @@
 import { useMutation } from "@tanstack/react-query";
 import { convertMinor } from "@wanthat/domain";
+import { BackButton, Button, formatMoneyMinor, ProductCard, ShareLinkRow } from "@wanthat/ui";
 import { type ClipboardEvent, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
@@ -12,10 +13,7 @@ import {
   type ProductWire,
   type RecommendationWire,
 } from "../../lib/api";
-import { formatMoneyMinor } from "../../lib/money";
 import { extractSupportedUrl } from "../../lib/product-url";
-import { BackButton, Button } from "../../ui/components";
-import { ProductCard, ShareLinkRow } from "../../ui/wallet";
 import { useSession } from "../../user";
 
 const LIGHTNING_ICON = (

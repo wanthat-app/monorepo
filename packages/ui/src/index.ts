@@ -5,4 +5,5 @@ export * from "./admin";
 export * from "./brand";
 export * from "./components";
 export * from "./icons";
+export * from "./money";
 export * from "./wallet";

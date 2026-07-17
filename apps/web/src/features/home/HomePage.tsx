@@ -1,12 +1,19 @@
 import { useQuery } from "@tanstack/react-query";
+import {
+  ActivityRow,
+  BalanceCard,
+  Button,
+  formatMoneyMinor,
+  Logo,
+  PromptCard,
+  splitMoneyMinor,
+  TabBar,
+  TopNav,
+} from "@wanthat/ui";
 import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { type ActivityItemWire, configApi, walletApi } from "../../lib/api";
-import { formatMoneyMinor, splitMoneyMinor } from "../../lib/money";
-import { Logo } from "../../ui/brand";
-import { Button } from "../../ui/components";
-import { ActivityRow, BalanceCard, PromptCard, TabBar, TopNav } from "../../ui/wallet";
 import {
   BiometricGlyph,
   enrollPasskey,

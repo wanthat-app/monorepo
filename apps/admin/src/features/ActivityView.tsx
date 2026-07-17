@@ -1,10 +1,9 @@
 import type { ActivityItem } from "@wanthat/contracts";
+import { formatMoneyMinor, Skeleton } from "@wanthat/ui";
 import { type ReactNode, useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Link } from "react-router-dom";
-import { adminApi } from "../../lib/admin-api";
-import { formatMoneyMinor } from "../../lib/money";
-import { Skeleton } from "../../ui/components";
+import { adminApi } from "../lib/admin-api";
 
 const PAGE_SIZE = 20;
 
@@ -248,7 +247,7 @@ function UserCell({ item, members }: { item: ActivityItem; members: Record<strin
     const sub = item.cognitoSub;
     const member = members[sub];
     return (
-      <Link to={`/admin/users/${encodeURIComponent(sub)}`} className="group block min-w-0">
+      <Link to={`/users/${encodeURIComponent(sub)}`} className="group block min-w-0">
         {member ? (
           <>
             <span className="block truncate text-[13.5px] font-semibold text-ink group-hover:underline">

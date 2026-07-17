@@ -1,6 +1,3 @@
-import { useEffect, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { useNavigate } from "react-router-dom";
 import {
   BalanceCard,
   Button,
@@ -9,7 +6,10 @@ import {
   Screen,
   ShareNodesIcon,
   ShieldIcon,
-} from "../../ui";
+} from "@wanthat/ui";
+import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useNavigate } from "react-router-dom";
 import { AppHeader } from "../shell/AppHeader";
 
 // Illustrative "Sample" balance — cycles so no specific number reads as a promise

@@ -1,8 +1,6 @@
+import { ActivityRow, Button, Logo, TabBar, TopNav } from "@wanthat/ui";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { Logo } from "../../ui/brand";
-import { Button } from "../../ui/components";
-import { ActivityRow, TabBar, TopNav } from "../../ui/wallet";
 import { UserChip, useSession } from "../../user";
 import { MemberActivityRow, rowKey } from "../home/HomePage";
 import { useActivityFeed } from "./useActivityFeed";

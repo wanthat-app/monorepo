@@ -1,7 +1,7 @@
+import { Screen } from "@wanthat/ui";
 import { useEffect } from "react";
 import { useTranslation } from "react-i18next";
 import { Link, useRouteError } from "react-router-dom";
-import { Screen } from "../../ui/components";
 
 /**
  * Route-level error boundary — replaces react-router's developer error page ("Unexpected

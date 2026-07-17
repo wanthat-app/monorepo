@@ -1,6 +1,6 @@
+import { Screen, Spinner } from "@wanthat/ui";
 import { Navigate } from "react-router-dom";
 import { AppLandingPage } from "./features/landing/AppLandingPage";
-import { Screen, Spinner } from "./ui/components";
 import { useSession } from "./user";
 
 /** Index route — the wallet home for members, the logged-out app landing for everyone else. */

@@ -1,10 +1,9 @@
 import type { UnattributedOrderView } from "@wanthat/contracts";
+import { Button, formatMoneyMinor, Skeleton } from "@wanthat/ui";
 import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
-import { adminApi } from "../../lib/admin-api";
-import { formatMoneyMinor } from "../../lib/money";
-import { Button, Skeleton } from "../../ui/components";
+import { adminApi } from "../lib/admin-api";
 
 /**
  * Admin order detail (portal cross-reference): everything the poll saw about one unattributed
@@ -94,7 +93,7 @@ export function OrderDetailView({ token, orderId }: { token: string | null; orde
     <div className="max-w-[880px]">
       <button
         type="button"
-        onClick={() => navigate("/admin/orders")}
+        onClick={() => navigate("/orders")}
         className="mb-4 text-[13px] font-bold text-accent"
       >
         ‹ {t("admin.orders.backToList")}

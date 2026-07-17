@@ -1,8 +1,4 @@
 import { normalizePhone, type OtpChannel } from "@wanthat/contracts";
-import { useCallback, useEffect, useRef, useState } from "react";
-import { useTranslation } from "react-i18next";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { fetchOtpChannelOptions, type OtpChannelOptions } from "../../lib/otp-channels";
 import {
   BackButton,
   Button,
@@ -13,7 +9,11 @@ import {
   Segmented,
   Spinner,
   TextField,
-} from "../../ui";
+} from "@wanthat/ui";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { useTranslation } from "react-i18next";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { fetchOtpChannelOptions, type OtpChannelOptions } from "../../lib/otp-channels";
 import {
   BiometricGlyph,
   biometricLabelKey,

@@ -13,8 +13,6 @@
 export interface RuntimeConfig {
   /** app-api base URL (links + wallet). */
   apiUrl: string;
-  /** admin-api base URL (admin surface). */
-  adminApiUrl: string;
   /**
    * Region of the Cognito customer pool — the SPA calls `cognito-idp.<region>.amazonaws.com`
    * directly for every auth ceremony (ADR-0006). Defaults to il-central-1 (the only deployed
@@ -23,19 +21,19 @@ export interface RuntimeConfig {
   cognitoRegion: string;
   /** Customer pool SPA app client id — the public client for SignUp/InitiateAuth (ADR-0006). */
   userPoolClientId: string;
-  /** Employee pool Managed Login (hosted UI) base URL — admin OAuth redirect. */
-  adminManagedLoginUrl: string;
-  /** Employee pool admin SPA app client id (OAuth client_id for /admin login). */
-  adminPoolClientId: string;
+  /**
+   * The admin console's origin (`https://admin.{domain}`) — the console is its OWN app on its
+   * own origin (apps/admin), so employee tokens are storage-isolated from this member app. Only
+   * the /admin* redirect stub reads it; empty means "no admin origin configured" (local dev).
+   */
+  adminOrigin: string;
 }
 
 const fromEnv = (): RuntimeConfig => ({
   apiUrl: import.meta.env.VITE_API_URL ?? "",
-  adminApiUrl: import.meta.env.VITE_ADMIN_API_URL ?? "",
   cognitoRegion: import.meta.env.VITE_COGNITO_REGION ?? "il-central-1",
   userPoolClientId: import.meta.env.VITE_USER_POOL_CLIENT_ID ?? "",
-  adminManagedLoginUrl: import.meta.env.VITE_ADMIN_MANAGED_LOGIN_URL ?? "",
-  adminPoolClientId: import.meta.env.VITE_ADMIN_POOL_CLIENT_ID ?? "",
+  adminOrigin: import.meta.env.VITE_ADMIN_ORIGIN ?? "",
 });
 
 let current: RuntimeConfig = fromEnv();

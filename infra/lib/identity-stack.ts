@@ -9,11 +9,11 @@ import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import { ADMIN_LOGIN_SETTINGS, adminLoginAssets } from "./admin-login-branding";
 import {
+  adminWebOrigins,
   functionArnFor,
   makeServiceFunction,
   physicalName,
   type WanthatEnv,
-  webOrigins,
 } from "./config";
 
 export interface IdentityStackProps extends StackProps {
@@ -230,11 +230,12 @@ export class IdentityStack extends Stack {
     props.opsCountersTable.grantWriteData(postConfirmationFn);
     this.userPool.addTrigger(cognito.UserPoolOperation.POST_CONFIRMATION, postConfirmationFn);
 
-    // Browser origins allowed to complete the ADMIN hosted-UI OAuth redirect — the same list the
-    // app/admin HTTP APIs allow for CORS (shared helper, so callbacks and CORS can't drift apart).
-    // The CUSTOMER flow has no redirect at all: the SPA calls Cognito's public API directly
-    // (ADR-0006), so the customer client carries no OAuth configuration.
-    const origins = webOrigins(wanthatEnv);
+    // Browser origins allowed to complete the ADMIN hosted-UI OAuth redirect — the admin console's
+    // OWN origins (admin.{domain} + localhost:5174 in non-prod), the same list the admin HTTP API
+    // allows for CORS (shared helper, so callbacks and CORS can't drift apart). The CUSTOMER flow
+    // has no redirect at all: the SPA calls Cognito's public API directly (ADR-0006), so the
+    // customer client carries no OAuth configuration.
+    const origins = adminWebOrigins(wanthatEnv);
 
     // Attribute permissions for the SPA client (ADR-0006 decision 3): the profile the SPA shows is
     // the ID-token claims, and edits go through UpdateUserAttributes with the user's access token -
@@ -447,8 +448,9 @@ export class IdentityStack extends Stack {
     });
 
     // Admin SPA client: public (no secret), OAuth code+PKCE via the hosted UI; shorter refresh TTL
-    // than customers (privileged). The admin SPA serves its callback at /admin/callback.
-    const adminCallbackUrls = origins.map((o) => `${o}/admin/callback`);
+    // than customers (privileged). The admin console is its own SPA on its own origin (apps/admin),
+    // serving its callback at the root: /callback.
+    const adminCallbackUrls = origins.map((o) => `${o}/callback`);
     this.employeePoolClient = this.employeePool.addClient("AdminSpa", {
       userPoolClientName: `wanthat-${wanthatEnv.name}-admin-spa`,
       generateSecret: false,

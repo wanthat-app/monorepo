@@ -1,7 +1,6 @@
+import { BrandMark, Segmented } from "@wanthat/ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { BrandMark } from "../../ui/brand";
-import { Segmented } from "../../ui/components";
 
 export type AdminView = "dashboard" | "users" | "orders" | "config" | "activity";
 

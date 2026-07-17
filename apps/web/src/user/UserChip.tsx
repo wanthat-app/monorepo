@@ -1,7 +1,6 @@
+import { Button, ProfileChip, Spinner } from "@wanthat/ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Button, Spinner } from "../ui/components";
-import { ProfileChip } from "../ui/wallet";
 import { enrollPasskey, listPasskeys, type PasskeySummary, signOut } from "./actions";
 import { CognitoError } from "./cognito";
 import { useSession } from "./SessionProvider";

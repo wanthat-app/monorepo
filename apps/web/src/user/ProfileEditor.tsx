@@ -1,8 +1,8 @@
 import type { OtpChannel } from "@wanthat/contracts";
+import { Button, Segmented, TextField } from "@wanthat/ui";
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { fetchOtpChannelOptions, type OtpChannelOptions } from "../lib/otp-channels";
-import { Button, Segmented, TextField } from "../ui/components";
 import { updateProfile, verifyEmail } from "./actions";
 import { useSession } from "./SessionProvider";
 
