@@ -11,6 +11,7 @@ export * from "./conversion";
 export * from "./fx";
 export * from "./identity";
 export * from "./landing";
+export * from "./notifications";
 export * from "./recommendations";
 export * from "./retailer";
 export * from "./stats";

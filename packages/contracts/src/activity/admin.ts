@@ -3,10 +3,10 @@ import { OtpChannel } from "../identity/channel";
 
 /**
  * Admin activity feed (GET /admin/activity) — one paged list, newest first, over the Aurora
- * audit_log (wallet_entry / user_deleted / config_changed / future audited actions) plus two
- * DynamoDB merges into page 1: live OTP codes from the sink (docs/otp-sink.md, every env) and
- * member signups from the notification outbox (user_registered; bounded by the outbox's
- * ~30-day TTL, which suits an activity feed).
+ * audit_log (wallet_entry / user_registered / user_deleted / config_changed / future audited
+ * actions) plus one DynamoDB merge into page 1: live OTP codes from the sink
+ * (docs/otp-sink.md, every env). Member signups arrive as user_registered audit rows
+ * (post-confirmation async-invokes the audit-writer).
  */
 
 /** Query for GET /admin/activity — 1-based paging, no filters in v1. */

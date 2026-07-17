@@ -38,7 +38,7 @@ import {
 import { jerusalemDate, lastNDates } from "@wanthat/dynamo";
 import { Hono } from "hono";
 import { handle } from "hono/aws-lambda";
-import { auditEntryToItem, mergeByAtDesc, otpSinkToItems, outboxToItems } from "./activity";
+import { auditEntryToItem, mergeByAtDesc, otpSinkToItems } from "./activity";
 import { getContext } from "./context";
 import { actorFrom, type Bindings, requireAdmin } from "./guard";
 import { unattributedRouter } from "./unattributed";
@@ -282,15 +282,9 @@ app.get("/admin/activity", async (c) => {
     items = mergeByAtDesc(items, otp);
     grandTotal += otp.length;
   }
-  // Member signups ride the optin_welcome outbox (one item per confirmed signup, ~30-day
-  // TTL) — nothing else emits user_registered (the audit log is unreachable from the
-  // non-VPC post-confirmation trigger).
-  const outbox = getContext().outbox;
-  if (outbox && page === 1) {
-    const signups = outboxToItems(await outbox.scanAll(), Date.now());
-    items = mergeByAtDesc(items, signups);
-    grandTotal += signups.length;
-  }
+  // Member signups arrive as user_registered audit rows: the post-confirmation trigger
+  // async-invokes the in-VPC audit-writer (the outbox-as-signup-source era is over), so they
+  // are already in `entries` above — no extra merge.
   return c.json(ListActivityResponse.parse({ items, total: grandTotal, page, pageSize }));
 });
 

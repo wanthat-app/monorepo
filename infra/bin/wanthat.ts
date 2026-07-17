@@ -68,8 +68,8 @@ const identity = new IdentityStack(app, stackName(wanthatEnv, "identity"), {
   // Exact customer counter (customerCounter in OpsCounters) - incremented by post-confirmation.
   opsCountersTable: data.opsCountersTable,
   otpSinkTable: data.otpSinkTable,
-  // Post-Confirmation trigger targets (ADR-0006 decision 7): welcome outbox + guest attribution.
-  notificationOutboxTable: data.notificationOutboxTable,
+  // Post-Confirmation trigger target (ADR-0006 decision 7): guest attribution. The welcome
+  // notification + signup audit go out as async invokes by deterministic function name.
   guestAttributionTable: data.guestAttributionTable,
 });
 const api = new ApiStack(app, stackName(wanthatEnv, "api"), {
@@ -106,9 +106,8 @@ const admin = new AdminStack(app, stackName(wanthatEnv, "admin"), {
   recommendationTable: data.recommendationTable,
   // The unattributed-order claim queue (list + claim/dismiss; the retailer-proxy settles).
   unattributedOrderTable: data.unattributedOrderTable,
-  // OTP sink + signup outbox: the activity page lists parked codes and member signups.
+  // OTP sink: the activity page lists parked codes (signups arrive as audit rows).
   otpSinkTable: data.otpSinkTable,
-  notificationOutboxTable: data.notificationOutboxTable,
   // Write-only credential drop (PutSecretValue + DescribeSecret; never read) — see AdminStack.
   retailerSecret: data.retailerSecret,
   vpc: network.vpc,
@@ -136,11 +135,10 @@ const edgeServices = new EdgeServicesStack(app, stackName(wanthatEnv, "edge-serv
   cluster: data.cluster,
 });
 
-// WhatsAppStack (ADR-0019): the notification dispatcher. Depends only on DataStack; deploys
-// before Observability (which watches its Lambda).
+// WhatsAppStack (ADR-0019): the notification sender, async-invoked by producers. Depends only
+// on DataStack; deploys before Observability (which watches its Lambda).
 const whatsapp = new WhatsAppStack(app, stackName(wanthatEnv, "whatsapp"), {
   ...common,
-  notificationOutboxTable: data.notificationOutboxTable,
   runtimeConfigTable: data.runtimeConfigTable,
 });
 
@@ -179,7 +177,7 @@ const serviceFns: Record<AlarmedServiceSlug, lambda.Function> = {
   "fx-rates": edgeServices.fxRatesFn,
   "message-sender": identity.messageSenderFn,
   "post-confirmation": identity.postConfirmationFn,
-  "whatsapp-dispatcher": whatsapp.dispatcherFn,
+  "notification-sender": whatsapp.notificationSenderFn,
 };
 
 // Funnel events are emitted by landing (impression/click), the conversion poller (conversion)

@@ -8,7 +8,13 @@ import * as wafv2 from "aws-cdk-lib/aws-wafv2";
 import * as cr from "aws-cdk-lib/custom-resources";
 import type { Construct } from "constructs";
 import { ADMIN_LOGIN_SETTINGS, adminLoginAssets } from "./admin-login-branding";
-import { makeServiceFunction, type WanthatEnv, webOrigins } from "./config";
+import {
+  functionArnFor,
+  makeServiceFunction,
+  physicalName,
+  type WanthatEnv,
+  webOrigins,
+} from "./config";
 
 export interface IdentityStackProps extends StackProps {
   readonly wanthatEnv: WanthatEnv;
@@ -18,8 +24,6 @@ export interface IdentityStackProps extends StackProps {
   readonly opsCountersTable: dynamodb.ITable;
   /** From DataStack — message-sender's OTP park (docs/otp-sink.md), write-only grant. */
   readonly otpSinkTable: dynamodb.ITable;
-  /** From DataStack — the post-confirmation trigger queues the optin_welcome item here (ADR-0019). */
-  readonly notificationOutboxTable: dynamodb.ITable;
   /** From DataStack — guestId -> sub mapping, claimed best-effort at confirmation (ADR-0008). */
   readonly guestAttributionTable: dynamodb.ITable;
 }
@@ -173,25 +177,33 @@ export class IdentityStack extends Stack {
         notResources: ["arn:aws:sns:*:*:*"],
       }),
     );
-    // The phone-number-id resource exists only after onboarding, hence "*".
+    // Region+account+resource-type-scoped: the phone-number-id resource exists only after Meta
+    // onboarding, so the id itself is a wildcard — but the grant is pinned to phone-number-id
+    // resources in the one region (eu-central-1) and account we send from (matches WhatsAppStack).
     messageSenderFn.addToRolePolicy(
       new iam.PolicyStatement({
         actions: ["social-messaging:SendWhatsAppMessage"],
-        resources: ["*"],
+        resources: [`arn:aws:social-messaging:eu-central-1:${this.account}:phone-number-id/*`],
       }),
     );
     this.userPool.addTrigger(cognito.UserPoolOperation.CUSTOM_SMS_SENDER, messageSenderFn);
 
-    // ADR-0006 decision 7: the welcome notification_outbox write (formerly /auth/register) plus the
-    // best-effort guest_attribution claim move to the Post-Confirmation trigger. DynamoDB only, no
-    // Aurora — which is exactly what makes a trigger acceptable here (no VPC, no cold DB resume).
-    // The handler NEVER throws (it logs and returns the event), so an outbox or attribution failure
-    // structurally cannot block a user's ConfirmSignUp.
-    // Non-VPC: Cognito-invoked; reaches DynamoDB over public AWS endpoints (ADR-0004 NAT-free).
+    // ADR-0006 decision 7: the welcome notification (formerly /auth/register, then the ADR-0019
+    // outbox — now a direct async invoke of notification-sender) plus the best-effort
+    // guest_attribution claim and the user_registered audit invoke live on the Post-Confirmation
+    // trigger. DynamoDB + fire-and-forget Lambda invokes only, no synchronous Aurora — which is
+    // exactly what makes a trigger acceptable here (no VPC, no cold DB resume in-band).
+    // The handler NEVER throws (it logs and returns the event), so an invoke or attribution
+    // failure structurally cannot block a user's ConfirmSignUp.
+    // Non-VPC: Cognito-invoked; reaches DynamoDB + the Lambda Invoke API over public AWS
+    // endpoints (ADR-0004 NAT-free).
     const postConfirmationFn = makeServiceFunction(this, wanthatEnv, "post-confirmation", {
       timeout: Duration.seconds(10),
       environment: {
-        NOTIFICATION_OUTBOX_TABLE: props.notificationOutboxTable.tableName,
+        // Async-invoke targets by deterministic physical name — no cross-stack refs (ADR-0004),
+        // same pattern as app-links -> retailer-proxy.
+        NOTIFICATION_SENDER_FUNCTION: physicalName(wanthatEnv, "notification-sender"),
+        AUDIT_WRITER_FUNCTION: physicalName(wanthatEnv, "audit-writer"),
         GUEST_ATTRIBUTION_TABLE: props.guestAttributionTable.tableName,
         // The exact customer counter - the customerCounter item in the dedicated OpsCounters
         // table; every confirmed signup increments its total.
@@ -201,7 +213,17 @@ export class IdentityStack extends Stack {
       bundling: { minify: true, sourceMap: true },
     });
     this.postConfirmationFn = postConfirmationFn;
-    props.notificationOutboxTable.grantWriteData(postConfirmationFn);
+    // Invoke grants on the deterministic ARNs (deploy-order independent, ADR-0004): the welcome
+    // notification (notification-sender) and the signup audit row (audit-writer).
+    postConfirmationFn.addToRolePolicy(
+      new iam.PolicyStatement({
+        actions: ["lambda:InvokeFunction"],
+        resources: [
+          functionArnFor(this, wanthatEnv, "notification-sender"),
+          functionArnFor(this, wanthatEnv, "audit-writer"),
+        ],
+      }),
+    );
     props.guestAttributionTable.grantWriteData(postConfirmationFn);
     // Write-only: the counter increment is an UpdateItem on the counter item. Deliberately NOT a
     // grant on the config table - admin-api stays the config table's single writer.

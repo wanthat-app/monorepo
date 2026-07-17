@@ -3,7 +3,6 @@ import {
   CustomerCounterRepo,
   FxRateRepo,
   getDocClient,
-  NotificationOutboxRepo,
   OpsMetricsRepo,
   OtpSinkRepo,
   ProductRepo,
@@ -36,8 +35,6 @@ export interface AdminContext {
   unattributedOrders: UnattributedOrderRepo;
   /** Parked OTP codes for the activity feed (docs/otp-sink.md) — present in every env. */
   otpSink?: OtpSinkRepo;
-  /** Signup events for the activity feed (user_registered rides the optin_welcome outbox). */
-  outbox?: NotificationOutboxRepo;
 }
 
 let cached: AdminContext | undefined;
@@ -77,16 +74,8 @@ export function getContext(): AdminContext {
       getDocClient(region),
       requireEnv("UNATTRIBUTED_ORDER_TABLE"),
     ),
-    // Presence-based (defensive): both tables are provisioned in every environment.
+    // Presence-based (defensive): the table is provisioned in every environment.
     ...(otpSinkTable ? { otpSink: new OtpSinkRepo(getDocClient(region), otpSinkTable) } : {}),
-    ...(process.env.NOTIFICATION_OUTBOX_TABLE
-      ? {
-          outbox: new NotificationOutboxRepo(
-            getDocClient(region),
-            process.env.NOTIFICATION_OUTBOX_TABLE,
-          ),
-        }
-      : {}),
   };
   return cached;
 }

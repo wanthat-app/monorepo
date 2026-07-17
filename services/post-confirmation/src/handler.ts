@@ -1,9 +1,9 @@
 import { Logger } from "@aws-lambda-powertools/logger";
+import { InvokeCommand, LambdaClient } from "@aws-sdk/client-lambda";
 import {
   CustomerCounterRepo,
   GuestAttributionRepo,
   getDocClient,
-  NotificationOutboxRepo,
   OpsMetricsRepo,
 } from "@wanthat/dynamo";
 import { type ConfirmDeps, handleConfirmation, type PostConfirmationEvent } from "./confirm";
@@ -22,8 +22,23 @@ function getDeps(): ConfirmDeps {
   if (deps) return deps;
   const region = process.env.AWS_REGION ?? "il-central-1";
   const doc = getDocClient(region);
+  const lambda = new LambdaClient({ region });
+  // Fire-and-forget: InvocationType Event queues the invoke (HTTP 202) and returns — delivery
+  // failures are the TARGET's concern (its async retry + on-failure SQS DLQ), never this trigger's.
+  const invokeAsync = async (functionName: string, payload: unknown): Promise<void> => {
+    await lambda.send(
+      new InvokeCommand({
+        FunctionName: functionName,
+        InvocationType: "Event",
+        Payload: Buffer.from(JSON.stringify(payload)),
+      }),
+    );
+  };
+  const notificationSenderFn = requireEnv("NOTIFICATION_SENDER_FUNCTION");
+  const auditWriterFn = requireEnv("AUDIT_WRITER_FUNCTION");
   deps = {
-    outbox: new NotificationOutboxRepo(doc, requireEnv("NOTIFICATION_OUTBOX_TABLE")),
+    notifications: { send: (request) => invokeAsync(notificationSenderFn, request) },
+    audit: { write: (request) => invokeAsync(auditWriterFn, request) },
     guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
     counter: new CustomerCounterRepo(doc, requireEnv("OPS_COUNTERS_TABLE")),
     metrics: new OpsMetricsRepo(doc, requireEnv("OPS_COUNTERS_TABLE")),
@@ -39,9 +54,9 @@ function getDeps(): ConfirmDeps {
 /**
  * Cognito Post-Confirmation trigger (ADR-0006 decision 7). Best-effort in its entirety: unlike
  * message-sender (which MUST fail loudly so a dead OTP fails the initiating call), this handler
- * never throws — a thrown error here would fail the user's ConfirmSignUp, and no welcome-message
- * or attribution write is worth blocking a confirmation over. Always returns the event, as the
- * trigger contract requires.
+ * never throws — a thrown error here would fail the user's ConfirmSignUp, and no welcome-message,
+ * audit or attribution write is worth blocking a confirmation over. Always returns the event, as
+ * the trigger contract requires.
  */
 export const handler = async (event: PostConfirmationEvent): Promise<PostConfirmationEvent> => {
   try {
