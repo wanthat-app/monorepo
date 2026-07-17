@@ -28,7 +28,15 @@ Constraints in play:
 1. **default behavior → private S3 bucket (Origin Access Control).** Holds the Vite/React SPA build
    (ADR-0016). The bucket blocks all public access; only CloudFront (OAC) can read it. SPA
    client-side routing is served by rewriting **403/404 → `/index.html` (200)**.
-2. **`/p/*` behavior → the landing HTTP API** (ADR-0007), cache disabled, `Host` stripped
+2. **`/p/*` behavior → the landing HTTP API** (ADR-0007) with an **origin-controlled edge
+   cache** (amended 2026-07-17; was cache-disabled): min/default TTL 0, max 60 s, path-only
+   cache key — only responses that opt in via `Cache-Control` are cached. The landing GET
+   page sends `public, max-age=60`; the per-consumer `POST /resolve` sends `no-store` (and
+   POSTs are never cached). The 60 s cap is the viral-burst shield: hot-link traffic is
+   maximally repetitive, and the account-wide Lambda concurrency limit (10) is shared by
+   every function — the edge absorbing repeats keeps one popular share from throttling the
+   account. Safe because the page is identity-free by design (ADR-0008: attribution is
+   stamped at resolve time, never in the page). `Host` stripped
    (`ALL_VIEWER_EXCEPT_HOST_HEADER`) so the API receives its own host. This is a **cross-region**
    origin (CloudFront/us-east-1 → HTTP API/il-central-1); the CDK app sets
    `crossRegionReferences: true` on both the producing (`EdgeServicesStack`) and consuming

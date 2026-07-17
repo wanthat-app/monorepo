@@ -137,6 +137,27 @@ export class EdgeStack extends Stack {
     const landingDomain = `${props.landingApiId}.execute-api.${wanthatEnv.region}.amazonaws.com`;
     const landingOrigin = new origins.HttpOrigin(landingDomain);
 
+    // Origin-controlled edge cache for the landing page (ADR-0007/0018 amendment 2026-07-17):
+    // min/default TTL 0 means ONLY responses that explicitly opt in via Cache-Control are
+    // cached - the landing GET page sends `public, max-age=60`, the per-consumer POST resolve
+    // sends `no-store` (and POSTs are never cached anyway). The 60s cap is the burst shield:
+    // a viral share link is maximally repetitive traffic, and the account Lambda concurrency
+    // limit of 10 is shared by EVERY function - without the edge absorbing hot-link repeats,
+    // one popular share could throttle the whole account (OTP sends included). Cache key is
+    // the path only: the page is identity-free by design (cookieless, no query params).
+    // The SPA-deploy CloudFront invalidation also clears it, keeping shell asset refs fresh.
+    const landingPageCache = new cloudfront.CachePolicy(this, "LandingPageCache", {
+      comment: "wanthat landing /p/ - origin-controlled, max 60s, path-only key",
+      minTtl: Duration.seconds(0),
+      defaultTtl: Duration.seconds(0),
+      maxTtl: Duration.seconds(60),
+      cookieBehavior: cloudfront.CacheCookieBehavior.none(),
+      headerBehavior: cloudfront.CacheHeaderBehavior.none(),
+      queryStringBehavior: cloudfront.CacheQueryStringBehavior.none(),
+      enableAcceptEncodingGzip: true,
+      enableAcceptEncodingBrotli: true,
+    });
+
     this.distribution = new cloudfront.Distribution(this, "Distribution", {
       comment: `wanthat-${wanthatEnv.name} edge`,
       defaultRootObject: "index.html",
@@ -157,8 +178,9 @@ export class EdgeStack extends Stack {
           viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           // POST /p/{id}/resolve rides the same behavior as the GET page (ADR-0007/0008).
           allowedMethods: cloudfront.AllowedMethods.ALLOW_ALL,
-          // Redirect resolution is per-consumer; don't cache. Strip Host so the API sees its own.
-          cachePolicy: cloudfront.CachePolicy.CACHING_DISABLED,
+          // Origin-controlled 60s cache (see LandingPageCache above). Strip Host so the API
+          // sees its own; resolve stays uncached (no-store + POST).
+          cachePolicy: landingPageCache,
           originRequestPolicy: cloudfront.OriginRequestPolicy.ALL_VIEWER_EXCEPT_HOST_HEADER,
         },
       },
