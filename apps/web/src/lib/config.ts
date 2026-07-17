@@ -26,14 +26,12 @@ export interface RuntimeConfig {
    * own origin (apps/admin), so employee tokens are storage-isolated from this member app. Only
    * the /admin* redirect stub reads it; empty means "no admin origin configured" (local dev).
    */
-  adminOrigin: string;
 }
 
 const fromEnv = (): RuntimeConfig => ({
   apiUrl: import.meta.env.VITE_API_URL ?? "",
   cognitoRegion: import.meta.env.VITE_COGNITO_REGION ?? "il-central-1",
   userPoolClientId: import.meta.env.VITE_USER_POOL_CLIENT_ID ?? "",
-  adminOrigin: import.meta.env.VITE_ADMIN_ORIGIN ?? "",
 });
 
 let current: RuntimeConfig = fromEnv();

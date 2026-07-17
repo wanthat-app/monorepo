@@ -12,6 +12,9 @@
  * environment via `.env.local`.
  */
 export interface RuntimeConfig {
+  /** Deployed environment name ("dev" | "prod") — rendered as the sidebar badge so an operator
+   *  always sees which environment they are administrating. Empty = unknown (local, unconfigured). */
+  environment: string;
   /** admin-api base URL (the console's whole backend surface). */
   adminApiUrl: string;
   /** Employee pool Managed Login (hosted UI) base URL — the console's OAuth redirect. */
@@ -21,6 +24,7 @@ export interface RuntimeConfig {
 }
 
 const fromEnv = (): RuntimeConfig => ({
+  environment: import.meta.env.VITE_WANTHAT_ENV ?? "",
   adminApiUrl: import.meta.env.VITE_ADMIN_API_URL ?? "",
   adminManagedLoginUrl: import.meta.env.VITE_ADMIN_MANAGED_LOGIN_URL ?? "",
   adminPoolClientId: import.meta.env.VITE_ADMIN_POOL_CLIENT_ID ?? "",

@@ -161,6 +161,7 @@ new EdgeStack(app, stackName(wanthatEnv, "edge"), {
   // The ADMIN console's own /config.json (admin bucket) — the console is its own SPA on its own
   // origin (apps/admin), so the member config no longer carries any admin values.
   adminSpaConfig: {
+    environment: wanthatEnv.name,
     adminApiUrl: admin.httpApi.apiEndpoint,
     adminManagedLoginUrl: identity.employeePoolDomain.baseUrl(),
     adminPoolClientId: identity.employeePoolClient.userPoolClientId,

@@ -1,6 +1,7 @@
 import { BrandMark, Segmented } from "@wanthat/ui";
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
+import { getConfig } from "../lib/config";
 
 export type AdminView = "dashboard" | "users" | "orders" | "config" | "activity";
 
@@ -28,6 +29,7 @@ export function AdminLayout({
   children: ReactNode;
 }) {
   const { t, i18n } = useTranslation();
+  const { environment } = getConfig();
   const initials = user.name
     .split(/\s+/)
     .map((p) => p[0])
@@ -49,6 +51,18 @@ export function AdminLayout({
             <div className="mt-[3px] text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">
               {t("admin.operations")}
             </div>
+            {environment ? (
+              <div
+                className={`mt-1.5 inline-block rounded-[4px] px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none tracking-[0.14em] ${
+                  environment === "prod"
+                    ? "bg-[#fdecec] text-[#b3261e]"
+                    : "bg-[#e6f4ee] text-[#1f7a57]"
+                }`}
+                data-testid="env-badge"
+              >
+                {environment}
+              </div>
+            ) : null}
           </div>
         </div>
 
