@@ -15,7 +15,6 @@ import { jerusalemDate } from "@wanthat/dynamo";
 import { Hono } from "hono";
 import type { LambdaEvent } from "hono/aws-lambda";
 import { handle } from "hono/aws-lambda";
-import { activityRouter } from "./activity/router";
 import { subFromClaims } from "./claims";
 import { getContext } from "./context";
 import { walletRouter } from "./wallet/router";
@@ -47,9 +46,12 @@ app.use("*", async (c, next) => {
 
 // `/wallet` sits behind the JWT authorizer at the gateway and reads the verified claims.
 app.route("/wallet", walletRouter());
-app.route("/activity", activityRouter());
 // The links module lives on the NON-VPC app-links edge (Aurora-free path; the sync retailer-proxy
 // invoke is free there — in-VPC it would need a paid lambda interface endpoint, ADR-0004).
+// The former merged `GET /activity` is DELETED (refactor PR 2b): the SPA now composes the member
+// feed client-side from `GET /wallet/entries` (here) + `GET /recommendations` (app-links), so
+// app-core keeps zero Recommendation-table access. The gateway may still route the old path at
+// this Lambda until the infra teardown — it falls through to Hono's 404 like the auth surface.
 
 // Log any uncaught handler error (otherwise Hono returns 500 with no trace) so an in-VPC connection
 // failure surfaces instead of a silent Lambda timeout.
