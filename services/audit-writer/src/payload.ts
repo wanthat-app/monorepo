@@ -4,8 +4,9 @@ import type { AuditWriteRequest } from "@wanthat/contracts";
  * Shape a typed audit request into the free-form jsonb that `audit_append` chains — payload
  * shaping happens HERE in TypeScript (this replaced the 0007 SQL wrapper
  * `admin_audit_config_change`, whose jsonb shape `config_changed` mirrors exactly). The shapes
- * must stay renderable by the admin activity feed (admin-api `activity.ts` lifts `type`,
- * `phone`, `firstName`/`lastName`, `email`, `actor`, `key`, `value`, `previous`).
+ * must stay renderable by the admin activity feed (admin-ledger-view `activity.ts` lifts
+ * `type`, `sub` → `cognitoSub`, `actor`, `key`, `value`, `previous`). Member PII (phone,
+ * name, email) never enters the chain — the feed resolves the sub live instead.
  */
 export function auditPayload(request: AuditWriteRequest): Record<string, unknown> {
   switch (request.event) {
@@ -20,14 +21,9 @@ export function auditPayload(request: AuditWriteRequest): Record<string, unknown
         actor: request.actor,
       };
     case "user_registered":
-      return {
-        type: "user_registered",
-        sub: request.sub,
-        phone: request.phone,
-        ...(request.firstName ? { firstName: request.firstName } : {}),
-        ...(request.lastName ? { lastName: request.lastName } : {}),
-        ...(request.email ? { email: request.email } : {}),
-      };
+      // PII-free (2026-07-18): the chain is unrewritable, so only the sub goes in — the
+      // admin feed resolves it to a live profile via the users API.
+      return { type: "user_registered", sub: request.sub };
     // The moderation moves share one shape: the member acted on + the acting admin.
     case "user_deleted":
     case "user_disabled":
