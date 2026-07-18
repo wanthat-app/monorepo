@@ -26,16 +26,15 @@ export function ActivityView({ token }: { token: string | null }) {
   const [otp, setOtp] = useState<ActivityItem[] | null | undefined>(undefined);
   const [loading, setLoading] = useState(true);
   const [loadFailed, setLoadFailed] = useState(false);
-  // wallet_entry audit payloads carry only the member's sub (admin-api cannot reach Cognito
-  // from the endpoint-free VPC, ADR-0004) — the SPA resolves name/phone through the non-VPC
-  // users API, once per sub for the component's lifetime; a miss renders the sub itself.
+  // Audit payloads carry only the member's sub (wallet_entry, user_registered, moderation
+  // events — admin-ledger-view cannot reach Cognito from the endpoint-free VPC, ADR-0004) —
+  // the SPA resolves name/phone through the non-VPC users API, once per sub for the
+  // component's lifetime; a miss (e.g. a deleted user) renders the shortened sub.
   const [members, setMembers] = useState<Record<string, Member>>({});
   const requestedSubs = useRef(new Set<string>());
 
   const resolveMembers = useCallback((items: ActivityItem[], tok: string) => {
-    const subs = items.flatMap((i) =>
-      i.type === "wallet_entry" && i.cognitoSub ? [i.cognitoSub] : [],
-    );
+    const subs = items.flatMap((i) => (i.cognitoSub ? [i.cognitoSub] : []));
     for (const sub of new Set(subs)) {
       if (requestedSubs.current.has(sub)) continue;
       requestedSubs.current.add(sub);
@@ -229,10 +228,11 @@ function ActivityRow({ item, members }: { item: ActivityItem; members: Record<st
 }
 
 /**
- * The User column. Per event type: config_changed shows the ACTING ADMIN (its payload names no
- * member); wallet_entry shows the member whose wallet changed (resolved from the payload's sub,
- * linked to their detail page; an unresolved sub renders shortened, still linked); everything
- * else shows the payload's own name/phone (user_registered / user_deleted carry the member's).
+ * The User column. config_changed shows the ACTING ADMIN (its payload names no member);
+ * anything carrying `cognitoSub` (wallet_entry, user_registered, moderation events) shows the
+ * member resolved from the sub, linked to their detail page — a deleted/unresolved member
+ * renders the shortened sub, still linked; pre-scrub historical rows fall back to the
+ * payload's own name/phone.
  */
 function UserCell({ item, members }: { item: ActivityItem; members: Record<string, Member> }) {
   if (item.type === "config_changed") {
@@ -243,7 +243,7 @@ function UserCell({ item, members }: { item: ActivityItem; members: Record<strin
     );
   }
 
-  if (item.type === "wallet_entry" && item.cognitoSub) {
+  if (item.cognitoSub) {
     const sub = item.cognitoSub;
     const member = members[sub];
     return (
