@@ -21,7 +21,8 @@ export type ListActivityQuery = z.infer<typeof ListActivityQuery>;
 /**
  * One feed row. `type` is an open string: audit payloads are free-form jsonb, and unknown/future
  * types must still render (the SPA shows a generic badge with the raw type). Field presence by
- * type: user_registered/user_deleted carry phone/name/email (actor on deletions); otp_sent
+ * type: user_registered/user_deleted carry the member's sub in `cognitoSub` (actor on
+ * deletions; pre-scrub historical rows may still carry phone/name/email); otp_sent
  * carries phone/channel/code/expiresAt; config_changed carries key/value/previous/actor.
  */
 export const ActivityItem = z.object({

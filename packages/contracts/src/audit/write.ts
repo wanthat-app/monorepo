@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { PhoneE164, Uuid } from "../common";
+import { Uuid } from "../common";
 
 /**
  * Invoke payload of the audit-writer Lambda — the ONE generic append path into the hash-chained
@@ -8,7 +8,8 @@ import { PhoneE164, Uuid } from "../common";
  * SQL wrapper `admin_audit_config_change` of 0007), so the jsonb shapes MUST stay compatible
  * with what the admin activity feed already renders (admin-api `activity.ts`):
  * `config_changed` chains `{type, key, value, previous, actor}` exactly as 0007 did, and
- * `user_registered` keeps the `phone`/`firstName`/`lastName`/`email` keys the feed lifts.
+ * `user_registered` carries only the member's `sub` (PII-free; the feed resolves it via the
+ * users API).
  */
 
 /** The acting admin — email from the ID-token claims, falling back to username/sub. */
@@ -24,14 +25,15 @@ export const ConfigChangedAudit = z.object({
 });
 export type ConfigChangedAudit = z.infer<typeof ConfigChangedAudit>;
 
-/** A confirmed member signup (Cognito is the user store; `sub` is canonical, ADR-0020). */
+/**
+ * A confirmed member signup (Cognito is the user store; `sub` is canonical, ADR-0020).
+ * PII-FREE by design: the audit log is append-only and unrewritable, so member PII (phone,
+ * name, email) must never enter it — the feed resolves the sub to a live profile via the
+ * users API instead. (Admin actor emails are employee data and stay.)
+ */
 export const UserRegisteredAudit = z.object({
   event: z.literal("user_registered"),
   sub: Uuid,
-  phone: PhoneE164,
-  firstName: z.string().min(1).optional(),
-  lastName: z.string().min(1).optional(),
-  email: z.string().min(1).optional(),
 });
 export type UserRegisteredAudit = z.infer<typeof UserRegisteredAudit>;
 

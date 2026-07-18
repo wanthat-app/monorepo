@@ -73,11 +73,13 @@ describe("admin users list contracts (Cognito ListUsers, ADR-0006)", () => {
     );
   });
 
-  it("cognito-delete reports how many recommendations were erased with the account", () => {
+  it("cognito-delete answers a bare {ok, existed} — deletion keeps the member's data", () => {
+    // ADR-0006 d8 amended 2026-07-18: no recommendationsDeleted — nothing is erased; a
+    // legacy client sending the old field is simply stripped by the schema.
     expect(
       CognitoDeleteUserResponse.parse({ ok: true, existed: true, recommendationsDeleted: 3 }),
-    ).toEqual({ ok: true, existed: true, recommendationsDeleted: 3 });
-    // Already-gone account: no sub to erase under, the field is simply absent.
+    ).toEqual({ ok: true, existed: true });
+    // Already-gone account (idempotent retry): not an error.
     expect(CognitoDeleteUserResponse.parse({ ok: true, existed: false })).toEqual({
       ok: true,
       existed: false,
