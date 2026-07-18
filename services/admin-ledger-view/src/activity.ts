@@ -37,9 +37,7 @@ export function auditEntryToItem(entry: AuditLogEntry): ActivityItem {
     ...(p.previous !== undefined ? { previous: p.previous } : {}),
     // The member the event is about: wallet_entry payloads name it `cognitoSub`; user events
     // (user_registered / moderation) carry `sub`. Either way the SPA resolves + links it.
-    ...(str(p.cognitoSub) ?? str(p.sub)
-      ? { cognitoSub: str(p.cognitoSub) ?? str(p.sub) }
-      : {}),
+    ...((str(p.cognitoSub) ?? str(p.sub)) ? { cognitoSub: str(p.cognitoSub) ?? str(p.sub) } : {}),
     ...(str(p.orderId) ? { orderId: str(p.orderId) } : {}),
     ...(str(p.kind) ? { kind: str(p.kind) } : {}),
     ...(str(p.status) ? { status: str(p.status) } : {}),

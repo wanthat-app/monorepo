@@ -213,5 +213,4 @@ export class RecommendationRepo {
       lastKey: res.LastEvaluatedKey,
     };
   }
-
 }
