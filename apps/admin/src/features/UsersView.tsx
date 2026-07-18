@@ -96,8 +96,8 @@ export function UsersView({ token }: { token: string | null }) {
     debounceRef.current = setTimeout(() => void load(term), 350);
   };
 
-  // Single-step erase (T7 dropped the Aurora customer row): the Cognito account plus the
-  // member's recommendations go together; `recommendationsDeleted` is echoed into the toast.
+  // Cognito-account delete ONLY (ADR-0006 d8 amended 2026-07-18): the member's
+  // recommendations and wallet history are retained and stay inspectable on the user page.
   const onDelete = async (user: AdminUserItem) => {
     if (!token) return;
     setBusyId(user.id);
@@ -105,12 +105,8 @@ export function UsersView({ token }: { token: string | null }) {
     setWarning(null);
     setNotice(null);
     try {
-      const res = await adminApi.cognitoDeleteUser(token, user.phone);
-      setNotice(
-        res.recommendationsDeleted !== undefined
-          ? t("admin.usersPage.deletedWithRecs", { n: res.recommendationsDeleted })
-          : t("admin.usersPage.deleted"),
-      );
+      await adminApi.cognitoDeleteUser(token, user.phone);
+      setNotice(t("admin.usersPage.deleted"));
     } catch {
       setRowError({ id: user.id, message: t("admin.usersPage.deleteFailed") });
       setBusyId(null);
