@@ -2,10 +2,10 @@
 
 - **Date:** 2026-07-18
 - **Status:** Approved (brainstorm 2026-07-18)
-- **Touches:** `packages/contracts`, `services/post-confirmation`, `services/audit-writer`,
-  `services/admin-console`, `services/admin-ledger-view`, `apps/admin`,
-  `packages/db/migrations`, ADR-0006 (decision 8, edited in place under the pre-production
-  exception)
+- **Touches:** `packages/contracts`, `packages/dynamo`, `services/post-confirmation`,
+  `services/audit-writer`, `services/admin-console`, `services/admin-ledger-view`,
+  `apps/admin`, `packages/db/migrations`, `infra/lib/admin-stack.ts` (grant narrowing),
+  ADR-0006 (decision 8, edited in place under the pre-production exception)
 
 ## Problem
 
@@ -75,9 +75,13 @@ as-is. Old scrubbed `user_registered` rows and new ones render identically.
   response field.
 - Keep: sub resolution, Cognito removal, exact counter decrement (total / disabled),
   audit-or-fail `user_deleted` event, idempotent `existed: false` retry semantics.
-- The admin-console IAM/Dynamo grants are NOT narrowed in this slice — the delete grant on
-  `recommendation` becomes unused by this route but stays in place (it also serves the future
-  explicit-erase action); no infra change.
+- **Shrink admin-console's recommendation grant to read-only** (`infra/lib/admin-stack.ts`
+  ~175): the erasure was the only caller of the narrowed write grant (`DeleteItem` +
+  counter-conditioned `UpdateItem`), so that block is removed and `grantReadData` remains.
+  Admin cannot delete recommendations at all in this slice; the future explicit-erase action
+  re-introduces a scoped grant when it lands.
+- **Remove `deleteByOwner`** from `packages/dynamo/src/recommendation.ts` (+ its tests) —
+  admin-console was its sole caller; it would otherwise be dead code behind a revoked grant.
 - **ADR-0006 decision 8** is edited in place (pre-production exception): deletion = Cognito
   account only; recommendation erasure moves to *Alternatives considered / future explicit
   erase action*. The admin SPA's delete confirmation copy is updated to match ("account is
@@ -135,13 +139,14 @@ rewrites the same payloads to the same values and recomputes the same hashes.
 
 ## Out of scope
 
-- An explicit "delete + erase data" admin action (future privacy-request flow).
-- Narrowing admin-console's Dynamo grants.
+- An explicit "delete + erase data" admin action (future privacy-request flow — will need its
+  own scoped recommendation write grant).
 - Any change to `wallet_entry` audit payloads or money paths.
 - The DDoS incident playbook (separate, paused thread).
 
 ## Delivery
 
 One PR — a single deployable use-case slice ("audit is PII-free; deleted users stay
-inspectable"): contracts + three services + SPA + one migration. No infra/CDK changes. The
-migration runs automatically in-deploy via db-migrator.
+inspectable"): contracts + three services + SPA + one migration + one CDK grant narrowing
+(admin-console → recommendation table becomes read-only; `cdk diff` should show only that
+IAM policy shrink). The migration runs automatically in-deploy via db-migrator.
