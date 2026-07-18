@@ -302,18 +302,15 @@ for (const route of moderation) {
   });
 }
 
-// POST /admin/users/cognito-delete — remove a customer's Cognito account AND their DynamoDB
-// recommendations (ADR-0006 decision 8): the sub is resolved via AdminGetUser before the delete,
-// then deleteByOwner(sub) erases the recs with exact counter decrements. Idempotent: an
-// already-gone account is `existed: false`, not an error, so the SPA can retry safely — and the
-// retry writes no second audit event or counter decrement.
+// POST /admin/users/cognito-delete — remove a customer's Cognito account ONLY (ADR-0006
+// decision 8, amended 2026-07-18): recommendations and wallet history are retained (non-PII,
+// keyed by sub) so the deleted-user admin page stays inspectable. Idempotent: an already-gone
+// account is `existed: false`, not an error, so the SPA can retry safely — and the retry
+// writes no second audit event or counter decrement.
 app.post("/admin/users/cognito-delete", async (c) => {
   const body = CognitoDeleteUserBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: "invalid_request" }, 400);
   const { existed, sub, wasDisabled } = await getContext().cognitoUsers.remove(body.data.phone);
-  const recommendationsDeleted = sub
-    ? await getContext().recommendations.deleteByOwner(sub)
-    : undefined;
   // Exact customer counter: one erased account = total - 1 (and disabled - 1 when it was
   // suspended). Only when the account existed — the idempotent retry must not double-decrement.
   // NOTE: SELF-service account deletion (Cognito DeleteUser) does not exist in the SPA yet
@@ -326,13 +323,7 @@ app.post("/admin/users/cognito-delete", async (c) => {
       return c.json({ error: "audit_failed" }, 500);
     }
   }
-  return c.json(
-    CognitoDeleteUserResponse.parse({
-      ok: true,
-      existed,
-      ...(recommendationsDeleted !== undefined ? { recommendationsDeleted } : {}),
-    }),
-  );
+  return c.json(CognitoDeleteUserResponse.parse({ ok: true, existed }));
 });
 
 // DELETE /admin/users/:id — 410 Gone since T7: the Aurora-side hard delete died with the
