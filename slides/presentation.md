@@ -13,7 +13,7 @@ code (keep consistent everywhere): green = our compute, orange = data stores, pu
 external/managed services, gray = clients. Phone snapshots in `assets/` are ~2x captures of
 340x587 frames — display at equal width in a row, card border + slight shadow.
 
-**Timing plan (~20:00):** title 0:30 - business 3:30 - user flows 2:00 - principles 1:30 - data model 1:30 - data stores 2:00 - architecture walkthrough 6:00 (intro + 6 use cases + wrap) - cost 1:30 - limits 1:30.
+**Timing plan (~21:00):** title 0:30 - business 3:30 - user flows 2:00 - principles 1:30 - data model 1:30 - data stores 2:00 - architecture walkthrough 6:00 (intro + 6 use cases + wrap) - cost 1:30 - cost projection 1:00 - limits 1:30.
 Backup slides are for Q&A only. The architecture walkthrough diagrams are MAINTAINED BY DENNIS
 in the working deck (Google Slides) - the script reserves the space and carries the talking
 points only.
@@ -97,7 +97,7 @@ the ILS headline is a display estimate (ADR-0017); conversion happens at withdra
 
 ## Slide 6 — Engineering principles (1:30)
 
-Layout: five principle cards.
+Layout: six principle cards (3 x 2 grid).
 - **Monorepo, schema-first** — pnpm + Turborepo, TypeScript everywhere (Node 24, arm64);
   Zod contracts: inferred types + runtime validation at every boundary.
 - **Decisions on record** — ADRs beside the code. Locked: change is a new superseding ADR,
@@ -108,6 +108,8 @@ Layout: five principle cards.
 - **Optimize for cost** — avoid constant costs: zero interface endpoints, scale-to-zero,
   on-demand DBs.
 - **Zero to scale** — a link going viral in a WhatsApp group is the design spike.
+- **Security by design** — least privilege per function (IAM + one Postgres role each);
+  money is append-only + audited; PII isolated in Cognito; workers never HTTP-exposed.
 
 Speaker notes: these five drove every decision that follows; when two conflicted, cost and
 money-safety won.
@@ -263,9 +265,36 @@ Layout: cost table + two accepted-cost lines.
   cannot touch Aurora — cost scales with revenue-bearing traffic, not with virality.
 
 Speaker notes: numbers are il-central-1 approximations; the point is the shape — a ~$20
-measured floor, then linear with usage. The 10-to-100k-user projection is backup B17.
+measured floor, then linear with usage. The 10-to-100k-user projection is the NEXT slide.
 
-## Slide 18 — Known limits, and their revisit triggers (1:30)
+## Slide 18 — Cost projection by user count (1:00)
+
+Layout: full cost matrix (service rows x user-count columns) + takeaway line. Assumptions:
+10 operations/user/day (wallet refresh, create recommendation), ~70/30 read-write mix,
+il-central-1 approximate prices, production environment only; every active user = 1 Cognito
+MAU; RDS Proxy included from 10k users (its 8-ACU minimum makes it ~$100/month FLAT).
+
+| Monthly (prod) | 10 | 100 | 1,000 | 10,000 | 100,000 |
+|---|---|---|---|---|---|
+| WAF (2 ACLs, fixed + $0.60/M req) | $14 | $14 | $14 | $15 | $27 |
+| API Gateway (~$1.2/M) | ~$0 | ~$0 | $0.40 | $4 | $36 |
+| Lambda (256MB arm64) | ~$0 | ~$0 | $0.20 | $2 | $18 |
+| DynamoDB on-demand | ~$0 | ~$0 | $0.40 | $4 | $40 |
+| Aurora (compute + storage) | ~$3 | ~$8 | ~$45 | ~$80 | ~$220 |
+| RDS Proxy (8-ACU minimum) | — | — | — | ~$100 | ~$100 |
+| Cognito ($0.015/MAU after 10k free) | $0 | $0 | $0 | $0 | $1,350 |
+| CloudFront + misc | ~$3 | ~$3 | ~$5 | ~$12 | ~$42 |
+| **Total** | **~$20** | **~$25** | **~$65** | **~$215** | **~$1,835** |
+
+- Two step functions, then linear: Aurora stops sleeping (~1k users); the Cognito free tier
+  ends at exactly 10k MAU. Per-user at 100k: ~$0.018/month.
+
+Speaker notes: WAF stays flat at every scale — member API operations bypass CloudFront
+entirely. Breaks BEFORE the bill: account concurrency 10 (~10k users, peaks) - AliExpress
+rate limits (ADR-0021) - Aurora's 50-connection cap post-quota-raise (only THEN does the
+proxy earn its cost) - the 2-ACU max.
+
+## Slide 19 — Known limits, and their revisit triggers (1:30)
 
 Layout: limits table + Questions line.
 
@@ -273,7 +302,6 @@ Layout: limits table + Questions line.
 |---|---|---|
 | Single active region | Cross-region backups only; RTO = hours (ADR-0005) | Revenue SLA or user base that prices an active-standby |
 | Cognito PII: no PITR, weak queries | Accepted for MVP; profile is thin | Compliance/BI needs → dual-write projection to SQL |
-| JWT revocation lag <= 1 h | Only member surface is a read-only wallet | Any sensitive member mutation → short tokens or in-handler check |
 | Account concurrency = 10 | No reserved concurrency anywhere (deliberate) | Quota raise, then per-function caps return |
 | dev + prod in one account | Shared SMS cap and service quotas | Before marketing push: account split |
 | Retailer throttling interim | Sequential + one ban-window retry (ADR-0021) | Poller volume growth or AliExpress app approval |
@@ -306,8 +334,8 @@ Layout: three option cards (A/B/C) + two trade-off lines below.
 
 Trade-offs signed off with B: userless Face ID waived (remembered-phone one-prompt kept);
 phone enumeration accepted (preventUserExistenceErrors LEGACY) — mitigated by pool WAF rate
-rules; JWT revocation lags up to 1 h on our APIs (stateless authorizer) — acceptable while
-the only member surface is a read-only wallet.
+rules; JWT revocation lags up to 15 min on our APIs (stateless authorizer, 15-minute access
+tokens) — acceptable for the current member surface.
 Measured effect: login requires zero backend calls; the Aurora cold-resume login stall
 (~20 s) is structurally impossible.
 
@@ -667,30 +695,3 @@ Layout: two-column table.
 | Conversion webhooks | Spoofable inbound money surface + no reliable retailer support; reconciliation poll is replayable and auditable |
 | Self-minted session JWTs | A second token validation path across every API; Cognito stays the only issuer |
 | Aurora customer table (PII in SQL) | Kept Aurora on the auth path and PII in two stores; moved to Cognito attributes (ADR-0006) |
-
-## Slide B17 — Cost progression: 10 to 100k active users
-
-Layout: full cost matrix (service rows x user-count columns) + takeaway line. Assumptions:
-10 operations/user/day (wallet refresh, create recommendation), ~70/30 read-write mix,
-il-central-1 approximate prices, production environment only; every active user = 1 Cognito
-MAU; RDS Proxy included from 10k users (its 8-ACU minimum makes it ~$100/month FLAT).
-
-| Monthly (prod) | 10 | 100 | 1,000 | 10,000 | 100,000 |
-|---|---|---|---|---|---|
-| WAF (2 ACLs, fixed + $0.60/M req) | $14 | $14 | $14 | $15 | $27 |
-| API Gateway (~$1.2/M) | ~$0 | ~$0 | $0.40 | $4 | $36 |
-| Lambda (256MB arm64) | ~$0 | ~$0 | $0.20 | $2 | $18 |
-| DynamoDB on-demand | ~$0 | ~$0 | $0.40 | $4 | $40 |
-| Aurora (compute + storage) | ~$3 | ~$8 | ~$45 | ~$80 | ~$220 |
-| RDS Proxy (8-ACU minimum) | — | — | — | ~$100 | ~$100 |
-| Cognito ($0.015/MAU after 10k free) | $0 | $0 | $0 | $0 | $1,350 |
-| CloudFront + misc | ~$3 | ~$3 | ~$5 | ~$12 | ~$42 |
-| **Total** | **~$20** | **~$25** | **~$65** | **~$215** | **~$1,835** |
-
-- Two step functions, then linear: Aurora stops sleeping (~1k users); the Cognito free tier
-  ends at exactly 10k MAU. Per-user at 100k: ~$0.018/month.
-
-Speaker notes: WAF stays flat at every scale — member API operations bypass CloudFront
-entirely. Breaks BEFORE the bill: account concurrency 10 (~10k users, peaks) - AliExpress
-rate limits (ADR-0021) - Aurora's 50-connection cap post-quota-raise (only THEN does the
-proxy earn its cost) - the 2-ACU max.
