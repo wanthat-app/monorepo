@@ -2,7 +2,8 @@
  * The ledger writer (ADR-0002/0009): the SOLE money mutator. Receives resolved conversions
  * from the retailer-settlement poll and appends the append-only ledger — one `wallet_entry`
  * per party per status, deduplicated by the `(order_id, kind, status)` unique index, each
- * landed row chained into the audit log. One `ConversionEvent` console.log line per conversion
+ * landed row chained into the audit log IN THE SAME TRANSACTION (atomic pair, 2026-07-18).
+ * One `ConversionEvent` console.log line per conversion
  * whose status produced at least one new row (per order+status, not per party row) feeds the
  * Logs → Firehose → Athena funnel.
  *
@@ -19,8 +20,7 @@ import {
   type WriteConversionsResponse,
 } from "@wanthat/contracts";
 import {
-  appendAudit,
-  appendWalletEntry,
+  appendWalletEntryAudited,
   conversionTotalsFor,
   type createDb,
   type WalletEntryInsert,
@@ -75,11 +75,10 @@ export async function writeConversions(
     try {
       let anyNew = false;
       for (const entry of entriesOf(write)) {
-        const inserted = await appendWalletEntry(deps.db, entry);
-        if (!inserted) continue; // idempotent re-read — already chained + counted + emitted
-        anyNew = true;
-        appended.push({ orderId: entry.orderId, kind: entry.kind, status: entry.status });
-        await appendAudit(deps.db, {
+        // Atomic pair (2026-07-18): the wallet row and its audit witness commit in ONE
+        // transaction — a failed audit rolls the money row back; the idempotent no-op
+        // replay appends neither.
+        const inserted = await appendWalletEntryAudited(deps.db, entry, {
           type: "wallet_entry",
           cognitoSub: entry.cognitoSub,
           kind: entry.kind,
@@ -89,6 +88,9 @@ export async function writeConversions(
           recommendationId: entry.recommendationId,
           status: entry.status,
         });
+        if (!inserted) continue; // idempotent re-read — already chained + counted + emitted
+        anyNew = true;
+        appended.push({ orderId: entry.orderId, kind: entry.kind, status: entry.status });
       }
       if (anyNew) {
         // Funnel analytics (the writer log group's subscription filter ships this line).
