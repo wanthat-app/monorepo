@@ -13,7 +13,7 @@ code (keep consistent everywhere): green = our compute, orange = data stores, pu
 external/managed services, gray = clients. Phone snapshots in `assets/` are ~2x captures of
 340x587 frames — display at equal width in a row, card border + slight shadow.
 
-**Timing plan (20:00):** title 0:30 - business 3:30 - user flows 2:00 - principles + architecture 5:00 - decisions and trade-offs (slides 8-13) 14:00 total with the above.
+**Timing plan (19:00):** title 0:30 - business 3:30 - user flows 2:00 - principles 2:00 - data model 1:30 - architecture 3:00 - data decision 2:30 - cost 2:00 - limits 2:00.
 Backup slides are for Q&A only.
 
 ---
@@ -57,7 +57,7 @@ Layout: stat tiles (2x3) + one footer line.
 - **#1** WhatsApp penetration among the highest globally — group sharing is a daily habit.
 - **$17B+** global affiliate market — a proven commercial model.
 - **3 days** AliExpress attribution window — sharing must be instant.
-- **>=₪50** payout via bank / card / Bit / PayBox.
+- **>=₪20** payout via bank / card / Bit / PayBox.
 - Month-3 go/no-go gates: 500 active sharers, >20% CTR, >6% conversion, >50% 30-day return.
 
 Speaker notes: the gates decide Phase 2 (group sharing, two-sided rewards) and a pre-seed
@@ -87,7 +87,7 @@ Layout: three phone snapshots with arrows, URL chips, captions.
 |---|---|---|---|
 | 1 | `assets/earn-1-activity.jpg` | `wanthat.app/activity` | Conversion tracked — pending until the store confirms |
 | 2 | `assets/earn-2-wallet-home.jpg` | `wanthat.app/home` | Wallet credited — estimated ILS over real currencies |
-| 3 | `assets/earn-3-withdraw.jpg` | `wanthat.app/withdraw` | Withdraw from ₪50 — bank, card, Bit or PayBox |
+| 3 | `assets/earn-3-withdraw.jpg` | `wanthat.app/withdraw` | Withdraw from ₪20 — bank, card, Bit or PayBox |
 
 Speaker notes: note the "Estimated" chip — cashback is held in the settlement currency and
 the ILS headline is a display estimate (ADR-0017); conversion happens at withdrawal.
@@ -112,7 +112,54 @@ Layout: five principle cards.
 Speaker notes: these five drove every decision that follows; when two conflicted, cost and
 money-safety won.
 
-## Slide 7 — Architecture (3:00)
+## Slide 7 — Data model (1:30)
+
+Layout: full-slide conceptual diagram + one closing line.
+
+```mermaid
+flowchart LR
+  subgraph cog["Cognito - identity + ALL customer PII"]
+    member["MEMBER<br>id = sub - phone, name,<br>email, locale in attributes"]
+  end
+  subgraph dyn["DynamoDB - catalog + operational, non-PII"]
+    rec["RECOMMENDATION<br>short id in the /p/ URL<br>cashback split SNAPSHOT<br>owner = sub - soft ref"]
+    prod["PRODUCT cache<br>store + storeProductId<br>commission, affiliate url"]
+    guest["GUEST ATTRIBUTION<br>guestId -> sub after signup"]
+    unattr["UNATTRIBUTED ORDER<br>admin claim queue"]
+  end
+  subgraph pg["Aurora - money only"]
+    wallet["WALLET ENTRY<br>append-only - keyed by sub<br>kind + status lifecycle rows"]
+    audit["AUDIT LOG<br>hash-chained events"]
+  end
+  order["ORDER - lives at the retailer<br>reaches us via the 15-min poll"]
+
+  member -- "creates" --> rec
+  rec -- "soft ref" --> prod
+  rec -- "attributed click" --> order
+  guest -- "resolves to" --> order
+  order -- "settled conversion" --> wallet
+  wallet -. "every append audited" .- audit
+  member -. "sub is the ONLY<br>cross-store key" .- wallet
+
+  classDef ext fill:#f3f0f7,stroke:#7a5fa3
+  classDef data fill:#fff4e6,stroke:#cc8400
+  classDef money fill:#e6f0ff,stroke:#3b6fb3
+  class member ext
+  class rec,prod,guest,unattr data
+  class wallet,audit money
+  class order ext
+```
+
+Closing line: **references across stores are soft — keys plus idempotency, never foreign
+keys or cross-store transactions.** The Cognito `sub` is the one identifier that ties a
+member's PII, links, and money together; each entity lives in the store whose guarantees it
+needs (PII isolation, burst-absorbing KV, ACID money).
+
+Speaker notes: the split-by-guarantee is the next slide's architecture in miniature — PII
+never leaves Cognito, the viral read path never leaves DynamoDB, and money only ever
+APPENDS in Aurora. Per-column schemas are in backup B10/B11.
+
+## Slide 8 — Architecture (3:00)
 
 Layout: full-slide diagram. Render the mermaid below (or restyle it) — keep the color code.
 
@@ -278,7 +325,7 @@ scheduled pipeline on the right — retailer-settlement fetches, the in-VPC ledg
 appends and returns the totals the poll projects back onto the links. Full per-table version
 lives in `docs/AWS_Architecture.md`.
 
-## Slide 8 — Data: one store per job, and what each costs us (2:30)
+## Slide 9 — Data: one store per job, and what each costs us (2:30)
 
 Layout: decision table (Data / Decision / Why / Trade-off accepted) + closing constraint line.
 
@@ -295,9 +342,53 @@ consistency is by keys and idempotency, not coordination.
 
 Speaker notes: if asked why not one Postgres for everything — the redirect hot path must
 absorb viral spikes at zero idle cost, and the auth path must not depend on a relational
-database resume. (The data-homes diagram is in backup B6.)
+database resume. (The data-homes diagram is in backup B14.)
 
-## Slide 9 — Auth: three options, one deleted service (2:30)
+## Slide 10 — Cost model: a measured floor, then linear (2:00)
+
+Layout: cost table + two accepted-cost lines.
+
+| Line item | Monthly | Note |
+|---|---|---|
+| Compute + APIs + DynamoDB idle | $0 | Everything scales from zero; Aurora paused = storage only (~$2) |
+| WAF (2 web ACLs + rules) | ~$15 | The deliberate fixed floor: CloudFront ACL + Cognito-pool ACL |
+| Secrets, Route 53, misc | ~$2 | 2 retailer secrets, hosted zone |
+| OTP delivery | capped $1 | SNS hard cap (SMS sandbox); WhatsApp ~10x cheaper per message at scale — hence WhatsApp-default |
+| NAT / proxies / endpoints | $0 | Architecturally eliminated (backup B2) |
+
+- Costs accepted knowingly: cold-resume UX risk on first wallet read (mitigated by warm-up
+  probe); one AWS account for dev+prod shares SMS caps and quotas — flagged for split.
+- Unit economics guardrail: the redirect hot path costs micro-cents per thousand clicks and
+  cannot touch Aurora — cost scales with revenue-bearing traffic, not with virality.
+
+Speaker notes: numbers are il-central-1 approximations; the point is the shape — a ~$20
+measured floor, then linear with usage.
+
+## Slide 11 — Limits I know about, and their revisit triggers (2:00)
+
+Layout: limits table + Questions line.
+
+| Limitation | Current stance | Revisit trigger |
+|---|---|---|
+| Single active region | Cross-region backups only; RTO = hours (ADR-0005) | Revenue SLA or user base that prices an active-standby |
+| Cognito PII: no PITR, weak queries | Accepted for MVP; profile is thin | Compliance/BI needs → dual-write projection to SQL |
+| JWT revocation lag <= 1 h | Only member surface is a read-only wallet | Any sensitive member mutation → short tokens or in-handler check |
+| Account concurrency = 10 | No reserved concurrency anywhere (deliberate) | Quota raise, then per-function caps return |
+| dev + prod in one account | Shared SMS cap and service quotas | Before marketing push: account split |
+| Retailer throttling interim | Sequential + one ban-window retry (ADR-0021) | Poller volume growth or AliExpress app approval |
+
+Close: "Questions? Backup: sequence diagrams, failure modes, the rejected-alternatives list."
+
+Speaker notes: every row is documented in an ADR or docs/AWS_Architecture.md — none of these
+are surprises.
+
+---
+
+---
+
+# Backup slides (Q&A)
+
+## Slide B1 — Auth: three options
 
 Layout: three option cards (A/B/C) + two trade-off lines below.
 
@@ -308,8 +399,9 @@ Layout: three option cards (A/B/C) + two trade-off lines below.
   profile = ID-token claims). **CHOSEN**: zero backend calls to authenticate; full RTL UI;
   pool WAF + quotas as abuse control.
 - **C — App-owned ceremonies** (proxy every OTP step, own WebAuthn store, Ed25519 ticket
-  bridge, AdminSetUserPassword exchange). **BUILT, THEN DELETED**: 2 Lambdas + 3 tables + a
-  crypto path bought ONE feature — userless Face ID. Requirement waived, cost column deleted.
+  bridge, AdminSetUserPassword exchange). **ALTERNATIVE — not pursued**: 2 Lambdas + 3
+  tables + a crypto path buy exactly ONE feature — userless Face ID; the requirement was
+  waived, so the whole column of cost buys nothing.
 
 Trade-offs signed off with B: userless Face ID waived (remembered-phone one-prompt kept);
 phone enumeration accepted (preventUserExistenceErrors LEGACY) — mitigated by pool WAF rate
@@ -318,10 +410,9 @@ the only member surface is a read-only wallet.
 Measured effect: login requires zero backend calls; the Aurora cold-resume login stall
 (~20 s) is structurally impossible.
 
-Speaker notes: full sequence diagram in backup B1. The C-to-B migration was possible
-pre-release — one dev user deleted, no migration burden.
+Speaker notes: full sequence diagram in backup B4.
 
-## Slide 10 — Network: pay for nothing that idles (2:30)
+## Slide B2 — Network: pay for nothing that idles
 
 Layout: avoided-cost table + three consequence lines.
 
@@ -343,7 +434,7 @@ Layout: avoided-cost table + three consequence lines.
 Speaker notes: il-central-1 gaps shaped this too — no RDS Data API (killed the no-VPC data
 path), no Lambda Function URLs (landing sits behind an HTTP API).
 
-## Slide 11 — Money: poll over webhook, append over update (2:30)
+## Slide B3 — Money: poll over webhook, append over update
 
 Layout: two decision cards.
 
@@ -365,52 +456,10 @@ Layout: two decision cards.
 - Hash-chained audit log makes tampering evident; admin config changes audit the same way.
 - Blast radius: a bug or compromise in any read path has zero write capability on money.
 
-Speaker notes: sequence in backup B3. Unmatched orders are not dropped — they park in
+Speaker notes: sequence in backup B6. Unmatched orders are not dropped — they park in
 unattributed_order and an admin claim settles on the next heartbeat.
 
-## Slide 12 — Cost model: a measured floor, then linear (2:00)
-
-Layout: cost table + two accepted-cost lines.
-
-| Line item | Monthly | Note |
-|---|---|---|
-| Compute + APIs + DynamoDB idle | $0 | Everything scales from zero; Aurora paused = storage only (~$2) |
-| WAF (2 web ACLs + rules) | ~$15 | The deliberate fixed floor: CloudFront ACL + Cognito-pool ACL |
-| Secrets, Route 53, misc | ~$2 | 2 retailer secrets, hosted zone |
-| OTP delivery | capped $1 | SNS hard cap (SMS sandbox); WhatsApp ~10x cheaper per message at scale — hence WhatsApp-default |
-| NAT / proxies / endpoints | $0 | Architecturally eliminated (slide 10) |
-
-- Costs accepted knowingly: cold-resume UX risk on first wallet read (mitigated by warm-up
-  probe); one AWS account for dev+prod shares SMS caps and quotas — flagged for split.
-- Unit economics guardrail: the redirect hot path costs micro-cents per thousand clicks and
-  cannot touch Aurora — cost scales with revenue-bearing traffic, not with virality.
-
-Speaker notes: numbers are il-central-1 approximations; the point is the shape — a ~$20
-measured floor, then linear with usage.
-
-## Slide 13 — Limits I know about, and their revisit triggers (2:00)
-
-Layout: limits table + Questions line.
-
-| Limitation | Current stance | Revisit trigger |
-|---|---|---|
-| Single active region | Cross-region backups only; RTO = hours (ADR-0005) | Revenue SLA or user base that prices an active-standby |
-| Cognito PII: no PITR, weak queries | Accepted for MVP; profile is thin | Compliance/BI needs → dual-write projection to SQL |
-| JWT revocation lag <= 1 h | Only member surface is a read-only wallet | Any sensitive member mutation → short tokens or in-handler check |
-| Account concurrency = 10 | No reserved concurrency anywhere (deliberate) | Quota raise, then per-function caps return |
-| dev + prod in one account | Shared SMS cap and service quotas | Before marketing push: account split |
-| Retailer throttling interim | Sequential + one ban-window retry (ADR-0021) | Poller volume growth or AliExpress app approval |
-
-Close: "Questions? Backup: sequence diagrams, failure modes, the rejected-alternatives list."
-
-Speaker notes: every row is documented in an ADR or docs/AWS_Architecture.md — none of these
-are surprises.
-
----
-
-# Backup slides (Q&A)
-
-## Slide B1 — Sequence: customer auth, all four flows
+## Slide B4 — Sequence: customer auth, all four flows
 
 ```mermaid
 sequenceDiagram
@@ -451,7 +500,7 @@ sequenceDiagram
   end
 ```
 
-## Slide B2 — Sequence: create a link
+## Slide B5 — Sequence: create a link
 
 ```mermaid
 sequenceDiagram
@@ -478,7 +527,7 @@ sequenceDiagram
   MC-->>SPA: wanthat.app/p/shortId
 ```
 
-## Slide B3 — Sequence: click to ledger
+## Slide B6 — Sequence: click to ledger
 
 ```mermaid
 sequenceDiagram
@@ -510,7 +559,113 @@ sequenceDiagram
   RS->>DB: apply totals to recommendations - idempotent SETs
 ```
 
-## Slide B4 — ADR map
+## Slide B7 — Trade-off: HA vs single region (ADR-0005)
+
+Layout: two-column trade-off + verdict line.
+
+- **Target**: 99.5% availability (~3.6 h/month) — lenient by design for an MVP.
+- **Hard constraint**: Cognito has NO multi-region replication in il-central-1 — a hot
+  identity failover is not natively possible regardless of spend.
+- **Chosen**: single active region (il-central-1); eu-central-1 is a restore target, not a
+  standby. RPO ~minutes (PITR), RTO ~hours (region-loss rebuild from cross-region copies).
+- **Rejected**: active-passive multi-region now — not required for 99.5%, identity failover
+  would be non-native anyway, and the cost/complexity is unjustified at MVP.
+- **Rejected**: in-region backups only — a region incident would lose a money ledger;
+  unacceptable at any SLA.
+- Revisit trigger: an SLA beyond 99.5%, or identity region-loss recovery becoming a hard
+  requirement.
+
+## Slide B8 — Backup strategy (ADR-0005)
+
+Layout: table + two honesty lines.
+
+| Data | In-region | Cross-region (eu-central-1) |
+|---|---|---|
+| Aurora ledger + audit | PITR, continuous — RPO ~minutes | Automated-snapshot copy |
+| DynamoDB (9 tables) | PITR on every table | Export/copy for the redirect projection + attribution map |
+| Funnel + audit events (S3) | Versioning | Cross-region replication |
+| Secrets | — | Secrets Manager replication |
+| Cognito (identity + ALL PII) | Managed by the pool | **NONE — no cross-region recovery in MVP** (accepted, documented) |
+
+- The hash-chained audit log complements backups: restores are tamper-evident, not just
+  recoverable.
+- Status honesty: PITR is live everywhere; the cross-region copy jobs are the one deferred
+  item of ADR-0005 — tracked, not yet deployed.
+
+## Slide B9 — Observability
+
+Layout: three cards (see / alert / analyze).
+
+- **See**: per-surface CloudWatch dashboards (API count/5xx/p95, Lambda errors/throttles/p95
+  in registry order, Aurora ACU + connections, SMS spend) + an edge dashboard in us-east-1
+  (CloudFront + WAF); X-Ray tracing on every function; structured logs with retention bounds
+  (dev 1 month, prod 6 months).
+- **Alert** (SNS -> ops email): per-Lambda errors for the 13 steady-state functions (the two
+  deploy-time triggers are excluded BY DESIGN — their failure fails the deploy itself),
+  per-API 5xx, Aurora connections at 80% of the 50 cap, month-to-date SMS spend at 80% of
+  the cap.
+- **Analyze**: the funnel pipeline — CloudWatch Logs subscription filters on landing /
+  retailer-settlement / ledger-writer pick impression, click, conversion and order_untracked
+  events -> Firehose -> date-partitioned S3 -> Glue -> Athena with partition projection.
+
+Speaker notes: the alarm list is deliberately short — every alarm is actionable; funnel
+events are business analytics, not ops noise, which is why they leave CloudWatch.
+
+## Slide B10 — Aurora schema + the hash chain (conceptual)
+
+Layout: two cards side by side + chain diagram below.
+
+**wallet_entry — the append-only ledger**
+- `id, cognito_sub, kind, amount_minor, currency, order_id, recommendation_id, status,
+  created_at` — no FK anywhere (the user store is Cognito; no SQL constraint can reach it).
+- Lifecycle is rows, not updates: `pending -> confirmed -> clawback` are separate immutable
+  appends; balances are always derived, never stored.
+- Unique `(order_id, kind, status)` where order_id is present = poll idempotency; partial
+  index on `recommendation_id` serves the conversion-totals derivation.
+- UPDATE/DELETE revoked from EVERY role; one Postgres role per function is the enforcement
+  layer (wallet_reader / ledger_reader SELECT-only, ledger_writer INSERT-only,
+  audit_writer = EXECUTE audit_append only).
+
+**audit_log — hash-chained events**
+- `id, prev_hash, entry_hash, payload jsonb, created_at`; the SECURITY DEFINER function
+  `audit_append` is the ONLY door in — it serializes writers with an advisory lock so the
+  chain can never fork.
+
+```mermaid
+flowchart LR
+  g["genesis<br>prev = NULL"] --> e1["entry 1<br>hash = sha256 of<br>prev + payload + epoch"]
+  e1 --> e2["entry 2<br>chains entry 1 hash"]
+  e2 --> e3["entry 3<br>chains entry 2 hash"]
+  e3 -. "any edit anywhere breaks<br>every later hash - tamper evident" .-> e1
+```
+
+Speaker notes: the chain is verifiable end-to-end with one SQL window query; when we
+scrubbed PII from historical payloads (2026-07), the migration recomputed the whole chain
+and it still verifies — an auditable rewrite, not a silent one.
+
+## Slide B11 — DynamoDB schemas + GSIs
+
+Layout: table + two constraint lines.
+
+| Table | Keys | GSI / extras | Purpose |
+|---|---|---|---|
+| product | storeId + storeProductId | counter row in-table | retailer product cache (retailer-linkgen is sole writer) |
+| recommendation | recommendationId | **byOwner** (ownerId, createdAt); counter row in-table | short-link projection + per-link stats |
+| guest_attribution | guestId | — | guest -> member carry-over at signup |
+| poller_state | stateKey | — | order-poll cursor |
+| unattributed_order | orderId | **byState** (state, firstSeenAt) | admin claim queue |
+| runtime_config | configKey | — | kill switches + tunables (admin-console sole writer) |
+| ops_counters | counterKey | — | exact customer/link counters + daily stats |
+| fx_rate | pair (USD#ILS) | — | FX display-estimate cache |
+| otp_sink | phone | TTL 5 min | parked OTP codes (admin debugging view) |
+
+- All on-demand + PITR. Exact counters: the `#counter` sentinel row lives INSIDE the counted
+  table, so create/delete + `ADD itemCount` ride ONE same-table TransactWriteItems — sparse
+  by construction (no ownerId, so GSIs exclude it).
+- No cross-table transaction exists anywhere — cross-entity consistency is keys +
+  idempotent writes, by design.
+
+## Slide B12 — ADR map
 
 Layout: two-column list; highlight the architecture set (0001-0009) vs stack set.
 - 0001 monorepo + Zod contracts - 0002 compute seams - 0003 polyglot data, no RDS Proxy -
@@ -523,7 +678,7 @@ Layout: two-column list; highlight the architecture set (0001-0009) vs stack set
   0020 sub = canonical id - 0021 retailer throttling (interim).
 - Policy: **locked — supersede, never edit.**
 
-## Slide B5 — ADR-0002 + 0004: compute seams and the NAT-free bet
+## Slide B13 — ADR-0002 + 0004: compute seams and the NAT-free bet
 
 ```mermaid
 flowchart LR
@@ -554,7 +709,7 @@ Talking points: only what touches Aurora enters the VPC; in-VPC functions cannot
 every invoke arrow starts outside the VPC and the conversion chain is always
 settlement -> writer; a NAT Gateway would be the single biggest fixed cost in the account.
 
-## Slide B6 — ADR-0003 + 0006: where data lives
+## Slide B14 — ADR-0003 + 0006: where data lives
 
 Layout: diagram + three trade-off lines.
 
@@ -582,7 +737,7 @@ flowchart LR
 - Trade-offs accepted: no SQL over PII, no PITR for the user pool, attribute changes have no
   built-in history.
 
-## Slide B7 — Failure modes and recovery
+## Slide B15 — Failure modes and recovery
 
 Layout: table.
 
@@ -595,7 +750,7 @@ Layout: table.
 | Notification invoke keeps failing | Welcome message undelivered | Lambda async retry x2 → real-payload SQS DLQ (redrivable); kill-switched skips return success and never DLQ |
 | Cognito outage | No new logins | Static SPA still serves; landing redirect works for guests (DynamoDB-only path) |
 
-## Slide B8 — Rejected alternatives: the graveyard
+## Slide B16 — Rejected alternatives: the graveyard
 
 Layout: two-column table.
 

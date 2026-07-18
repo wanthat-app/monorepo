@@ -14,8 +14,8 @@ script, then regenerate the deck. Do not hand-edit the pptx.
 
 ## Regeneration process
 
-1. **Extract** every ` ```mermaid ` block from `presentation.md` (slides 7, B1,
-   B2, B3, B5, B6) into standalone `.mmd` files.
+1. **Extract** every ` ```mermaid ` block from `presentation.md` (slides 7, 8,
+   B4, B5, B6, B10, B13, B14) into standalone `.mmd` files.
 2. **Render** each block to PNG at ~2x with mermaid-cli (chromium-based; the
    theme config keeps the deck's evergreen palette — pale-green nodes, gray
    clusters — while the classDefs inside each source carry the diagram color
@@ -28,8 +28,8 @@ script, then regenerate the deck. Do not hand-edit the pptx.
    ```
 
 3. **Build** the deck with python-pptx (venv with `python-pptx` + `pillow`):
-   16:9, one slide per script section in order (13 main + a dark Backup divider
-   + 8 backup), speaker notes parsed straight out of the script. Layout mirrors
+   16:9, one slide per script section in order (11 main + a dark Backup divider
+   + 16 backup), speaker notes parsed straight out of the script. Layout mirrors
    the deck conventions: dark `#15201C` title/divider slides, light `#F4F6F5`
    content slides, Space Grotesk / Hanken Grotesk / Space Mono, evergreen
    `#1F7A57` accent, white cards with `#E6EBE8` borders, kicker + big slide
