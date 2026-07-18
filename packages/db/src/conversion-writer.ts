@@ -1,4 +1,5 @@
 import type { Kysely } from "kysely";
+import { appendAudit } from "./audit";
 import type { Database } from "./schema";
 
 /**
@@ -39,6 +40,27 @@ export async function appendWalletEntry(
     .returning("id")
     .executeTakeFirst();
   return inserted !== undefined;
+}
+
+/**
+ * Atomic pair (2026-07-18): the wallet append and its audit witness commit in ONE Aurora
+ * transaction — a failed audit rolls the money row back, so no ledger row can ever exist
+ * unwitnessed. The idempotent no-op replay (unique-index conflict) appends NOTHING, so no
+ * orphan audit entries either. This is the single intra-store exception to the
+ * no-cross-table-transaction rule — that rule's target is cross-STORE coordination, which
+ * stays forbidden. audit_append's advisory lock is xact-scoped, so the pair holds it only
+ * until commit.
+ */
+export async function appendWalletEntryAudited(
+  db: Kysely<Database>,
+  entry: WalletEntryInsert,
+  auditPayload: unknown,
+): Promise<boolean> {
+  return db.transaction().execute(async (trx) => {
+    const inserted = await appendWalletEntry(trx, entry);
+    if (inserted) await appendAudit(trx, auditPayload);
+    return inserted;
+  });
 }
 
 /**

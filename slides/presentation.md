@@ -169,9 +169,10 @@ Layout: decision table (Data / Decision / Why / Trade-off accepted) + closing co
 | Customer PII | Cognito user attributes are the system of record | Auth path touches zero databases; GDPR delete = one call; backups carry no PII | ListUsers-only queries (no joins, one filter); no PITR; no attribute history. Escape hatch: dual-write projection |
 | Operational | DynamoDB on-demand (9 tables) | Viral bursts absorbed at $0 idle; access patterns modeled as projections (byOwner, byState GSIs) | No joins, no ad-hoc queries; counters kept exact via same-table transactions |
 
-Closing line: **deliberate constraint — no cross-table transactions exist anywhere.** Counter
-rows live inside the counted table (single-table TransactWriteItems); ledger + audit are
-sequential idempotent appends behind a unique (order_id, kind, status) index. Cross-store
+Closing line: **deliberate constraint — no cross-STORE transactions exist anywhere.** Counter
+rows live inside the counted table (single-table TransactWriteItems); each ledger append
+commits with its audit witness in ONE Aurora transaction (the single intra-store exception),
+and replays stay no-ops via the unique (order_id, kind, status) index. Cross-store
 consistency is by keys and idempotency, not coordination.
 
 Speaker notes: if asked why not one Postgres for everything — the redirect hot path must
@@ -522,6 +523,8 @@ Layout: two cards side by side + chain diagram below.
   appends; balances are always derived, never stored.
 - Unique `(order_id, kind, status)` where order_id is present = poll idempotency; partial
   index on `recommendation_id` serves the conversion-totals derivation.
+- Every append commits with its `audit_append` witness in ONE transaction (2026-07-18) — a
+  failed audit rolls the money row back; no ledger row can exist unwitnessed.
 - UPDATE/DELETE revoked from EVERY role; one Postgres role per function is the enforcement
   layer (wallet_reader / ledger_reader SELECT-only, ledger_writer INSERT-only,
   audit_writer = EXECUTE audit_append only).
@@ -627,7 +630,7 @@ flowchart LR
     ops[("attribution, config,<br>counters, FX, otp_sink")]
   end
   pii -. "sub is the only join key" .- wallet
-  wallet -. "sequential idempotent appends,<br>NOT one transaction" .- audit
+  wallet -. "append + audit witness<br>commit in ONE transaction" .- audit
 ```
 
 - The customer table was dropped when PII moved to Cognito (migration 0006_money_only) — the

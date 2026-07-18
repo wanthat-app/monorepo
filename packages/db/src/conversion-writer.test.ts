@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { appendAudit } from "./audit";
 import {
   appendWalletEntry,
+  appendWalletEntryAudited,
   conversionTotalsFor,
   type WalletEntryInsert,
 } from "./conversion-writer";
@@ -59,6 +60,35 @@ describe("appendWalletEntry", () => {
     expect(rows).toHaveLength(3);
     const referrerRows = rows.filter((r) => r.kind === "referrer_cashback");
     expect(referrerRows.map((r) => r.status).sort()).toEqual(["confirmed", "pending"]);
+  });
+});
+
+describe("appendWalletEntryAudited", () => {
+  const PAIR = { ...ENTRY, orderId: "pair-1" };
+  const payload = { type: "wallet_entry", orderId: "pair-1", kind: PAIR.kind };
+
+  it("commits the wallet row and its audit witness together; the replay adds neither", async () => {
+    const before = await sql<{ n: string }>`SELECT count(*) AS n FROM audit_log`.execute(db);
+    expect(await appendWalletEntryAudited(db, PAIR, payload)).toBe(true);
+    const mid = await sql<{ n: string }>`SELECT count(*) AS n FROM audit_log`.execute(db);
+    expect(Number(mid.rows[0]?.n)).toBe(Number(before.rows[0]?.n) + 1);
+    // idempotent replay: no wallet row, and crucially NO orphan audit entry
+    expect(await appendWalletEntryAudited(db, PAIR, payload)).toBe(false);
+    const after = await sql<{ n: string }>`SELECT count(*) AS n FROM audit_log`.execute(db);
+    expect(Number(after.rows[0]?.n)).toBe(Number(mid.rows[0]?.n));
+  });
+
+  it("rolls the wallet row back when the audit append fails inside the pair", async () => {
+    const bad = { ...ENTRY, orderId: "pair-rollback" };
+    // audit_append(jsonb) rejects a payload that cannot be cast - a self-referencing
+    // structure makes JSON.stringify throw inside the transaction, after the insert.
+    const cyclic: Record<string, unknown> = {};
+    cyclic.self = cyclic;
+    await expect(appendWalletEntryAudited(db, bad, cyclic)).rejects.toThrow();
+    const rows = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM wallet_entry WHERE order_id = 'pair-rollback'
+    `.execute(db);
+    expect(Number(rows.rows[0]?.n)).toBe(0);
   });
 });
 

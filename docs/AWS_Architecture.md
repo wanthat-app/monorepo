@@ -82,7 +82,7 @@ flowchart TB
       auditw["audit-writer<br>audit_append only"]
       bootstrap["role-bootstrap - deploy-time<br>creates the service roles as master"]
       migrator["db-migrator - deploy-time"]
-      subgraph aurora["Aurora Serverless v2 - PG 16.13, 0 to 2 ACU, IAM auth. Sequential idempotent appends - NOT one tx"]
+      subgraph aurora["Aurora Serverless v2 - PG 16.13, 0 to 2 ACU, IAM auth. Wallet append + audit witness commit in ONE tx"]
         t_wallet[("wallet_entry<br>append-only ledger, keyed by sub<br>unique order_id+kind+status")]
         t_audit[("audit_log<br>hash-chained, SECURITY DEFINER only")]
       end
@@ -190,10 +190,11 @@ flowchart TB
 
 *Legend: blue = in-VPC Lambdas, green = non-VPC Lambdas, orange = data stores, purple =
 external/managed. Solid arrows are synchronous data/HTTP, dotted arrows are async (triggers,
-async invokes, redirects). The datastores are drawn **one node per table** (logical view): no two
-tables ever share a transaction — every DynamoDB `TransactWriteItems` is single-table (the
-item plus its counter row live in the same table by design), and the Aurora ledger + audit
-writes are sequential idempotent statements, not one SQL transaction. Arrow direction follows the data:
+async invokes, redirects). The datastores are drawn **one node per table** (logical view):
+every DynamoDB `TransactWriteItems` is single-table (the item plus its counter row live in
+the same table by design), and the ONE cross-table transaction in the system is
+intra-Aurora: each `wallet_entry` append commits with its `audit_append` witness in a single
+transaction (2026-07-18); cross-store consistency remains keys + idempotency. Arrow direction follows the data:
 writes point into a store, reads point out of it (unlabeled arrows out of a store are plain
 reads), r/w access is drawn bidirectional. Every read path is drawn except `runtime_config` reads — that table is read by every
 service, so its read edges are omitted and noted on the node.*
@@ -358,7 +359,8 @@ slug → construct id / physical name / alarm + funnel membership). Grammar:
   `order_untracked` funnel lines.
 - **ledger-writer** *(in-VPC, 90 s)* — **the only money writer**, as **`ledger_writer`**:
   validates the settlement payload and appends `pending → confirmed → clawback` ledger rows
-  + audit entries (`audit_append`). **Pure Aurora — zero DynamoDB**: it returns absolute
+  + audit entries (`audit_append`) — each row and its audit witness commit in **one
+  transaction** (atomic pair, 2026-07-18). **Pure Aurora — zero DynamoDB**: it returns absolute
   per-recommendation conversion totals (`count(DISTINCT order_id)`, `referrer_cashback`
   sums, via the partial index of migration `0009`) for the caller to project. The
   recommendation conversion stat is thus a **derived projection of the ledger**. Emits the
@@ -414,15 +416,18 @@ slug → construct id / physical name / alarm + funnel membership). Grammar:
   | `fx_rate` | pair (`USD#ILS`) | FX display-estimate cache |
   | `otp_sink` | phone; TTL 5 min | every OTP parked pre-send; `GET /admin/otp-sink` |
 
-- **Transaction boundaries (why the diagram draws one node per table):** no two tables ever
-  participate in the same transaction. Exact counters are kept transactional by co-locating
-  the counter row **inside the counted table** (`product` and `recommendation` each pair the
-  conditional put/delete with an `ADD itemCount` on their own counter item in one
-  single-table `TransactWriteItems`). The Aurora pair is **not** atomic either: the writer
-  appends a `wallet_entry` row, then chains `audit_append` as a second statement — replay
-  safety comes from the ledger's unique `(order_id, kind, status)` index, not from a wrapping
-  transaction. The same idempotency shape covers the cross-store projection: conversion
-  totals land in DynamoDB as absolute SETs re-derived from the ledger, so replays converge.
+- **Transaction boundaries (why the diagram draws one node per table):** no CROSS-STORE
+  transaction exists anywhere, and DynamoDB transactions are single-table only. Exact
+  counters are kept transactional by co-locating the counter row **inside the counted
+  table** (`product` and `recommendation` each pair the conditional put/delete with an
+  `ADD itemCount` on their own counter item in one single-table `TransactWriteItems`). The
+  Aurora pair is the ONE intra-store exception (2026-07-18): each `wallet_entry` append
+  commits with its `audit_append` witness in a single transaction — a failed audit rolls
+  the money row back, so no ledger row can exist unwitnessed. Replay safety still comes
+  from the ledger's unique `(order_id, kind, status)` index (a no-op replay appends
+  neither row), and the same idempotency shape covers the cross-store projection:
+  conversion totals land in DynamoDB as absolute SETs re-derived from the ledger, so
+  replays converge.
 - **Funnel analytics** (ObservabilityStack construct — live): CloudWatch Logs subscription
   filters on **landing / retailer-settlement / ledger-writer** pick out
   `impression | click | conversion | order_untracked` events → Firehose

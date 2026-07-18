@@ -4,15 +4,13 @@ import { type WriterDeps, writeConversions } from "./writer";
 
 // The db primitives are unit-tested against real Postgres in @wanthat/db; here they are fakes.
 vi.mock("@wanthat/db", () => ({
-  appendWalletEntry: vi.fn(),
-  appendAudit: vi.fn(),
+  appendWalletEntryAudited: vi.fn(),
   conversionTotalsFor: vi.fn(),
 }));
 
-import { appendAudit, appendWalletEntry, conversionTotalsFor } from "@wanthat/db";
+import { appendWalletEntryAudited, conversionTotalsFor } from "@wanthat/db";
 
-const appendEntryMock = vi.mocked(appendWalletEntry);
-const appendAuditMock = vi.mocked(appendAudit);
+const appendPairMock = vi.mocked(appendWalletEntryAudited);
 const totalsMock = vi.mocked(conversionTotalsFor);
 
 const SUB_REFERRER = "22222222-2222-2222-2222-222222222222";
@@ -42,7 +40,7 @@ function makeDeps(): WriterDeps {
 let logSpy: ReturnType<typeof vi.spyOn>;
 beforeEach(() => {
   vi.clearAllMocks();
-  appendEntryMock.mockResolvedValue(true);
+  appendPairMock.mockResolvedValue(true);
   totalsMock.mockResolvedValue({ abc123DEF45: 1 });
   logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
 });
@@ -64,9 +62,10 @@ describe("writeConversions", () => {
       { orderId: "o-1", kind: "consumer_reward", status: "pending" },
     ]);
     expect(res.failed).toEqual([]);
-    expect(appendAuditMock).toHaveBeenCalledTimes(2);
+    // One atomic pair per row: wallet append + audit witness in the same call/transaction.
+    expect(appendPairMock).toHaveBeenCalledTimes(2);
     // Audit payloads are JSON-safe (string minor units).
-    expect(appendAuditMock.mock.calls[0]?.[1]).toMatchObject({
+    expect(appendPairMock.mock.calls[0]?.[2]).toMatchObject({
       type: "wallet_entry",
       amountMinor: "62",
       orderId: "o-1",
@@ -86,11 +85,10 @@ describe("writeConversions", () => {
   });
 
   it("still answers absolute totals for a fully-duplicate batch (no audit, no event)", async () => {
-    appendEntryMock.mockResolvedValue(false);
+    appendPairMock.mockResolvedValue(false);
     totalsMock.mockResolvedValue({ abc123DEF45: 2 });
     const res = await writeConversions([memberWrite("o-1")], makeDeps());
     expect(res.appended).toEqual([]);
-    expect(appendAuditMock).not.toHaveBeenCalled();
     expect(conversionEvents()).toEqual([]);
     // The absolute count is read from the ledger, so a duplicate re-offer re-answers it — that
     // is what lets a previously-lost stat application self-heal.
@@ -108,7 +106,7 @@ describe("writeConversions", () => {
   });
 
   it("isolates a failing conversion; the rest of the batch lands, totals still cover both recs", async () => {
-    appendEntryMock.mockRejectedValueOnce(new Error("aurora hiccup")).mockResolvedValue(true);
+    appendPairMock.mockRejectedValueOnce(new Error("aurora hiccup")).mockResolvedValue(true);
     const deps = makeDeps();
     totalsMock.mockResolvedValue({ recBadAA111: 0, recGoodBB22: 1 });
     const res = await writeConversions(
@@ -119,6 +117,16 @@ describe("writeConversions", () => {
     expect(res.appended.filter((a) => a.orderId === "o-good")).toHaveLength(2);
     expect(totalsMock).toHaveBeenCalledWith(deps.db, ["recBadAA111", "recGoodBB22"]);
     expect(res.conversionTotals).toEqual({ recBadAA111: 0, recGoodBB22: 1 });
+  });
+
+  it("a failed pair rolls back atomically — the conversion fails whole, nothing is counted", async () => {
+    // The audited-pair primitive throws when the audit side fails INSIDE the transaction;
+    // the wallet row is rolled back with it, so the writer counts nothing for the order.
+    appendPairMock.mockRejectedValue(new Error("audit_append failed"));
+    const res = await writeConversions([memberWrite("o-atomic")], makeDeps());
+    expect(res.appended).toEqual([]);
+    expect(res.failed).toEqual([{ orderId: "o-atomic", error: "Error: audit_append failed" }]);
+    expect(conversionEvents()).toEqual([]);
   });
 
   it("a totals-query failure never fails the batch — it degrades to an empty record", async () => {

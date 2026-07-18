@@ -7,6 +7,7 @@ export {
 export { appendAudit } from "./audit";
 export {
   appendWalletEntry,
+  appendWalletEntryAudited,
   conversionTotalsFor,
   type WalletEntryInsert,
 } from "./conversion-writer";
