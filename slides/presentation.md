@@ -13,8 +13,10 @@ code (keep consistent everywhere): green = our compute, orange = data stores, pu
 external/managed services, gray = clients. Phone snapshots in `assets/` are ~2x captures of
 340x587 frames — display at equal width in a row, card border + slight shadow.
 
-**Timing plan (19:00):** title 0:30 - business 3:30 - user flows 2:00 - principles 2:00 - data model 1:30 - architecture 3:00 - data decision 2:30 - cost 2:00 - limits 2:00.
-Backup slides are for Q&A only.
+**Timing plan (~20:00):** title 0:30 - business 3:30 - user flows 2:00 - principles 1:30 - data model 1:30 - data stores 2:00 - architecture walkthrough 6:00 (intro + 6 use cases + wrap) - cost 1:30 - limits 1:30.
+Backup slides are for Q&A only. The architecture walkthrough diagrams are MAINTAINED BY DENNIS
+in the working deck (Google Slides) - the script reserves the space and carries the talking
+points only.
 
 ---
 
@@ -23,6 +25,7 @@ Backup slides are for Q&A only.
 Layout: hero title.
 - **wanthat** — Earn cashback by sharing what you love.
 - Subtitle: Product and architecture overview.
+- Byline: by Dennis Potashnik - July 2026.
 - Footer chips: `Israel MVP` - `AWS serverless` - `il-central-1 (Tel Aviv)`.
 
 Speaker notes: One sentence: "Wanthat turns the product links people already send to friends
@@ -42,9 +45,9 @@ Left, "The gap" (three short rows):
 
 Right, "The product":
 - Wanthat turns the link you already send into a **tracked affiliate link**. Wanthat is the
-  single registered affiliate across AliExpress / Awin / eBay; when a friend buys, the
-  commission flows in and the **majority is credited back to the recommender** as cashback.
-- Punchline: **it monetizes a behavior that already exists — without changing it.**
+  single registered affiliate across AliExpress / Shein / Amazon and others; when a friend
+  buys, the commission flows in and is **split between the recommender and the buyer**.
+- Punchline: **it monetizes a behavior that already exists.**
 
 Speaker notes: word-of-mouth drives 20-50% of purchases and nobody pays for it. We are not
 building an influencer platform — the persona is a regular person in four family WhatsApp
@@ -92,22 +95,19 @@ Layout: three phone snapshots with arrows, URL chips, captions.
 Speaker notes: note the "Estimated" chip — cashback is held in the settlement currency and
 the ILS headline is a display estimate (ADR-0017); conversion happens at withdrawal.
 
-## Slide 6 — Engineering principles (2:00)
+## Slide 6 — Engineering principles (1:30)
 
 Layout: five principle cards.
 - **Monorepo, schema-first** — pnpm + Turborepo, TypeScript everywhere (Node 24, arm64);
-  Zod contracts in one package are the single source of truth: inferred types + runtime
-  validation at every boundary.
-- **Everything as code** — AWS CDK v2; per-env stacks (dev/prod); zero manual console
-  changes; PRs run CI + a `cdk diff` dry run that flags destructive changes; merge to main
-  deploys dev, prod promotes explicitly; SQL migrations run in-deploy.
-- **Decisions on record** — 21 ADRs beside the code; locked: change = a new superseding ADR,
+  Zod contracts: inferred types + runtime validation at every boundary.
+- **Decisions on record** — ADRs beside the code. Locked: change is a new superseding ADR,
   never an edit.
-- **Optimize for cost** — no NAT Gateway, no RDS Proxy, zero VPC interface endpoints,
-  scale-to-zero Aurora, on-demand DynamoDB; the dominant cost line is OTP delivery, not
-  infrastructure.
-- **Zero to scale** — a link going viral in a WhatsApp group is the design load: the redirect
-  hot path is non-VPC Lambda + DynamoDB and never touches the SQL database.
+- **Everything as code** — AWS CDK v2; per-env stacks; zero console changes. PRs run CI +
+  `cdk diff`; merge deploys dev; SQL migrations run in-deploy; verify no orphaned resources
+  after deploys.
+- **Optimize for cost** — avoid constant costs: zero interface endpoints, scale-to-zero,
+  on-demand DBs.
+- **Zero to scale** — a link going viral in a WhatsApp group is the design spike.
 
 Speaker notes: these five drove every decision that follows; when two conflicted, cost and
 money-safety won.
@@ -159,173 +159,7 @@ Speaker notes: the split-by-guarantee is the next slide's architecture in miniat
 never leaves Cognito, the viral read path never leaves DynamoDB, and money only ever
 APPENDS in Aurora. Per-column schemas are in backup B10/B11.
 
-## Slide 8 — Architecture (3:00)
-
-Layout: full-slide diagram. Render the mermaid below (or restyle it) — keep the color code.
-
-```mermaid
-%%{init: {"layout": "elk", "flowchart": {"nodeSpacing": 26, "rankSpacing": 40}}}%%
-flowchart TB
-  member(["Member SPA - browser"])
-  friend(["Friend / guest - browser"])
-  adminUser(["Admin - browser"])
-
-  subgraph edge["Edge - cert + WAF in us-east-1"]
-    cf["CloudFront + WAF<br>default -> SPA, /p/* -> landing API"]
-    s3site[("S3 - SPA + config.json")]
-  end
-
-  subgraph region["AWS il-central-1"]
-    appgw["App HTTP API<br>JWT authorizer - customer pool<br>throttle 500 rps"]
-    admingw["Admin HTTP API<br>JWT authorizer - employee pool<br>throttle 50 rps"]
-    landinggw["Landing HTTP API - public<br>throttle 2000 rps"]
-    custpool["Cognito CUSTOMER pool<br>phone OTP + passkeys<br>PII in attributes"]
-    emppool["Cognito EMPLOYEE pool<br>email + mandatory TOTP<br>Managed Login + PKCE"]
-    sched["EventBridge Scheduler<br>orders 15 min + FX 12 h"]
-
-    subgraph svc["Non-VPC services"]
-      catalog["member-catalog<br>products + recommendations"]
-      admincon["admin-console<br>all admin actions + views"]
-      landing["landing<br>OG shell + attributed redirect"]
-      linkgen["retailer-linkgen<br>sync link mint, invoke-only"]
-      settlement["retailer-settlement<br>15-min poll + attribution"]
-      fx["fx-rates"]
-      otpsender["otp-sender<br>custom SMS sender, kill-switched"]
-    end
-
-    subgraph vpc["VPC - no NAT, no RDS Proxy"]
-      wallet["member-wallet - wallet reads"]
-      ledgerview["admin-ledger-view<br>money stats + audit feed"]
-      writer["ledger-writer<br>the ONLY money writer"]
-      auditw["audit-writer<br>audit_append only"]
-      aurora[("Aurora Serverless v2<br>money only - 0 to 2 ACU")]
-    end
-
-    subgraph dynamo["DynamoDB - one node per table, no cross-table transactions.<br>* = exact counter row lives IN the table - the only same-tx pair"]
-      t_rec[("recommendation *")]
-      t_prod[("product *")]
-      t_cfg[("runtime_config<br>read by EVERY service - edges omitted")]
-      t_fx[("fx_rate")]
-      t_state[("poller_state")]
-      t_unattr[("unattributed_order")]
-      t_guest[("guest_attribution")]
-      t_ops[("ops_counters")]
-      t_otp[("otp_sink")]
-    end
-
-    funnel[("Funnel analytics: CW logs -> Firehose<br>-> S3 -> Glue/Athena")]
-  end
-
-  ali[("AliExpress affiliate API<br>IPv4-only, HMAC")]
-  meta[("Meta WhatsApp / SNS SMS")]
-  obscw["CloudWatch + X-Ray<br>dashboards + alarms -> SNS -> ops email"]
-
-  member -- "assets + config.json" --> cf
-  friend -- "GET /p/:id" --> cf
-  cf --> s3site
-  cf -- "/p/*" --> landinggw
-  landinggw --> landing
-  member -- "browser-direct auth:<br>SignUp, InitiateAuth, WEB_AUTHN" --> custpool
-  custpool -. "OTP" .-> otpsender
-  otpsender -- "WhatsApp / SMS" --> meta
-  otpsender == "park code" ==> t_otp
-  member -- "Bearer JWT" --> appgw
-  appgw --> catalog
-  appgw --> wallet
-  appgw -. "validate via JWKS" .-> custpool
-  adminUser -- "PKCE code flow + TOTP" --> emppool
-  adminUser -- "employee JWT" --> admingw
-  admingw --> admincon
-  admingw --> ledgerview
-  admingw -. "validate via JWKS" .-> emppool
-
-  catalog == "create tx" ==> t_rec
-  catalog == "counters" ==> t_ops
-  catalog -- "generateLink" --> linkgen
-  t_prod -- "cache read" --> catalog
-  t_rec -- "short id" --> landing
-  landing -- "impression / click" --> funnel
-  landing -. "302 + custom_parameters" .-> ali
-
-  sched --> settlement
-  sched --> fx
-  fx == "USD-ILS" ==> t_fx
-  linkgen -- "product + link mint" --> ali
-  linkgen == "cache tx" ==> t_prod
-  settlement -- "orders" --> ali
-  settlement == "cursor write" ==> t_state
-  t_state -- "cursor read" --> settlement
-  settlement == "unmatched" ==> t_unattr
-  t_guest -- "guest read" --> settlement
-  settlement -- "WriteConversions" --> writer
-  settlement == "conversion totals - SETs" ==> t_rec
-  writer == "append-only" ==> aurora
-  aurora -- "wallet reads" --> wallet
-  aurora -- "read-only" --> ledgerview
-  admincon == "sole writer" ==> t_cfg
-  admincon -- "audit or fail invoke" --> auditw
-  admincon -- "manual FX refresh invoke" --> fx
-  auditw == "audit_append" ==> aurora
-
-  t_fx --> catalog
-  t_fx --> wallet
-  t_fx --> admincon
-  t_fx --> landing
-  t_rec --> catalog
-  t_rec --> admincon
-  t_rec --> settlement
-  t_prod --> admincon
-  t_ops --> admincon
-  t_otp --> admincon
-  t_unattr --> admincon
-  t_unattr --> settlement
-
-  %% layer pins: users > edge > auth+services > stores > analytics/observability
-  member ~~~ cf
-  friend ~~~ cf
-  cf ~~~ appgw
-  cf ~~~ admingw
-  cf ~~~ custpool
-  admingw ~~~ custpool
-  appgw ~~~ custpool
-  landinggw ~~~ custpool
-  cf ~~~ emppool
-  cf ~~~ sched
-  custpool ~~~ catalog
-  emppool ~~~ admincon
-  catalog ~~~ t_prod
-  landing ~~~ t_rec
-  settlement ~~~ t_state
-  settlement ~~~ t_guest
-  otpsender ~~~ t_otp
-  wallet ~~~ aurora
-  ledgerview ~~~ aurora
-  t_ops ~~~ obscw
-  aurora ~~~ funnel
-
-  region -. "traces + metrics + logs<br>from every function and API" .-> obscw
-
-  classDef invpc fill:#e6f0ff,stroke:#3b6fb3
-  classDef novpc fill:#eafaf1,stroke:#2e8b57
-  classDef data fill:#fff4e6,stroke:#cc8400
-  classDef ext fill:#f3f0f7,stroke:#7a5fa3
-  class wallet,ledgerview,writer,auditw invpc
-  class catalog,admincon,landing,linkgen,settlement,fx,otpsender novpc
-  class aurora,t_rec,t_prod,t_cfg,t_fx,t_state,t_unattr,t_guest,t_ops,t_otp,s3site,funnel data
-  class ali,meta,custpool,emppool,obscw ext
-  style vpc fill:#f3f0f7
-```
-
-Speaker notes (walk it left to right): (1) there is **no auth service** — the browser talks
-to Cognito directly; OTP rides a custom sender with WhatsApp-default and kill switches.
-(2) The member APIs split into non-VPC member-catalog and in-VPC member-wallet — only what
-touches money enters the VPC; the admin surface splits the same way (console vs ledger
-view). (3) The friend's click never leaves DynamoDB. (4) Money enters only through the
-scheduled pipeline on the right — retailer-settlement fetches, the in-VPC ledger-writer
-appends and returns the totals the poll projects back onto the links. Full per-table version
-lives in `docs/AWS_Architecture.md`.
-
-## Slide 9 — Data: one store per job, and what each costs us (2:30)
+## Slide 8 — Data stores and cost (2:00)
 
 Layout: decision table (Data / Decision / Why / Trade-off accepted) + closing constraint line.
 
@@ -344,7 +178,73 @@ Speaker notes: if asked why not one Postgres for everything — the redirect hot
 absorb viral spikes at zero idle cost, and the auth path must not depend on a relational
 database resume. (The data-homes diagram is in backup B14.)
 
-## Slide 10 — Cost model: a measured floor, then linear (2:00)
+## Slide 9 — Architecture: the starting point (0:45)
+
+Layout: reserved full-slide diagram card (Dennis's diagram) + one-line lead.
+- Starting with: **in-VPC Aurora Serverless v2** and **DynamoDB on-demand**.
+
+Visual: RESERVED — architecture diagram maintained by Dennis in the working deck.
+
+## Slide 10 — Architecture UC1: member creates a recommendation (0:45)
+
+Layout: left talking points + reserved diagram card.
+- SPA is served from S3 via CloudFront.
+- Cognito-native authentication at the application level.
+- The retailer link is created ONCE per product (cache; linkgen is the sole writer).
+
+Visual: RESERVED — Dennis's diagram.
+
+## Slide 11 — Architecture UC2: the recommendation is shared (0:45)
+
+Layout: left talking points + reserved diagram card.
+- This is the hot path.
+- The recommendation page is server-rendered and cached on CloudFront (60 s, origin-controlled).
+- The TS landing app boots on the page for auth / registration and redirect-link generation.
+
+Visual: RESERVED — Dennis's diagram.
+
+## Slide 12 — Architecture UC3: registration, login, guest + redirect (0:45)
+
+Layout: left talking points + reserved diagram card.
+- Every registration appends a hash-chained audit row — each row carries the previous row's hash.
+- `audit_writer` is granted EXECUTE on the procedure ONLY.
+- The stored procedure serializes concurrent appends (advisory lock).
+
+Visual: RESERVED — Dennis's diagram.
+
+## Slide 13 — Architecture UC4: settlement pulled in the background (0:45)
+
+Layout: left talking points + reserved diagram card.
+- Internal-only flow — the ONLY path that can append wallet entries (GRANT-enforced).
+- Side use case: FX rates pulled from the exchange-rate provider.
+
+Visual: RESERVED — Dennis's diagram.
+
+## Slide 14 — Architecture UC5: the member home page (0:45)
+
+Layout: left talking points + reserved diagram card.
+- An Aurora cold resume may delay the wallet total + recent activity.
+- Everything else is operational immediately.
+
+Visual: RESERVED — Dennis's diagram.
+
+## Slide 15 — Architecture UC6: the admin console (0:45)
+
+Layout: left talking points + reserved diagram card.
+- Cognito Managed Login; a SEPARATE employee pool.
+- Operational-data management; money views are read-only.
+
+Visual: RESERVED — Dennis's diagram.
+
+## Slide 16 — Architecture: additional use cases, same principles (0:45)
+
+Layout: left talking points + reserved diagram card.
+- Observability - guest attribution within the affiliation window - manual attribution of
+  unattributed settlements - ops counters for real-time admin stats - offline analytics.
+
+Visual: RESERVED — Dennis's diagram.
+
+## Slide 17 — Cost model: a measured floor, then linear (1:30)
 
 Layout: cost table + two accepted-cost lines.
 
@@ -362,9 +262,9 @@ Layout: cost table + two accepted-cost lines.
   cannot touch Aurora — cost scales with revenue-bearing traffic, not with virality.
 
 Speaker notes: numbers are il-central-1 approximations; the point is the shape — a ~$20
-measured floor, then linear with usage.
+measured floor, then linear with usage. The 10-to-100k-user projection is backup B17.
 
-## Slide 11 — Limits I know about, and their revisit triggers (2:00)
+## Slide 18 — Known limits, and their revisit triggers (1:30)
 
 Layout: limits table + Questions line.
 
@@ -764,3 +664,27 @@ Layout: two-column table.
 | Conversion webhooks | Spoofable inbound money surface + no reliable retailer support; reconciliation poll is replayable and auditable |
 | Self-minted session JWTs | A second token validation path across every API; Cognito stays the only issuer |
 | Aurora customer table (PII in SQL) | Kept Aurora on the auth path and PII in two stores; moved to Cognito attributes (ADR-0006) |
+
+## Slide B17 — Cost progression: 10 to 100k active users
+
+Layout: table + two takeaway lines. Assumptions: 10 operations/user/day (wallet refresh,
+create recommendation), ~70/30 read-write mix, il-central-1 approximate prices, production
+environment only; every active user = 1 Cognito MAU.
+
+| Active users | Monthly (prod) | What dominates |
+|---|---|---|
+| 10 | ~$20 | the fixed floor (WAF $14 + Aurora storage) |
+| 1,000 | ~$55-75 | Aurora stops scaling to zero (~$35-55) |
+| 10,000 | ~$90-150 | still inside the Cognito free tier (10k MAU) |
+| 10,000 + RDS Proxy | ~$190-250 | proxy 8-ACU minimum = ~$100/month FLAT |
+| 100,000 | ~$1,730 | Cognito MAU $1,350 = 78% of the bill |
+
+- Two step functions, then linear: Aurora stops sleeping (~1k users); the Cognito free tier
+  ends at exactly 10k MAU ($0.015/MAU after). Per-user cost at 100k: ~$0.017/month.
+- Breaks BEFORE the bill: account concurrency 10 (peaks, ~10k users) - AliExpress rate
+  limits (ADR-0021's revisit trigger) - Aurora's 50-connection cap post-quota-raise (only
+  THEN does the proxy line earn its cost) - the 2-ACU max.
+
+Speaker notes: WAF stays flat at every scale — member API operations bypass CloudFront
+entirely, so the scaling costs live in identity (Cognito MAU), Aurora always-on, and the
+per-request stack (API GW + Lambda + DynamoDB ~ $90/month combined at 100k).
