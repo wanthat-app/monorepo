@@ -109,29 +109,15 @@ describe("handleConfirmation — welcome notification (direct async invoke)", ()
 });
 
 describe("handleConfirmation — signup audit (user_registered)", () => {
-  it("invokes audit-writer with the profile fields from the Cognito attributes", async () => {
+  it("invokes audit-writer with only the sub — no profile fields (PII-free audit)", async () => {
     await handleConfirmation(deps, event(ATTRS));
-    expect(deps.audit.write).toHaveBeenCalledWith({
-      event: "user_registered",
-      sub: "sub-1234",
-      phone: "+972541234567",
-      firstName: "Dana",
-      lastName: "Levi",
-      email: "dana@example.com",
-    });
+    expect(deps.audit.write).toHaveBeenCalledWith({ event: "user_registered", sub: "sub-1234" });
     expect(deps.log.info).toHaveBeenCalledWith("signup_audit_invoked", { sub: "sub-1234" });
   });
 
-  it("omits absent/empty profile attributes (the contract optionals are min(1))", async () => {
-    await handleConfirmation(
-      deps,
-      event({ ...ATTRS, given_name: undefined, family_name: "", email: undefined }),
-    );
-    expect(deps.audit.write).toHaveBeenCalledWith({
-      event: "user_registered",
-      sub: "sub-1234",
-      phone: "+972541234567",
-    });
+  it("still writes the audit row when phone_number is absent (audit needs only the sub)", async () => {
+    await handleConfirmation(deps, event({ ...ATTRS, phone_number: undefined }));
+    expect(deps.audit.write).toHaveBeenCalledWith({ event: "user_registered", sub: "sub-1234" });
   });
 
   it("swallows an audit invoke failure — logs, never throws", async () => {
@@ -149,12 +135,12 @@ describe("handleConfirmation — signup audit (user_registered)", () => {
     expect(deps.audit.write).toHaveBeenCalledTimes(1);
   });
 
-  it("logs (not throws) on an event without phone_number", async () => {
-    await handleConfirmation(deps, event({ ...ATTRS, phone_number: undefined }));
+  it("logs (not throws) on an event without sub", async () => {
+    await handleConfirmation(deps, event({ ...ATTRS, sub: undefined }));
     expect(deps.audit.write).not.toHaveBeenCalled();
     expect(deps.log.error).toHaveBeenCalledWith(
       "signup_audit_invoke_failed",
-      expect.objectContaining({ sub: "sub-1234" }),
+      expect.objectContaining({ error: "event carries no sub" }),
     );
   });
 });

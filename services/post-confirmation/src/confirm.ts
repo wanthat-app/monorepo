@@ -92,18 +92,11 @@ export async function handleConfirmation(
     });
   }
 
-  // The signup audit row (user_registered): profile fields from the Cognito attributes; empty
-  // strings are omitted (the AuditWriteRequest optionals are min(1)).
+  // The signup audit row (user_registered): sub only — the audit log is append-only, so member
+  // PII (phone/name/email) must never enter it; the admin feed resolves the sub live instead.
   try {
-    if (!sub || !phone) throw new Error("event carries no sub or phone_number");
-    await deps.audit.write({
-      event: "user_registered",
-      sub,
-      phone,
-      ...(attrs.given_name ? { firstName: attrs.given_name } : {}),
-      ...(attrs.family_name ? { lastName: attrs.family_name } : {}),
-      ...(attrs.email ? { email: attrs.email } : {}),
-    });
+    if (!sub) throw new Error("event carries no sub");
+    await deps.audit.write({ event: "user_registered", sub });
     deps.log.info("signup_audit_invoked", { sub });
   } catch (err) {
     deps.log.error("signup_audit_invoke_failed", {
