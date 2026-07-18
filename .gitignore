@@ -55,3 +55,7 @@ ds-bundle/
 apps/web/storybook-static/
 apps/web/dist/
 .claude/
+
+# Office lock files (deck open in PowerPoint)
+~$*
+**/~$*
