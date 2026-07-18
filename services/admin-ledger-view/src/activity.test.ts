@@ -4,47 +4,54 @@ import { auditEntryToItem } from "./activity";
 const AT = new Date("2026-07-08T11:32:00.000Z");
 
 describe("auditEntryToItem", () => {
-  it("maps a user_registered payload", () => {
+  it("maps a scrubbed user_registered payload: sub lifts to cognitoSub", () => {
     const item = auditEntryToItem({
       id: "7",
       createdAt: AT,
+      payload: { type: "user_registered", sub: "11111111-1111-1111-1111-111111111111" },
+    });
+    expect(item).toEqual({
+      id: "audit_7",
+      type: "user_registered",
+      at: AT.toISOString(),
+      cognitoSub: "11111111-1111-1111-1111-111111111111",
+    });
+  });
+
+  it("still lifts legacy pre-scrub PII keys (historical rows must render)", () => {
+    const item = auditEntryToItem({
+      id: "8",
+      createdAt: AT,
       payload: {
         type: "user_registered",
-        customerId: "c-1",
+        sub: "11111111-1111-1111-1111-111111111111",
         phone: "+972501234567",
         firstName: "Maya",
         lastName: "Levi",
         email: "maya@example.com",
       },
     });
-    expect(item).toEqual({
-      id: "audit_7",
-      type: "user_registered",
-      at: AT.toISOString(),
-      phone: "+972501234567",
-      name: "Maya Levi",
-      email: "maya@example.com",
-    });
+    expect(item.cognitoSub).toBe("11111111-1111-1111-1111-111111111111");
+    expect(item.phone).toBe("+972501234567");
+    expect(item.name).toBe("Maya Levi");
+    expect(item.email).toBe("maya@example.com");
   });
 
-  it("maps a user_deleted payload with actor", () => {
+  it("maps a user_deleted payload: sub lifts to cognitoSub beside the acting admin", () => {
     const item = auditEntryToItem({
       id: "12",
       createdAt: AT,
       payload: {
         type: "user_deleted",
-        customerId: "c-1",
-        phone: "+972501234567",
-        firstName: "Noa",
-        lastName: "Levi",
-        email: null,
+        sub: "11111111-1111-1111-1111-111111111111",
         actor: "dennis@wanthat.co.il",
       },
     });
     expect(item.type).toBe("user_deleted");
     expect(item.actor).toBe("dennis@wanthat.co.il");
-    expect(item.name).toBe("Noa Levi");
-    expect(item.email).toBeUndefined(); // null email is omitted, not ""
+    expect(item.cognitoSub).toBe("11111111-1111-1111-1111-111111111111");
+    expect(item.name).toBeUndefined();
+    expect(item.phone).toBeUndefined();
   });
 
   it("maps a config_changed payload with key, value transition and actor", () => {
@@ -85,6 +92,7 @@ describe("auditEntryToItem", () => {
       type: "user_disabled",
       at: AT.toISOString(),
       actor: "dennis@wanthat.co.il",
+      cognitoSub: "3f1c9a2e-0000-4000-8000-000000000000",
     });
   });
 
