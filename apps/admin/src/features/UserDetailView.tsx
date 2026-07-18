@@ -86,10 +86,6 @@ export function UserDetailView({ token, sub }: { token: string | null; sub: stri
     });
   const pct = (bps: number) => `${(bps / 100).toFixed(bps % 100 === 0 ? 0 : 1)}%`;
 
-  if (userStatus === "missing") {
-    return <p className="text-sm text-muted">{t("admin.userPage.notFound")}</p>;
-  }
-
   return (
     <div className="max-w-[1080px]">
       <button
@@ -107,6 +103,17 @@ export function UserDetailView({ token, sub }: { token: string | null; sub: stri
             <Skeleton className="mb-2 h-6 w-56" />
             <Skeleton className="h-4 w-80" />
           </>
+        ) : userStatus === "missing" ? (
+          // Deleted user (ADR-0006 d8 amended): the Cognito account is gone, so there is no
+          // identity to show — by design, no PII survives anywhere. The wallet and
+          // recommendations sections below still load: their stores are keyed by the sub.
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-2">
+            <h2 className="font-mono text-[17px] font-bold text-ink" dir="ltr" title={sub}>
+              {sub.slice(0, 8)}…
+            </h2>
+            <StatusBadge status="rejected">{t("admin.userPage.deletedBadge")}</StatusBadge>
+            <span className="text-[13px] text-muted">{t("admin.userPage.deletedNote")}</span>
+          </div>
         ) : userStatus === "failed" ? (
           <p className="text-sm text-muted">{t("admin.userPage.loadFailed")}</p>
         ) : user ? (

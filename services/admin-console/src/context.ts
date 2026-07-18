@@ -24,7 +24,7 @@ function requireEnv(name: string): string {
 export interface AdminConsoleContext {
   retailerSecret: RetailerSecretWriter;
   cognitoUsers: CognitoUserAdmin;
-  /** User erasure also deletes the member's recommendations (deleteByOwner, ADR-0006 d8). */
+  /** Recommendation reads for stats/views; deletion keeps recommendations (ADR-0006 d8 amended). */
   recommendations: RecommendationRepo;
   /** The exact customer counter: delete decrements, suspend / lift move the disabled count. */
   customerCounter: CustomerCounterRepo;

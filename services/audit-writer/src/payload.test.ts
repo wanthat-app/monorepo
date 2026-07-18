@@ -36,36 +36,19 @@ describe("auditPayload", () => {
     expect(JSON.parse(JSON.stringify(payload))).toHaveProperty("previous", null);
   });
 
-  it("keeps user_registered feed-compatible: phone + name parts + email are lifted keys", () => {
-    const request = AuditWriteRequest.parse({
-      event: "user_registered",
-      sub: SUB,
-      phone: "+972501234567",
-      firstName: "Dana",
-      lastName: "Levi",
-      email: "dana@example.com",
-    });
-    expect(auditPayload(request)).toEqual({
-      type: "user_registered",
-      sub: SUB,
-      phone: "+972501234567",
-      firstName: "Dana",
-      lastName: "Levi",
-      email: "dana@example.com",
-    });
+  it("shapes user_registered as {type, sub} — NO member PII ever enters the chain", () => {
+    const request = AuditWriteRequest.parse({ event: "user_registered", sub: SUB });
+    expect(auditPayload(request)).toStrictEqual({ type: "user_registered", sub: SUB });
   });
 
-  it("omits the optional profile fields a Cognito account never carried", () => {
+  it("strips profile fields a caller smuggles into user_registered (Zod drops unknown keys)", () => {
     const request = AuditWriteRequest.parse({
       event: "user_registered",
       sub: SUB,
       phone: "+972501234567",
+      email: "dana@example.com",
     });
-    expect(auditPayload(request)).toEqual({
-      type: "user_registered",
-      sub: SUB,
-      phone: "+972501234567",
-    });
+    expect(auditPayload(request)).toStrictEqual({ type: "user_registered", sub: SUB });
   });
 
   it.each([

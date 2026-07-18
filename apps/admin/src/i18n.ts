@@ -39,7 +39,6 @@ const en = {
       confirmNo: "Cancel",
       deleteFailed: "Delete failed \u2014 try again.",
       deleted: "User deleted.",
-      deletedWithRecs: "User deleted \u00b7 {{n}} recommendations removed.",
       suspend: "Suspend user",
       confirmSuspend: "Suspend?",
       suspendNote:
@@ -63,7 +62,8 @@ const en = {
     activitySub: "Audit log and user activity, newest first",
     userPage: {
       backToList: "All users",
-      notFound: "User not found.",
+      deletedBadge: "Deleted user",
+      deletedNote: "This account was deleted; retained activity is shown below.",
       loadFailed: "Could not load.",
       noName: "(no name)",
       memberSince: "Member since",
@@ -342,7 +342,6 @@ const he: typeof en = {
       confirmNo: "ביטול",
       deleteFailed: "המחיקה נכשלה \u2014 נסו שוב.",
       deleted: "המשתמש נמחק.",
-      deletedWithRecs: "המשתמש נמחק · {{n}} המלצות הוסרו.",
       suspend: "השעיית משתמש",
       confirmSuspend: "להשעות?",
       suspendNote:
@@ -365,7 +364,8 @@ const he: typeof en = {
     activitySub: "יומן ביקורת ופעילות משתמשים, מהחדש לישן",
     userPage: {
       backToList: "כל המשתמשים",
-      notFound: "המשתמש לא נמצא.",
+      deletedBadge: "משתמש שנמחק",
+      deletedNote: "החשבון נמחק; הפעילות שנשמרה מוצגת למטה.",
       loadFailed: "הטעינה נכשלה.",
       noName: "(ללא שם)",
       memberSince: "חבר מאז",

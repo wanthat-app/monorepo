@@ -11,7 +11,7 @@ const { ctx } = vi.hoisted(() => ({
       enable: vi.fn(),
       globalSignOut: vi.fn(),
     },
-    recommendations: { deleteByOwner: vi.fn(), count: vi.fn().mockResolvedValue(0) },
+    recommendations: { count: vi.fn().mockResolvedValue(0) },
     customerCounter: {
       get: vi.fn().mockResolvedValue({ total: 0, disabled: 0 }),
       decrementTotal: vi.fn(),
@@ -296,7 +296,6 @@ describe("admin config", () => {
 describe("cognito user delete", () => {
   beforeEach(() => {
     ctx.cognitoUsers.remove.mockReset();
-    ctx.recommendations.deleteByOwner.mockReset();
     ctx.customerCounter.decrementTotal.mockReset().mockResolvedValue(true);
   });
 
@@ -305,14 +304,12 @@ describe("cognito user delete", () => {
     expect(res.status).toBe(403);
   });
 
-  it("removes the account, erases its recommendations, and chains a user_deleted audit", async () => {
+  it("removes the Cognito account ONLY (recommendations retained) and chains a user_deleted audit", async () => {
     ctx.cognitoUsers.remove.mockResolvedValue({ existed: true, sub: SUB, wasDisabled: false });
-    ctx.recommendations.deleteByOwner.mockResolvedValue(3);
     const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, existed: true, recommendationsDeleted: 3 });
+    expect(await res.json()).toEqual({ ok: true, existed: true });
     expect(ctx.cognitoUsers.remove).toHaveBeenCalledWith("+972501234567");
-    expect(ctx.recommendations.deleteByOwner).toHaveBeenCalledWith(SUB);
     expect(ctx.audit.write).toHaveBeenCalledWith({
       event: "user_deleted",
       sub: SUB,
@@ -322,7 +319,6 @@ describe("cognito user delete", () => {
 
   it("fails loudly when the user_deleted audit invoke fails (delete already happened)", async () => {
     ctx.cognitoUsers.remove.mockResolvedValue({ existed: true, sub: SUB, wasDisabled: false });
-    ctx.recommendations.deleteByOwner.mockResolvedValue(0);
     ctx.audit.write.mockRejectedValueOnce(new Error("audit-writer down"));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
@@ -333,19 +329,17 @@ describe("cognito user delete", () => {
 
   it("decrements the customer counter, passing the account's suspension state through", async () => {
     ctx.cognitoUsers.remove.mockResolvedValue({ existed: true, sub: SUB, wasDisabled: true });
-    ctx.recommendations.deleteByOwner.mockResolvedValue(0);
     const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
     expect(res.status).toBe(200);
     expect(ctx.customerCounter.decrementTotal).toHaveBeenCalledTimes(1);
     expect(ctx.customerCounter.decrementTotal).toHaveBeenCalledWith(true);
   });
 
-  it("treats an already-deleted account as success — no cleanup, no counter, no audit", async () => {
+  it("treats an already-deleted account as success — no counter, no audit", async () => {
     ctx.cognitoUsers.remove.mockResolvedValue({ existed: false, wasDisabled: false });
     const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, existed: false });
-    expect(ctx.recommendations.deleteByOwner).not.toHaveBeenCalled();
     // The idempotent retry of a delete must not decrement or re-audit.
     expect(ctx.customerCounter.decrementTotal).not.toHaveBeenCalled();
     expect(ctx.audit.write).not.toHaveBeenCalled();
@@ -353,7 +347,6 @@ describe("cognito user delete", () => {
 
   it("still answers ok when the counter write fails (drift logged, route unaffected)", async () => {
     ctx.cognitoUsers.remove.mockResolvedValue({ existed: true, sub: SUB, wasDisabled: false });
-    ctx.recommendations.deleteByOwner.mockResolvedValue(0);
     ctx.customerCounter.decrementTotal.mockRejectedValue(new Error("dynamo down"));
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await post("/admin/users/cognito-delete", { phone: "+972501234567" });

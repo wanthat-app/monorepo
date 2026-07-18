@@ -172,28 +172,11 @@ export class AdminStack extends Stack {
     props.fxRateTable.grantReadData(consoleFn);
     // GET /admin/otp-sink lists the parked codes (read-only).
     props.otpSinkTable.grantReadData(consoleFn);
-    // Recommendation: NARROWED write grant (decided, PR-5). deleteByOwner's erasure runs one
-    // TransactWrite per recommendation: Delete on the rec item + Update on the "#counter"
-    // sentinel (RECOMMENDATION_COUNTER_PK, packages/dynamo/src/recommendation.ts). So beyond
-    // reads the console gets exactly DeleteItem (any key) and UpdateItem CONDITIONED to the
-    // counter partition key — and NO PutItem: the console can erase a member's recommendations
-    // but can never rewrite or forge one.
+    // Recommendation: READ-ONLY (2026-07-18, spec audit-pii-free-deleted-user-flow). The
+    // erasure path died with it — deletion keeps the member's recommendations, so the console
+    // holds no write of any kind here: it can never delete, rewrite, or forge one. The future
+    // explicit-erase action re-introduces a scoped write grant when it lands.
     props.recommendationTable.grantReadData(consoleFn);
-    consoleFn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ["dynamodb:DeleteItem"],
-        resources: [props.recommendationTable.tableArn],
-      }),
-    );
-    consoleFn.addToRolePolicy(
-      new iam.PolicyStatement({
-        actions: ["dynamodb:UpdateItem"],
-        resources: [props.recommendationTable.tableArn],
-        conditions: {
-          "ForAllValues:StringEquals": { "dynamodb:LeadingKeys": ["#counter"] },
-        },
-      }),
-    );
     // Invoke grants: audit-writer is same-stack (direct grant); fx-rates lives in the
     // edge-services stack, so the grant goes on its deterministic ARN (deploy-order
     // independent, ADR-0004 — same pattern as post-confirmation -> audit-writer).

@@ -120,7 +120,6 @@ flowchart TB
   admingw --> admincon
   admincon -- "ListUsers, disable, enable,<br>sign-out, delete - CUSTOMER pool" --> custpool
   admincon -- "PutSecretValue - write only" --> secrets
-  admincon -- "erasure delete + counter -<br>no PutItem grant" --> t_rec
   admincon -- "sole writer" --> t_cfg
   admincon <-- "claim queue r/w" --> t_unattr
   admincon -- "invoke - audit or fail" --> auditw
@@ -341,8 +340,8 @@ slug → construct id / physical name / alarm + funnel membership). Grammar:
   deliberately an admin-panel feature so a non-technical operator can rotate keys), and the
   manual `POST /admin/fx-rates/refresh` (sync fx-rates invoke). Moderation and config changes
   are **audit-or-fail**: the mutation succeeds only if the sync `audit-writer` invoke does.
-  Its Recommendation grant is narrowed: read + `DeleteItem` + `UpdateItem` conditioned to the
-  `#counter` leading key — **no PutItem**.
+  Its Recommendation grant is **read-only** (deletion keeps the member's recommendations —
+  ADR-0006 d8 amended 2026-07-18).
 - **admin-ledger-view** *(in-VPC, 30 s)* — the Aurora-reading half of admin, as
   **`ledger_reader`** (genuinely SELECT-only): `GET /admin/stats/money`, `GET /admin/activity`
   (audit rows), `GET /admin/users/{sub}/wallet`, `GET /admin/health`.

@@ -76,10 +76,10 @@ export const DeleteUserResponse = z.object({
 export type DeleteUserResponse = z.infer<typeof DeleteUserResponse>;
 
 /**
- * POST /admin/users/cognito-delete (admin-credentials, non-VPC) — remove the Cognito account AND
- * the member's DynamoDB recommendations (ADR-0006 decision 8): the sub is resolved via
- * `AdminGetUser` before `AdminDeleteUser`, then `deleteByOwner(sub)` erases the recs with exact
- * counter decrements.
+ * POST /admin/users/cognito-delete (admin-credentials, non-VPC) — remove the Cognito account
+ * ONLY (ADR-0006 decision 8, amended 2026-07-18): the member's recommendations and wallet
+ * history are retained (non-PII, keyed by sub) so the admin console can still inspect a
+ * deleted user. The sub is resolved via `AdminGetUser` before `AdminDeleteUser`.
  */
 export const CognitoDeleteUserBody = z.object({
   phone: PhoneE164,
@@ -90,8 +90,6 @@ export const CognitoDeleteUserResponse = z.object({
   ok: z.literal(true),
   // false when the Cognito account was already gone (idempotent retry) — not an error.
   existed: z.boolean(),
-  /** How many recommendations were erased; absent when the account was already gone. */
-  recommendationsDeleted: z.number().int().min(0).optional(),
 });
 export type CognitoDeleteUserResponse = z.infer<typeof CognitoDeleteUserResponse>;
 

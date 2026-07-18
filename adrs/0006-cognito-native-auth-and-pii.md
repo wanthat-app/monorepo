@@ -92,9 +92,13 @@ Two things changed:
    Gateway JWT authorizer validates statelessly, so already-issued access tokens pass until
    expiry (1 h) after a disable; acceptable for MVP (wallet reads are the only customer
    money surface; mutations flow through the poller). The admin surface (today's
-   `admin-console`) gains the disable / enable /
-   global-sign-out grants beside its existing delete grant, and deleting a user also deletes
-   their DynamoDB recommendations (by `byOwner` GSI) with a counter decrement.
+   `admin-console`) holds the disable / enable / global-sign-out grants; its
+   recommendation-table access is READ-ONLY. *Amended 2026-07-18 (pre-production exception):
+   deletion removes the Cognito account only — the member's recommendations and wallet rows
+   are retained (non-PII, keyed by the now-orphaned sub) so the admin console can inspect
+   deleted users; audit payloads carry only the sub (no member PII — the activity feed
+   resolves it live). The original erase-recommendations-on-delete behavior moves to a future
+   explicit "delete + erase data" action, which will bring its own scoped write grant.*
 9. **Two Cognito pools stay** (carried from the former auth foundation): customers (phone, passwordless,
    ESSENTIALS) and employees (email + password + mandatory TOTP, Managed Login + PKCE for
    the admin console). Nothing here changes the employee side.
