@@ -670,24 +670,27 @@ Layout: two-column table.
 
 ## Slide B17 — Cost progression: 10 to 100k active users
 
-Layout: table + two takeaway lines. Assumptions: 10 operations/user/day (wallet refresh,
-create recommendation), ~70/30 read-write mix, il-central-1 approximate prices, production
-environment only; every active user = 1 Cognito MAU.
+Layout: full cost matrix (service rows x user-count columns) + takeaway line. Assumptions:
+10 operations/user/day (wallet refresh, create recommendation), ~70/30 read-write mix,
+il-central-1 approximate prices, production environment only; every active user = 1 Cognito
+MAU; RDS Proxy included from 10k users (its 8-ACU minimum makes it ~$100/month FLAT).
 
-| Active users | Monthly (prod) | What dominates |
-|---|---|---|
-| 10 | ~$20 | the fixed floor (WAF $14 + Aurora storage) |
-| 1,000 | ~$55-75 | Aurora stops scaling to zero (~$35-55) |
-| 10,000 | ~$90-150 | still inside the Cognito free tier (10k MAU) |
-| 10,000 + RDS Proxy | ~$190-250 | proxy 8-ACU minimum = ~$100/month FLAT |
-| 100,000 | ~$1,730 | Cognito MAU $1,350 = 78% of the bill |
+| Monthly (prod) | 10 | 100 | 1,000 | 10,000 | 100,000 |
+|---|---|---|---|---|---|
+| WAF (2 ACLs, fixed + $0.60/M req) | $14 | $14 | $14 | $15 | $27 |
+| API Gateway (~$1.2/M) | ~$0 | ~$0 | $0.40 | $4 | $36 |
+| Lambda (256MB arm64) | ~$0 | ~$0 | $0.20 | $2 | $18 |
+| DynamoDB on-demand | ~$0 | ~$0 | $0.40 | $4 | $40 |
+| Aurora (compute + storage) | ~$3 | ~$8 | ~$45 | ~$80 | ~$220 |
+| RDS Proxy (8-ACU minimum) | — | — | — | ~$100 | ~$100 |
+| Cognito ($0.015/MAU after 10k free) | $0 | $0 | $0 | $0 | $1,350 |
+| CloudFront + misc | ~$3 | ~$3 | ~$5 | ~$12 | ~$42 |
+| **Total** | **~$20** | **~$25** | **~$65** | **~$215** | **~$1,835** |
 
 - Two step functions, then linear: Aurora stops sleeping (~1k users); the Cognito free tier
-  ends at exactly 10k MAU ($0.015/MAU after). Per-user cost at 100k: ~$0.017/month.
-- Breaks BEFORE the bill: account concurrency 10 (peaks, ~10k users) - AliExpress rate
-  limits (ADR-0021's revisit trigger) - Aurora's 50-connection cap post-quota-raise (only
-  THEN does the proxy line earn its cost) - the 2-ACU max.
+  ends at exactly 10k MAU. Per-user at 100k: ~$0.018/month.
 
 Speaker notes: WAF stays flat at every scale — member API operations bypass CloudFront
-entirely, so the scaling costs live in identity (Cognito MAU), Aurora always-on, and the
-per-request stack (API GW + Lambda + DynamoDB ~ $90/month combined at 100k).
+entirely. Breaks BEFORE the bill: account concurrency 10 (~10k users, peaks) - AliExpress
+rate limits (ADR-0021) - Aurora's 50-connection cap post-quota-raise (only THEN does the
+proxy earn its cost) - the 2-ACU max.
