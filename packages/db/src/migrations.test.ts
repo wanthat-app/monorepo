@@ -1,3 +1,5 @@
+import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import { type Kysely, sql } from "kysely";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createMigrator } from "./migrator";
@@ -21,7 +23,7 @@ import { MIGRATIONS_DIR, startTestDb, type TestDb } from "./test-harness";
  * Container startup lives in the shared harness (test-harness.ts).
  */
 
-const MIGRATION_COUNT = 10;
+const MIGRATION_COUNT = 11;
 
 let testDb: TestDb;
 let db: Kysely<Database>;
@@ -43,7 +45,7 @@ async function asRole<T>(role: string, fn: (trx: Kysely<Database>) => Promise<T>
   });
 }
 
-describe("migrations 0001-0010 on real PostgreSQL", () => {
+describe("migrations 0001-0011 on real PostgreSQL", () => {
   it("apply cleanly, in order, from an empty database (fresh-env bootstrap path)", async () => {
     const { error, results } = await createMigrator(db, MIGRATIONS_DIR).migrateToLatest();
     if (error) throw error;
@@ -282,5 +284,77 @@ describe("migrations 0001-0010 on real PostgreSQL", () => {
         /permission denied/,
       );
     }
+  });
+
+  it("0011 scrubs user_registered PII and re-chains verifiably", async () => {
+    // Seed a mixed chain THROUGH audit_append (as production wrote it), PII included — 0011
+    // already ran in migrateToLatest, so re-running its SQL below is the idempotent-rerun path.
+    await asRole("audit_writer", async (trx) => {
+      await sql`SELECT audit_append(${JSON.stringify({
+        type: "user_registered",
+        sub: "22222222-2222-2222-2222-222222222222",
+        phone: "+972501234567",
+        firstName: "Maya",
+        lastName: "Levi",
+        email: "maya@example.com",
+      })}::jsonb)`.execute(trx);
+      await sql`SELECT audit_append(${JSON.stringify({
+        type: "user_deleted",
+        sub: "22222222-2222-2222-2222-222222222222",
+        actor: "admin@wanthat.app",
+      })}::jsonb)`.execute(trx);
+    });
+
+    // Re-run 0011's SQL directly against the seeded rows (idempotent by construction).
+    const migrationSql = await readFile(join(MIGRATIONS_DIR, "0011_scrub_audit_pii.sql"), "utf8");
+    await sql.raw(migrationSql).execute(db);
+
+    // 1) No PII key survives on any user_registered row.
+    const { rows: pii } = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM audit_log
+      WHERE payload ?| array['phone', 'firstName', 'lastName', 'email']
+        AND payload->>'type' = 'user_registered'
+    `.execute(db);
+    expect(Number(pii[0]?.n)).toBe(0);
+
+    // 2) The scrubbed row kept exactly type + sub.
+    const { rows: scrubbed } = await sql<{ payload: { type: string; sub: string } }>`
+      SELECT payload FROM audit_log
+      WHERE payload->>'sub' = '22222222-2222-2222-2222-222222222222'
+        AND payload->>'type' = 'user_registered'
+    `.execute(db);
+    expect(scrubbed[0]?.payload).toEqual({
+      type: "user_registered",
+      sub: "22222222-2222-2222-2222-222222222222",
+    });
+
+    // 3) The whole chain verifies with 0005's exact formula (lag() replays the linkage).
+    const { rows: broken } = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM (
+        SELECT entry_hash, prev_hash, payload, created_at,
+               lag(entry_hash) OVER (ORDER BY id) AS expected_prev
+        FROM audit_log
+      ) c
+      WHERE c.prev_hash IS DISTINCT FROM c.expected_prev
+         OR c.entry_hash <> encode(digest(
+              coalesce(c.expected_prev, '') || '|' || c.payload::text || '|' ||
+              extract(epoch from c.created_at)::text, 'sha256'), 'hex')
+    `.execute(db);
+    expect(Number(broken[0]?.n)).toBe(0);
+
+    // 4) audit_append continues the chain seamlessly after the rewrite.
+    await asRole("audit_writer", async (trx) => {
+      await sql`SELECT audit_append(${JSON.stringify({
+        type: "user_registered",
+        sub: "33333333-3333-3333-3333-333333333333",
+      })}::jsonb)`.execute(trx);
+    });
+    const { rows: after } = await sql<{ n: string }>`
+      SELECT count(*) AS n FROM (
+        SELECT entry_hash, prev_hash, lag(entry_hash) OVER (ORDER BY id) AS expected_prev
+        FROM audit_log
+      ) c WHERE c.prev_hash IS DISTINCT FROM c.expected_prev
+    `.execute(db);
+    expect(Number(after[0]?.n)).toBe(0);
   });
 });
