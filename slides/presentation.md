@@ -97,69 +97,36 @@ the ILS headline is a display estimate (ADR-0017); conversion happens at withdra
 
 ## Slide 6 — Engineering principles (1:30)
 
-Layout: six principle cards (3 x 2 grid).
+Layout: six principle cards (3 x 2 grid), Dennis's order.
+- **Optimize for cost** — avoid constant costs: zero interface endpoints, scale-to-zero,
+  on-demand DBs.
+- **Zero to scale** — a link going viral in a WhatsApp group is the potential spike.
+- **Security by design** — the entire framework is about money movement. Apply least
+  privilege access, MFA, data integrity provability, isolation of concerns, strict auditing
+  and other security principles.
 - **Monorepo, schema-first** — pnpm + Turborepo, TypeScript everywhere (Node 24, arm64);
   Zod contracts: inferred types + runtime validation at every boundary.
-- **Decisions on record** — ADRs beside the code. Locked: change is a new superseding ADR,
-  never an edit.
 - **Everything as code** — AWS CDK v2; per-env stacks; zero console changes. PRs run CI +
   `cdk diff`; merge deploys dev; SQL migrations run in-deploy; verify no orphaned resources
   after deploys.
-- **Optimize for cost** — avoid constant costs: zero interface endpoints, scale-to-zero,
-  on-demand DBs.
-- **Zero to scale** — a link going viral in a WhatsApp group is the design spike.
-- **Security by design** — least privilege per function (IAM + one Postgres role each);
-  money is append-only + audited; PII isolated in Cognito; workers never HTTP-exposed.
+- **Decisions on record** — ADRs beside the code. Locked: change is a new superseding ADR,
+  never an edit.
 
-Speaker notes: these five drove every decision that follows; when two conflicted, cost and
-money-safety won.
+Speaker notes: these principles drove every decision that follows; when two conflicted, cost
+and money-safety won.
 
-## Slide 7 — Data model (1:30)
+## Slide 7 — Domain Object Model (1:30)
 
-Layout: full-slide conceptual diagram + one closing line.
+Layout: full-slide diagram — Dennis's domain model (source: the Google Slides deck; the
+pptx embeds the exported page from `wanthat - technical.pdf`).
 
-```mermaid
-flowchart LR
-  subgraph cog["Cognito - identity + ALL customer PII"]
-    member["MEMBER<br>id = sub - phone, name,<br>email, locale in attributes"]
-  end
-  subgraph dyn["DynamoDB - catalog + operational, non-PII"]
-    rec["RECOMMENDATION<br>short id in the /p/ URL<br>cashback split SNAPSHOT<br>owner = sub - soft ref"]
-    prod["PRODUCT cache<br>store + storeProductId<br>commission, affiliate url"]
-    guest["GUEST ATTRIBUTION<br>guestId -> sub after signup"]
-    unattr["UNATTRIBUTED ORDER<br>admin claim queue"]
-  end
-  subgraph pg["Aurora - money only"]
-    wallet["WALLET ENTRY<br>append-only - keyed by sub<br>kind + status lifecycle rows"]
-    audit["AUDIT LOG<br>hash-chained events"]
-  end
-  order["ORDER - lives at the retailer<br>reaches us via the 15-min poll"]
+Entities: **wanthat** — User, Recommendation, Product, Wallet Entry (User 1-* Recommendation,
+Product 1-* Recommendation, User 1-* Wallet Entry); **Retailer** — Affiliate Link (1-1
+Product) and Order (1-* per Recommendation, feeding Wallet Entry).
 
-  member -- "creates" --> rec
-  rec -- "soft ref" --> prod
-  rec -- "attributed click" --> order
-  guest -- "resolves to" --> order
-  order -- "settled conversion" --> wallet
-  wallet -. "every append audited" .- audit
-  member -. "sub is the ONLY<br>cross-store key" .- wallet
-
-  classDef ext fill:#f3f0f7,stroke:#7a5fa3
-  classDef data fill:#fff4e6,stroke:#cc8400
-  classDef money fill:#e6f0ff,stroke:#3b6fb3
-  class member ext
-  class rec,prod,guest,unattr data
-  class wallet,audit money
-  class order ext
-```
-
-Closing line: **references across stores are soft — keys plus idempotency, never foreign
-keys or cross-store transactions.** The Cognito `sub` is the one identifier that ties a
-member's PII, links, and money together; each entity lives in the store whose guarantees it
-needs (PII isolation, burst-absorbing KV, ACID money).
-
-Speaker notes: the split-by-guarantee is the next slide's architecture in miniature — PII
-never leaves Cognito, the viral read path never leaves DynamoDB, and money only ever
-APPENDS in Aurora. Per-column schemas are in backup B10/B11.
+Speaker notes: references across stores are soft — keys plus idempotency, never foreign keys
+or cross-store transactions; the Cognito sub ties a member's PII, links and money together.
+Per-column schemas are in backup B10/B11.
 
 ## Slide 8 — Data stores and cost (2:00)
 
@@ -167,8 +134,8 @@ Layout: decision table (Data / Decision / Why / Trade-off accepted) + closing co
 
 | Data | Decision | Why | Trade-off accepted |
 |---|---|---|---|
-| Money | Aurora Serverless v2 (0-2 ACU, IAM auth, no proxy) | ACID + Postgres GRANTs as the money invariant (one role per function: wallet_reader / ledger_reader SELECT-only, ledger_writer INSERT-only, audit_writer = audit_append only); SQL for reconciliation | Scale-to-zero cold resume ~20 s (60 s connect timeout + SPA warm-up probe); 50-connection cap |
-| Customer PII | Cognito user attributes are the system of record | Auth path touches zero databases; GDPR delete = one call; backups carry no PII | ListUsers-only queries (no joins, one filter); no PITR; no attribute history. Escape hatch: dual-write projection |
+| Money + Audit Log | Aurora Serverless v2 (0-2 ACU, IAM auth, no proxy) | ACID; permissions enforced on DB level (GRANTs); storing the audit log with hashed chains | Scale-to-zero cold resume ~20 s (60 s connect timeout + SPA warm-up probe); 50-connection cap. Possible simple workaround — cached last known totals (display while reloading) per user on SPA or backend |
+| Customer PII | Cognito user attributes are the system of record | Auth path touches zero databases; GDPR delete = one call; the only backup carrying PII is the Cognito backup | ListUsers-only queries (no joins, one filter); no PITR; no attribute history |
 | Operational | DynamoDB on-demand (9 tables) | Viral bursts absorbed at $0 idle; access patterns modeled as projections (byOwner, byState GSIs) | No joins, no ad-hoc queries; counters kept exact via same-table transactions |
 
 Closing line: **deliberate constraint — no cross-STORE transactions exist anywhere.** Counter
@@ -186,7 +153,7 @@ database resume. (The data-homes diagram is in backup B14.)
 Layout: reserved full-slide diagram card (Dennis's diagram) + one-line lead.
 - Starting with: **in-VPC Aurora Serverless v2** and **DynamoDB on-demand**.
 
-Visual: RESERVED — architecture diagram maintained by Dennis in the working deck.
+Visual: the exported page from `wanthat - technical.pdf` (Dennis's diagram), full-bleed.
 
 ## Slide 10 — Architecture UC1: member creates a recommendation (0:45)
 
@@ -195,7 +162,7 @@ Layout: left talking points + reserved diagram card.
 - Cognito-native authentication at the application level.
 - The retailer link is created ONCE per product (cache; linkgen is the sole writer).
 
-Visual: RESERVED — Dennis's diagram.
+Visual: the exported page from `wanthat - technical.pdf` (Dennis's diagram), full-bleed.
 
 ## Slide 11 — Architecture UC2: the recommendation is shared (0:45)
 
@@ -204,7 +171,7 @@ Layout: left talking points + reserved diagram card.
 - The recommendation page is server-rendered and cached on CloudFront (60 s, origin-controlled).
 - The TS landing app boots on the page for auth / registration and redirect-link generation.
 
-Visual: RESERVED — Dennis's diagram.
+Visual: the exported page from `wanthat - technical.pdf` (Dennis's diagram), full-bleed.
 
 ## Slide 12 — Architecture UC3: registration, login, guest + redirect (0:45)
 
@@ -213,7 +180,7 @@ Layout: left talking points + reserved diagram card.
 - `audit_writer` is granted EXECUTE on the procedure ONLY.
 - The stored procedure serializes concurrent appends (advisory lock).
 
-Visual: RESERVED — Dennis's diagram.
+Visual: the exported page from `wanthat - technical.pdf` (Dennis's diagram), full-bleed.
 
 ## Slide 13 — Architecture UC4: settlement pulled in the background (0:45)
 
@@ -221,7 +188,7 @@ Layout: left talking points + reserved diagram card.
 - Internal-only flow — the ONLY path that can append wallet entries (GRANT-enforced).
 - Side use case: FX rates pulled from the exchange-rate provider.
 
-Visual: RESERVED — Dennis's diagram.
+Visual: the exported page from `wanthat - technical.pdf` (Dennis's diagram), full-bleed.
 
 ## Slide 14 — Architecture UC5: the member home page (0:45)
 
@@ -229,7 +196,7 @@ Layout: left talking points + reserved diagram card.
 - An Aurora cold resume may delay the wallet total + recent activity.
 - Everything else is operational immediately.
 
-Visual: RESERVED — Dennis's diagram.
+Visual: the exported page from `wanthat - technical.pdf` (Dennis's diagram), full-bleed.
 
 ## Slide 15 — Architecture UC6: the admin console (0:45)
 
@@ -237,7 +204,7 @@ Layout: left talking points + reserved diagram card.
 - Cognito Managed Login; a SEPARATE employee pool.
 - Operational-data management; money views are read-only.
 
-Visual: RESERVED — Dennis's diagram.
+Visual: the exported page from `wanthat - technical.pdf` (Dennis's diagram), full-bleed.
 
 ## Slide 16 — Architecture: additional use cases, same principles (0:45)
 
@@ -245,7 +212,7 @@ Layout: left talking points + reserved diagram card.
 - Observability - guest attribution within the affiliation window - manual attribution of
   unattributed settlements - ops counters for real-time admin stats - offline analytics.
 
-Visual: RESERVED — Dennis's diagram.
+Visual: the exported page from `wanthat - technical.pdf` (Dennis's diagram), full-bleed.
 
 ## Slide 17 — Cost model: a measured floor, then linear (1:30)
 
