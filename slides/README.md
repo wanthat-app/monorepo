@@ -29,9 +29,9 @@ script, then regenerate the deck. Do not hand-edit the pptx.
 
 3. **Build** the deck with python-pptx (venv with `python-pptx` + `pillow`):
    16:9, one slide per script section in order (18 main + a dark Backup divider
-   + 17 backup), speaker notes parsed straight out of the script. The architecture
-   walkthrough slides (9-16) reserve their diagram card EMPTY - those diagrams are
-   maintained by Dennis in the working deck (Google Slides), not generated here. Layout mirrors
+   + 17 backup), speaker notes parsed straight out of the script. Slides 7 and 9-16 are FULL-BLEED page images from `wanthat - technical.pdf`
+   (the Google Slides export - Dennis's domain model + architecture diagrams);
+   re-render them from a fresh export (pymupdf, 180 dpi) when the working deck changes. Layout mirrors
    the deck conventions: dark `#15201C` title/divider slides, light `#F4F6F5`
    content slides, Space Grotesk / Hanken Grotesk / Space Mono, evergreen
    `#1F7A57` accent, white cards with `#E6EBE8` borders, kicker + big slide
