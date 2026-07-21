@@ -208,6 +208,7 @@ const en = {
     units: { minutes: "min", hours: "hrs", sends: "sends" },
     fxProvider: { ecb: "ECB", boi: "BoI" },
     otpChannel: { whatsapp: "WhatsApp", sms: "SMS" },
+    countingIndicator: { chip: "Corner chip", hero: "Full takeover" },
     integrations: {
       title: "Integrations",
       desc: "Third-party retailer credentials. Write-only: values can be replaced but never viewed.",
@@ -250,6 +251,10 @@ const en = {
       site_noticeHe: {
         title: "Notice text — Hebrew",
         desc: "Shown to members using the app in Hebrew.",
+      },
+      wallet_countingIndicator: {
+        title: "Wallet cold-start indicator",
+        desc: "How the member wallet shows the cached balance while the database wakes up: a small counting chip beside the total, or the animation replacing it.",
       },
       cashback_referrerBps: {
         title: "Referrer reward",
@@ -509,6 +514,7 @@ const he: typeof en = {
     units: { minutes: "דק׳", hours: "שע׳", sends: "שליחות" },
     fxProvider: { ecb: "ECB", boi: "בנק ישראל" },
     otpChannel: { whatsapp: "וואטסאפ", sms: "SMS" },
+    countingIndicator: { chip: "תג פינתי", hero: "החלפת הסכום" },
     integrations: {
       title: "אינטגרציות",
       desc: "פרטי גישה לקמעונאים חיצוניים. לכתיבה בלבד: אפשר להחליף את הערכים אך לא לצפות בהם.",
@@ -550,6 +556,10 @@ const he: typeof en = {
       site_noticeHe: {
         title: "טקסט ההודעה — עברית",
         desc: "מוצג לחברים המשתמשים באפליקציה בעברית.",
+      },
+      wallet_countingIndicator: {
+        title: "מחוון ארנק בהתעוררות",
+        desc: "איך ארנק החבר מציג את היתרה השמורה בזמן שמסד הנתונים מתעורר: תג ספירה קטן ליד הסכום, או אנימציה שמחליפה אותו.",
       },
       cashback_referrerBps: {
         title: "תגמול ממליץ",
