@@ -117,6 +117,14 @@ export const RetailerDebugLogPayloads = z.boolean();
 export const HomeRecentActivityLimit = z.number().int().min(1).max(50);
 
 /**
+ * How the member home shows the CACHED wallet while Aurora cold-resumes (spec
+ * 2026-07-21-cold-start-cache): `chip` = a small "counting the money" pill beside the stale
+ * total; `hero` = the animation replaces the total and the last known total drops to a chip.
+ */
+export const WalletCountingIndicator = z.enum(["chip", "hero"]);
+export type WalletCountingIndicator = z.infer<typeof WalletCountingIndicator>;
+
+/**
  * Admin-set site-wide notice, one key per app language (the store holds primitives). When a
  * text is non-empty, every page — member and admin — carries a warning bar with it (e.g. "test
  * environment", maintenance heads-up). Empty (the default) = no banner. Public: the SPA reads
@@ -144,6 +152,7 @@ export const CONFIG_KEYS = [
   "retailer.aliexpressTrackingId",
   "retailer.debugLogPayloads",
   "home.recentActivityLimit",
+  "wallet.countingIndicator",
   "site.noticeEn",
   "site.noticeHe",
 ] as const;
@@ -171,6 +180,7 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "retailer.aliexpressTrackingId": RetailerAliexpressTrackingId,
   "retailer.debugLogPayloads": RetailerDebugLogPayloads,
   "home.recentActivityLimit": HomeRecentActivityLimit,
+  "wallet.countingIndicator": WalletCountingIndicator,
   "site.noticeEn": SiteNotice,
   "site.noticeHe": SiteNotice,
 };
@@ -207,6 +217,8 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   // Payload diagnostics ship OFF; flip on from the admin panel only while investigating.
   "retailer.debugLogPayloads": false,
   "home.recentActivityLimit": 10,
+  // Cold-start indicator layout — the quiet chip is the default (spec 2026-07-21).
+  "wallet.countingIndicator": "chip",
   // Site-wide notice banner — empty means no banner (the shipped state).
   "site.noticeEn": "",
   "site.noticeHe": "",
@@ -226,6 +238,8 @@ export const CONFIG_PUBLIC: Partial<Record<ConfigKey, boolean>> = {
   "site.noticeHe": true,
   // The home strip's size — applied by the SPA since the activity merge moved client-side.
   "home.recentActivityLimit": true,
+  // The cold-start indicator layout — the signed-in home reads it with its other display knobs.
+  "wallet.countingIndicator": true,
 };
 
 /** Whether `key` may be served by the public config endpoint (default false). */
