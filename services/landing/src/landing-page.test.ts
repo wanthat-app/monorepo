@@ -147,6 +147,32 @@ describe("injectLanding", () => {
     expect(html).not.toContain("s.click.aliexpress.com"); // the affiliate URL never renders
   });
 
+  it("survives a comment that mentions the injection tokens (prod incident 2026-07-21)", () => {
+    // The shipped shell carried a documentation comment containing literal <title>, </head>
+    // and <div id="root"></div> tokens; injections anchored INSIDE the comment and the whole
+    // page rendered as one comment. Comments are now stripped before any matching.
+    const hostile = `<!doctype html>
+<html><head>
+<!-- contract: the <title> is replaced, the snapshot is spliced before </head>, the card seeds <div id="root"></div>. -->
+<title>Wanthat</title>
+<script type="module" src="/landing-assets/landing-abc123.js"></script>
+</head><body><div id="root"></div></body></html>`;
+    const html = injectLanding(
+      hostile,
+      buildRender(ITEM, "3.5000", 0),
+      '{"status":"ok"}',
+      "https://dev.wanthat.app",
+      ITEM.recommendationId,
+      "en",
+    );
+    expect(html).not.toContain("<!--"); // comments never reach the served page
+    expect(html).toContain('src="/landing-assets/landing-abc123.js"'); // the app still boots
+    // the snapshot script sits inside the REAL head
+    expect(html.indexOf("__WANTHAT_LANDING__")).toBeLessThan(html.indexOf("</head>"));
+    expect(html).toMatch(/<div id="root">.*Feeder.*<\/div>/s); // the card seeds the REAL root
+    expect(html).not.toContain("<title>Wanthat</title>");
+  });
+
   it("renders a generic head and empty root card for a null render, still injecting the snapshot", () => {
     const html = injectLanding(
       SHELL,

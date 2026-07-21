@@ -228,7 +228,12 @@ export function injectLanding(
   locale: Locale,
 ): string {
   const head = render ? ogHead(render, origin, recId, locale) : genericHead(locale);
-  let html = shell;
+  // Strip HTML comments FIRST: a comment that merely MENTIONS <title>, </head> or the root
+  // div would otherwise capture the injections (and Vite's asset tags land after the first
+  // </head> too, so a token-bearing comment killed the whole page — prod incident 2026-07-21).
+  // The shell template must stay comment-free (tripwire test in apps/landing); this strip is
+  // the belt for anything a future toolchain emits.
+  let html = shell.replace(/<!--[\s\S]*?-->/g, "");
   html = html.replace(/<title>.*?<\/title>/s, "");
   html = html.replace(
     "</head>",
