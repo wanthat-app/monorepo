@@ -574,7 +574,14 @@ function KpiCard({
 // ---------------------------------------------------------------------------
 
 type SectionId = "site" | "margins" | "payouts" | "automation";
-type Control = "percent" | "number" | "fxProvider" | "switch" | "otpChannel" | "text";
+type Control =
+  | "percent"
+  | "number"
+  | "fxProvider"
+  | "switch"
+  | "otpChannel"
+  | "text"
+  | "countingIndicator";
 
 interface FieldMeta {
   key: ConfigKey;
@@ -593,6 +600,8 @@ const FIELDS: FieldMeta[] = [
   // Site-wide notice banner (both member languages; empty = hidden).
   { key: "site.noticeEn", section: "site", control: "text" },
   { key: "site.noticeHe", section: "site", control: "text" },
+  // Member-app presentation: how the wallet shows cached data while Aurora cold-resumes.
+  { key: "wallet.countingIndicator", section: "site", control: "countingIndicator" },
   {
     key: "cashback.referrerBps",
     section: "margins",
@@ -1187,6 +1196,21 @@ function FieldControl({
           options={[
             { value: "whatsapp", label: t("admin.otpChannel.whatsapp") },
             { value: "sms", label: t("admin.otpChannel.sms") },
+          ]}
+        />
+      </div>
+    );
+  }
+
+  if (field.control === "countingIndicator") {
+    return (
+      <div className="flex sm:justify-end">
+        <Segmented
+          value={String(value)}
+          onChange={onChange}
+          options={[
+            { value: "chip", label: t("admin.countingIndicator.chip") },
+            { value: "hero", label: t("admin.countingIndicator.hero") },
           ]}
         />
       </div>

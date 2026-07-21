@@ -1,4 +1,13 @@
-import { ActivityRow, Button, Logo, TabBar, TopNav } from "@wanthat/ui";
+import {
+  ActivityRow,
+  Button,
+  CountingChip,
+  Logo,
+  pickCountingGlyph,
+  TabBar,
+  TopNav,
+} from "@wanthat/ui";
+import { useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { UserChip, useSession } from "../../user";
@@ -18,8 +27,10 @@ export function ActivityPage() {
   const { profile, loading, accessToken } = useSession();
   const token = accessToken();
 
-  const { items, failed, busy, hasMore, loadMore } = useActivityFeed({
+  const [glyph] = useState(pickCountingGlyph);
+  const { items, stale, failed, busy, hasMore, loadMore } = useActivityFeed({
     token,
+    sub: profile?.sub ?? null,
     pageSize: PAGE_SIZE,
     enabled: !!token && !!profile,
   });
@@ -62,7 +73,12 @@ export function ActivityPage() {
 
       <main className="mx-auto flex w-full max-w-[430px] flex-1 flex-col gap-4 px-6 pb-32 pt-5 md:max-w-[640px] md:pb-12 md:pt-8">
         <section className="rounded-card bg-surface p-5">
-          <h1 className="mb-1 text-[15px] font-bold text-ink">{t("memberActivity.title")}</h1>
+          <div className="mb-1 flex min-h-[26px] items-center justify-between">
+            <h1 className="text-[15px] font-bold text-ink">{t("memberActivity.title")}</h1>
+            {stale ? (
+              <CountingChip glyph={glyph} label={t("home.counting")} tone="onSurface" />
+            ) : null}
+          </div>
           {failed ? (
             <div className="flex flex-col items-center gap-3 py-6">
               <p className="text-sm text-muted">{t("home.loadFailed")}</p>
@@ -79,7 +95,7 @@ export function ActivityPage() {
               {items.map((item) => (
                 <MemberActivityRow key={rowKey(item)} item={item} meta={itemMeta(item.at)} />
               ))}
-              {hasMore ? (
+              {hasMore && !stale ? (
                 <div className="mt-3 flex justify-center">
                   <Button variant="ghost" disabled={busy} onClick={loadMore}>
                     {t("memberActivity.loadMore")}

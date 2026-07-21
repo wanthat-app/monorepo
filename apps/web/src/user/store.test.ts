@@ -34,6 +34,11 @@ function stubStorage() {
     getItem: (k: string) => store.get(k) ?? null,
     setItem: (k: string, v: string) => void store.set(k, v),
     removeItem: (k: string) => void store.delete(k),
+    // Iteration API — clearSession sweeps the stale-cache prefix on sign-out.
+    key: (i: number) => [...store.keys()][i] ?? null,
+    get length() {
+      return store.size;
+    },
   });
   return store;
 }
@@ -68,6 +73,18 @@ describe("session store", () => {
     expect(getSnapshot().profile).toBeNull();
     expect(store.has("wanthat.refreshToken")).toBe(false);
     expect(store.get("wanthat.phone")).toBe("+972541234567");
+  });
+
+  it("clearSession also drops the stale-cache entries (wallet/activity stay private)", () => {
+    const store = stubStorage();
+    store.set("wanthat.cache.wallet.sub-1", "{}");
+    store.set("wanthat.cache.activity.sub-1", "[]");
+    store.set("wanthat.phone", "+972500000000");
+
+    clearSession();
+
+    expect([...store.keys()].filter((k) => k.startsWith("wanthat.cache."))).toEqual([]);
+    expect(store.get("wanthat.phone")).toBe("+972500000000"); // remembered phone survives
   });
 
   it("rehydrate without a stored token resolves signedOut without any network call", async () => {

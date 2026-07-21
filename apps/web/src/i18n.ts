@@ -97,9 +97,11 @@ const en = {
   },
   home: {
     availableCashback: "Available cashback", // (design)
-    estimated: "Estimated", // (design)
+    estimated: "At current FX rates", // 2026-07-21: honest label — the ≈ILS figure moves with rates
     heldNote: "held in original currencies", // (design)
     pendingNote: "≈{{amount}} pending confirmation", // (design, parameterised)
+    counting: "Counting the money…", // cold-start indicator (spec 2026-07-21-cold-start-cache)
+    lastCounted: "Last counted: {{amount}}", // hero layout: last known total chip
     withdrawCash: "Withdraw (coming soon)", // payout flow not built yet (design: withdrawToBank)
     recentActivity: "Recent activity", // (design)
     seeAll: "See all", // (design)
@@ -327,9 +329,11 @@ const he: typeof en = {
   },
   home: {
     availableCashback: "קאשבק זמין",
-    estimated: "משוער",
+    estimated: "לפי שערי מטבע",
     heldNote: "מוחזק במטבע המקורי",
     pendingNote: "≈{{amount}} ממתין לאישור",
+    counting: "סופרים את הכסף…",
+    lastCounted: "נספר לאחרונה: {{amount}}",
     withdrawCash: "משיכה (בקרוב)",
     recentActivity: "פעילות אחרונה",
     seeAll: "הצג הכל",
