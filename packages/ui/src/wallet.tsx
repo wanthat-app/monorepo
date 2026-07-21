@@ -230,6 +230,9 @@ export function BalanceCard({
   ctaDisabled = false,
   children,
   loading = false,
+  stale = false,
+  amountSlot,
+  holdingsSlot,
 }: {
   label: string;
   chip?: ReactNode;
@@ -245,6 +248,12 @@ export function BalanceCard({
   ctaDisabled?: boolean;
   children?: ReactNode;
   loading?: boolean;
+  /** Cold-start: cached data is showing — the amount breathes at reduced opacity. */
+  stale?: boolean;
+  /** Cold-start "hero": rendered in the exact 46px amount slot instead of the amount. */
+  amountSlot?: ReactNode;
+  /** Cold-start "hero": rendered in the holdings row instead of the holdings chips. */
+  holdingsSlot?: ReactNode;
 }) {
   if (loading) {
     return (
@@ -265,19 +274,28 @@ export function BalanceCard({
   }
   return (
     <div className="rounded-feature bg-ink p-6 pb-5 text-onink">
-      <div className="mb-3.5 flex items-center justify-between">
+      {/* min-height = chip height, so the row cannot collapse in a state with no chip. */}
+      <div className="mb-3.5 flex min-h-[26px] items-center justify-between">
         <span className="text-[13px] font-medium text-onink-muted">{label}</span>
         {chip}
       </div>
-      <div
-        className="tabular mb-3 font-display text-[46px] font-bold leading-none tracking-[-0.03em]"
-        dir="ltr"
-      >
-        {approx ? <span className="text-2xl font-semibold text-onink-muted">≈</span> : null}
-        {amount}
-        {fraction ? <span className="text-[28px] text-onink-muted">{fraction}</span> : null}
-      </div>
-      {holdings?.length ? (
+      {amountSlot ? (
+        <div className="mb-3 h-[46px]">{amountSlot}</div>
+      ) : (
+        <div
+          className={`tabular mb-3 font-display text-[46px] font-bold leading-none tracking-[-0.03em]${stale ? " animate-pulse-soft" : ""}`}
+          dir="ltr"
+        >
+          {approx ? <span className="text-2xl font-semibold text-onink-muted">≈</span> : null}
+          {amount}
+          {fraction ? <span className="text-[28px] text-onink-muted">{fraction}</span> : null}
+        </div>
+      )}
+      {holdingsSlot ? (
+        <div className="mb-3.5 flex min-h-[26px] flex-wrap items-center gap-1.5">
+          {holdingsSlot}
+        </div>
+      ) : holdings?.length ? (
         <div className="mb-3.5 flex flex-wrap items-center gap-1.5" dir="ltr">
           {holdings.map((h) => (
             <span

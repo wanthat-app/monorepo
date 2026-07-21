@@ -61,6 +61,29 @@ export default {
         segment: "0 1px 2px rgba(0, 0, 0, 0.08)",
         fab: "0 8px 18px -6px rgba(31, 122, 87, 0.6)",
       },
+      // Cold-start "counting the money" indicator (spec 2026-07-21). Transform/opacity only —
+      // these never affect layout, so the card cannot jump while they run.
+      keyframes: {
+        "pulse-soft": { "0%, 100%": { opacity: "0.55" }, "50%": { opacity: "0.8" } },
+        "coin-bounce": {
+          "0%, 100%": { transform: "translateY(0)" },
+          "35%": { transform: "translateY(-4px) rotate(-10deg)" },
+          "60%": { transform: "translateY(1px)" },
+        },
+        "bill-riffle": {
+          "0%": { opacity: "0", transform: "translateY(3px) rotate(0deg)" },
+          "15%": { opacity: "1" },
+          "55%": { opacity: "1", transform: "translateY(-6px) rotate(14deg)" },
+          "100%": { opacity: "0", transform: "translateY(-11px) rotate(26deg)" },
+        },
+        "led-blink": { "0%, 100%": { opacity: "0.3" }, "50%": { opacity: "1" } },
+      },
+      animation: {
+        "pulse-soft": "pulse-soft 2s ease-in-out infinite",
+        "coin-bounce": "coin-bounce 1s ease-in-out infinite",
+        "bill-riffle": "bill-riffle 0.55s linear infinite",
+        "led-blink": "led-blink 0.55s linear infinite",
+      },
     },
   },
   plugins: [],
