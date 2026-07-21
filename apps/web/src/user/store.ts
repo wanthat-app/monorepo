@@ -1,3 +1,4 @@
+import { clearAllCaches } from "../lib/stale-cache";
 import { profileFromIdToken, type UserProfile } from "./claims";
 import { type AuthResultWire, CognitoError, refreshTokens } from "./cognito";
 
@@ -120,6 +121,9 @@ export function setProfile(profile: UserProfile): void {
  */
 export function clearSession(): void {
   storageRemove(REFRESH_KEY);
+  // Cached wallet/activity snapshots are per-sub but still this member's money on a shared
+  // device — sign-out forgets them (the remembered phone deliberately survives, see above).
+  clearAllCaches();
   setState({ status: "signedOut", tokens: null, profile: null });
 }
 
