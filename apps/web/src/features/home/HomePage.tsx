@@ -3,17 +3,22 @@ import {
   ActivityRow,
   BalanceCard,
   Button,
+  CountingChip,
+  CountingHero,
   formatMoneyMinor,
+  LastCountedChip,
   Logo,
   PromptCard,
+  pickCountingGlyph,
   splitMoneyMinor,
   TabBar,
   TopNav,
 } from "@wanthat/ui";
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { useNavigate } from "react-router-dom";
 import { type ActivityItemWire, configApi, walletApi } from "../../lib/api";
+import { readCache, writeCache } from "../../lib/stale-cache";
 import {
   BiometricGlyph,
   enrollPasskey,
@@ -23,6 +28,7 @@ import {
   useSession,
 } from "../../user";
 import { useActivityFeed } from "../activity/useActivityFeed";
+import { selectWalletRender, type WalletWire } from "./walletView";
 
 const ROW_STATUS = { confirmed: "confirmed", pending: "pending", clawback: "rejected" } as const;
 
@@ -43,23 +49,38 @@ export function HomePage() {
   const [passkeyState, setPasskeyState] = useState<"idle" | "enrolling" | "done" | "error">("idle");
 
   const token = accessToken();
+  // One glyph per page view — coin or bill machine, both from the approved mockup.
+  const [glyph] = useState(pickCountingGlyph);
+  const sub = profile?.sub ?? null;
+  const cachedWallet = useMemo(() => (sub ? readCache<WalletWire>("wallet", sub) : null), [sub]);
   const wallet = useQuery({
     queryKey: ["wallet", profile?.sub],
     queryFn: () => walletApi.get(token as string),
     enabled: !!token && !!profile,
+    // Aurora cold start: the first call can die at API Gateway's 30s while the DB resumes.
+    // With a cached balance on screen we retry for as long as the page is open (capped
+    // backoff); without one, a few tries and then the retry card as before.
+    retry: (failureCount) => (cachedWallet ? true : failureCount < 3),
+    retryDelay: (attempt) => Math.min(30_000, 1_000 * 2 ** attempt),
   });
+  useEffect(() => {
+    if (wallet.data && sub) writeCache("wallet", sub, wallet.data);
+  }, [wallet.data, sub]);
   // The strip's size stays admin-tunable (CONFIG home.recentActivityLimit) — read via the public
   // config projection now that the activity merge is client-side; the CONFIG default (10) covers
-  // a failed read. The feed itself merges /wallet/entries + /recommendations in the browser.
-  const stripLimit = useQuery({
-    queryKey: ["config", "home.recentActivityLimit"],
-    queryFn: () => configApi.getPublic(["home.recentActivityLimit"]),
+  // a failed read. Both display knobs ride ONE call (the endpoint batches up to 20 keys).
+  const displayConfig = useQuery({
+    queryKey: ["config", "home"],
+    queryFn: () => configApi.getPublic(["home.recentActivityLimit", "wallet.countingIndicator"]),
   });
-  const rawLimit = stripLimit.data?.values["home.recentActivityLimit"];
+  const rawLimit = displayConfig.data?.values["home.recentActivityLimit"];
+  // Junk or a failed read falls back to the quiet chip — never a broken hero.
+  const countingLayout =
+    displayConfig.data?.values["wallet.countingIndicator"] === "hero" ? "hero" : "chip";
   const activity = useActivityFeed({
     token,
     pageSize: typeof rawLimit === "number" ? rawLimit : 10,
-    enabled: !!token && !!profile && !stripLimit.isPending,
+    enabled: !!token && !!profile && !displayConfig.isPending,
   });
   const passkeys = useQuery({
     queryKey: ["passkeys", profile?.sub],
@@ -92,11 +113,15 @@ export function HomePage() {
     />
   );
 
-  const est = wallet.data?.estimated ?? null;
+  const view = selectWalletRender(wallet, cachedWallet);
+  const stale = view.kind === "stale";
+  const shown = view.kind === "fresh" || view.kind === "stale" ? view.data : null;
+  const est = shown?.estimated ?? null;
   const [amount, fraction] = est ? splitMoneyMinor(est.available.amountMinor, "ILS") : ["", ""];
-  const holdings = (wallet.data?.balances ?? []).map((b) =>
+  const holdings = (shown?.balances ?? []).map((b) =>
     formatMoneyMinor(b.available.amountMinor, b.available.currency),
   );
+  const heroStale = stale && countingLayout === "hero";
   // Computed inline (not a boolean flag) so TS keeps the `est` narrowing at the usage site.
   const pendingNote =
     est && BigInt(est.pending.amountMinor) > 0n
@@ -127,7 +152,7 @@ export function HomePage() {
       </header>
 
       <main className="mx-auto flex w-full max-w-[430px] flex-1 flex-col gap-4 px-6 pb-32 pt-5 md:max-w-[640px] md:pb-12 md:pt-8">
-        {wallet.isError ? (
+        {view.kind === "error" ? (
           <div className="flex flex-col items-center gap-3 rounded-card bg-surface p-6">
             <p className="text-sm text-muted">{t("home.loadFailed")}</p>
             <Button variant="ghost" onClick={() => void wallet.refetch()}>
@@ -136,21 +161,36 @@ export function HomePage() {
           </div>
         ) : (
           <BalanceCard
-            loading={wallet.isPending}
+            loading={view.kind === "skeleton"}
+            stale={stale}
             label={t("home.availableCashback")}
             chip={
-              est ? (
+              stale && countingLayout === "chip" ? (
+                <CountingChip glyph={glyph} label={t("home.counting")} />
+              ) : est && !heroStale ? (
                 <span className="rounded-full bg-white/10 px-2.5 py-1 text-[11px] font-bold text-onink">
                   {t("home.estimated")}
                 </span>
               ) : undefined
             }
-            approx={est !== null}
-            amount={est ? amount : undefined}
-            fraction={est ? fraction : undefined}
-            holdings={holdings.length ? holdings : undefined}
-            holdingsNote={holdings.length ? t("home.heldNote") : undefined}
-            pendingNote={pendingNote}
+            approx={est !== null && !heroStale}
+            amount={est && !heroStale ? amount : undefined}
+            fraction={est && !heroStale ? fraction : undefined}
+            amountSlot={
+              heroStale ? <CountingHero glyph={glyph} label={t("home.counting")} /> : undefined
+            }
+            holdingsSlot={
+              heroStale && est ? (
+                <LastCountedChip>
+                  {t("home.lastCounted", {
+                    amount: `≈${formatMoneyMinor(est.available.amountMinor, "ILS")}`,
+                  })}
+                </LastCountedChip>
+              ) : undefined
+            }
+            holdings={!heroStale && holdings.length ? holdings : undefined}
+            holdingsNote={!heroStale && holdings.length ? t("home.heldNote") : undefined}
+            pendingNote={heroStale ? undefined : pendingNote}
             cta={t("home.withdrawCash")}
             ctaDisabled
           />
