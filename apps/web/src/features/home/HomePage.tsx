@@ -79,6 +79,7 @@ export function HomePage() {
     displayConfig.data?.values["wallet.countingIndicator"] === "hero" ? "hero" : "chip";
   const activity = useActivityFeed({
     token,
+    sub,
     pageSize: typeof rawLimit === "number" ? rawLimit : 10,
     enabled: !!token && !!profile && !displayConfig.isPending,
   });
@@ -232,8 +233,11 @@ export function HomePage() {
         {passkeyState === "done" && <p className="text-sm text-accent">{t("home.passkeyDone")}</p>}
 
         <section className="rounded-card bg-surface p-5">
-          <div className="mb-1 flex items-center justify-between">
+          <div className="mb-1 flex min-h-[26px] items-center justify-between">
             <h2 className="text-[15px] font-bold text-ink">{t("home.recentActivity")}</h2>
+            {activity.stale ? (
+              <CountingChip glyph={glyph} label={t("home.counting")} tone="onSurface" />
+            ) : null}
             <button
               type="button"
               onClick={() => navigate("/activity")}
