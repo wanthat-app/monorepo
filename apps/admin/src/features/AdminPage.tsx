@@ -2,6 +2,7 @@ import type {
   ConfigItem,
   ConfigKey,
   ConfigValue,
+  MarginSplitView,
   RetailerCredentialsStatus,
 } from "@wanthat/contracts";
 import {
@@ -602,25 +603,13 @@ const FIELDS: FieldMeta[] = [
   { key: "site.noticeHe", section: "site", control: "text" },
   // Member-app presentation: how the wallet shows cached data while Aurora cold-resumes.
   { key: "wallet.countingIndicator", section: "site", control: "countingIndicator" },
-  {
-    key: "cashback.referrerBps",
-    section: "margins",
-    control: "percent",
-    min: 0,
-    max: 10000,
-    step: 50,
-  },
-  {
-    key: "cashback.consumerBps",
-    section: "margins",
-    control: "percent",
-    min: 0,
-    max: 10000,
-    step: 50,
-  },
+  // The cashback split (operational margin + buyer<>recommender split) is its own MarginsCard —
+  // a server-derived reparameterization of cashback.referrerBps/consumerBps, so it is deliberately
+  // OUTSIDE the generic FieldMeta list (like IntegrationsCard). The FX conversion commission is a
+  // separate settlement-currency knob and lives with the other payout controls.
   {
     key: "fx.conversionCommissionBps",
-    section: "margins",
+    section: "payouts",
     control: "percent",
     min: 0,
     max: 10000,
@@ -747,6 +736,18 @@ function ConfigView({ token }: { token: string | null }) {
   return (
     <div className="max-w-[860px]">
       {SECTIONS.map((section) => {
+        // The margins section is the custom MarginsCard (operational margin + split), not the
+        // generic FieldMeta rows — its own load/save, like IntegrationsCard.
+        if (section.id === "margins") {
+          return (
+            <MarginsCard
+              key={section.id}
+              token={token}
+              title={t(section.titleKey)}
+              description={t(section.descKey)}
+            />
+          );
+        }
         const fields = FIELDS.filter((f) => f.section === section.id && byKey[f.key]);
         if (fields.length === 0) return null;
         return (
@@ -801,6 +802,182 @@ function ConfigView({ token }: { token: string | null }) {
         </div>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * Operational margin + buyer↔recommender split. Deliberately outside the FieldMeta/dirty-batch
+ * machinery (like IntegrationsCard): it reads/writes a server-derived view (GET/PUT
+ * /admin/config/margins) that reparameterizes the two stored cashback rates — the operator moves
+ * two sliders and the server does the money math (@wanthat/domain). Own load + save + dirty state.
+ * The preview and split label are framed from the two slider values directly (house keeps the
+ * margin; the rest splits by the split slider), so no commission arithmetic happens in the browser.
+ */
+function MarginsCard({
+  token,
+  title,
+  description,
+}: {
+  token: string | null;
+  title: string;
+  description: string;
+}) {
+  const { t } = useTranslation();
+  // undefined = loading, null = load failed.
+  const [server, setServer] = useState<MarginSplitView | null | undefined>(undefined);
+  const [marginBps, setMarginBps] = useState(0);
+  const [splitBps, setSplitBps] = useState(0);
+  const [state, setState] = useState<"idle" | "saving" | "saved" | "error">("idle");
+
+  const load = useCallback(() => {
+    if (!token) return;
+    adminApi
+      .getMargins(token)
+      .then((r) => {
+        setServer(r.item);
+        setMarginBps(r.item.marginBps);
+        setSplitBps(r.item.recommenderSplitBps);
+        setState("idle");
+      })
+      .catch(() => setServer(null));
+  }, [token]);
+  useEffect(load, [load]);
+
+  const dirty =
+    server != null && (marginBps !== server.marginBps || splitBps !== server.recommenderSplitBps);
+  const hasPool = marginBps < 10000;
+  const housePct = trimNum(marginBps / 100);
+  const remainderPct = trimNum((10000 - marginBps) / 100);
+  const recPct = trimNum(splitBps / 100);
+  const buyerPct = trimNum((10000 - splitBps) / 100);
+
+  const save = async () => {
+    if (!token || !dirty) return;
+    setState("saving");
+    try {
+      const r = await adminApi.putMargins(token, { marginBps, recommenderSplitBps: splitBps });
+      setServer(r.item);
+      setMarginBps(r.item.marginBps);
+      setSplitBps(r.item.recommenderSplitBps);
+      setState("saved");
+    } catch {
+      setState("error");
+    }
+  };
+  const discard = () => {
+    if (!server) return;
+    setMarginBps(server.marginBps);
+    setSplitBps(server.recommenderSplitBps);
+    setState("idle");
+  };
+
+  return (
+    <SectionCard title={title} description={description}>
+      {server === undefined ? (
+        <div className="py-5">
+          <Spinner />
+        </div>
+      ) : server === null ? (
+        <div className="py-5 text-[13px] text-rejected">{t("admin.margins.loadError")}</div>
+      ) : (
+        <>
+          <div className="flex flex-col gap-3 border-t border-[#eef2f0] py-5 sm:flex-row sm:items-center sm:gap-5">
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-ink">
+                {t("admin.margins.operationalMarginTitle")}
+              </div>
+              <div className="mt-0.5 text-[12.5px] text-muted">
+                {t("admin.margins.operationalMarginDesc")}
+              </div>
+            </div>
+            <div className="sm:w-[300px] sm:flex-shrink-0">
+              <RangeSlider
+                value={marginBps}
+                min={0}
+                max={10000}
+                step={50}
+                onChange={(v) => {
+                  setState("idle");
+                  setMarginBps(v);
+                }}
+                label={t("admin.margins.operationalMarginTitle")}
+                format={(bps) => `${trimNum(bps / 100)}%`}
+              />
+            </div>
+          </div>
+
+          <div className="flex flex-col gap-3 border-t border-[#eef2f0] py-5 sm:flex-row sm:items-center sm:gap-5">
+            <div className="flex-1">
+              <div className="text-sm font-semibold text-ink">{t("admin.margins.splitTitle")}</div>
+              <div className="mt-0.5 text-[12.5px] text-muted">{t("admin.margins.splitDesc")}</div>
+              {hasPool ? (
+                <div className="mt-1 text-[12.5px] font-semibold text-accent">
+                  {t("admin.margins.splitLabel", { recommender: recPct, buyer: buyerPct })}
+                </div>
+              ) : null}
+            </div>
+            <div className="sm:w-[300px] sm:flex-shrink-0">
+              {hasPool ? (
+                <RangeSlider
+                  value={splitBps}
+                  min={0}
+                  max={10000}
+                  step={50}
+                  onChange={(v) => {
+                    setState("idle");
+                    setSplitBps(v);
+                  }}
+                  label={t("admin.margins.splitTitle")}
+                  format={(bps) => `${trimNum(bps / 100)}%`}
+                />
+              ) : (
+                <div className="text-[12.5px] text-muted sm:text-end">
+                  {t("admin.margins.noRewardPool")}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="border-t border-[#eef2f0] py-4 text-[12.5px] text-muted">
+            {t("admin.margins.preview", {
+              house: housePct,
+              remainder: remainderPct,
+              recommender: recPct,
+              buyer: buyerPct,
+            })}
+          </div>
+
+          <div className="flex items-center gap-3.5 pb-5">
+            <div className="text-[13px] text-muted">
+              {state === "error"
+                ? t("admin.margins.error")
+                : state === "saved" && !dirty
+                  ? t("admin.margins.saved")
+                  : dirty
+                    ? t("admin.save.unsaved")
+                    : " "}
+            </div>
+            <div className="ms-auto flex gap-2.5">
+              {dirty ? (
+                <button
+                  type="button"
+                  onClick={discard}
+                  disabled={state === "saving"}
+                  className="rounded-[13px] border border-[#e0e6e3] bg-surface px-5 py-3 text-sm font-bold text-ink transition hover:bg-base disabled:opacity-50"
+                >
+                  {t("admin.save.discard")}
+                </button>
+              ) : null}
+              <div className="w-[150px]">
+                <Button onClick={save} loading={state === "saving"} disabled={!dirty}>
+                  {t("admin.margins.save")}
+                </Button>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+    </SectionCard>
   );
 }
 

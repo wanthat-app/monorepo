@@ -15,6 +15,12 @@
 import type { CashbackEstimate, CashbackSplit } from "@wanthat/contracts";
 
 export {
+  deriveBpsFromMarginSplit,
+  deriveMarginSplitFromBps,
+  type MarginSplit,
+  type RewardSplitBps,
+} from "./margin-split";
+export {
   type DerivedCurrencyTotals,
   type DerivedMoneyStats,
   deriveMoneyStats,

@@ -355,6 +355,9 @@ importers:
       '@wanthat/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@wanthat/domain':
+        specifier: workspace:*
+        version: link:../../packages/domain
       '@wanthat/dynamo':
         specifier: workspace:*
         version: link:../../packages/dynamo

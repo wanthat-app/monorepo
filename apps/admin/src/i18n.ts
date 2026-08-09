@@ -243,6 +243,22 @@ const en = {
       saving: "Saving…",
       done: "Saved",
     },
+    margins: {
+      operationalMarginTitle: "Operational margin",
+      operationalMarginDesc:
+        "The share of each affiliate commission wanthat keeps for operational cost, taken off the top before any reward. Applies to new links.",
+      splitTitle: "Buyer ↔ recommender split",
+      splitDesc:
+        "How the remaining commission — after the operational margin — is divided between the recommender and the buyer.",
+      splitLabel: "Recommender {{recommender}}% · Buyer {{buyer}}%",
+      preview:
+        "Of each commission the house keeps {{house}}%; the remaining {{remainder}}% goes recommender {{recommender}}% / buyer {{buyer}}%.",
+      noRewardPool: "No reward pool — the margin takes the entire commission.",
+      save: "Save margins",
+      saved: "Margins updated.",
+      error: "Failed to update margins.",
+      loadError: "Couldn't load the margin settings.",
+    },
     keys: {
       site_noticeEn: {
         title: "Notice text — English",
@@ -255,14 +271,6 @@ const en = {
       wallet_countingIndicator: {
         title: "Wallet cold-start indicator",
         desc: "How the member wallet shows the cached balance while the database wakes up: a small counting chip beside the total, or the animation replacing it.",
-      },
-      cashback_referrerBps: {
-        title: "Referrer reward",
-        desc: "Share of retailer commission paid to the referrer on new links.",
-      },
-      cashback_consumerBps: {
-        title: "Buyer reward",
-        desc: "Share paid to the buyer on new links (two-sided reward).",
       },
       fx_conversionCommissionBps: {
         title: "FX conversion commission",
@@ -548,6 +556,21 @@ const he: typeof en = {
       saving: "שומר…",
       done: "נשמר",
     },
+    margins: {
+      operationalMarginTitle: "מרווח תפעולי",
+      operationalMarginDesc:
+        "החלק מכל עמלת שותפים ש-wanthat שומרת לעלויות תפעול, נלקח מלמעלה לפני כל תגמול. חל על קישורים חדשים.",
+      splitTitle: "חלוקה בין קונה לממליץ",
+      splitDesc: "כיצד יתרת העמלה — לאחר המרווח התפעולי — מתחלקת בין הממליץ לקונה.",
+      splitLabel: "ממליץ {{recommender}}% · קונה {{buyer}}%",
+      preview:
+        "מכל עמלה הבית שומר {{house}}%; היתרה של {{remainder}}% הולכת לממליץ {{recommender}}% / לקונה {{buyer}}%.",
+      noRewardPool: "אין מאגר תגמול — המרווח לוקח את כל העמלה.",
+      save: "שמירת מרווחים",
+      saved: "המרווחים עודכנו.",
+      error: "עדכון המרווחים נכשל.",
+      loadError: "טעינת הגדרות המרווח נכשלה.",
+    },
     keys: {
       site_noticeEn: {
         title: "טקסט ההודעה — אנגלית",
@@ -560,14 +583,6 @@ const he: typeof en = {
       wallet_countingIndicator: {
         title: "מחוון ארנק בהתעוררות",
         desc: "איך ארנק החבר מציג את היתרה השמורה בזמן שמסד הנתונים מתעורר: תג ספירה קטן ליד הסכום, או אנימציה שמחליפה אותו.",
-      },
-      cashback_referrerBps: {
-        title: "תגמול ממליץ",
-        desc: "חלק מעמלת הסוחר המשולם לממליץ בקישורים חדשים.",
-      },
-      cashback_consumerBps: {
-        title: "תגמול קונה",
-        desc: "חלק המשולם לקונה בקישורים חדשים (תגמול דו-צדדי).",
       },
       fx_conversionCommissionBps: {
         title: 'עמלת המרת מט"ח',

@@ -290,6 +290,142 @@ describe("admin config", () => {
 });
 
 // ---------------------------------------------------------------------------
+// Margins view (operational margin + buyer<>recommender split) — a server-side
+// reparameterization of the two stored cashback BPS keys; no dedicated storage.
+// ---------------------------------------------------------------------------
+
+describe("admin margins", () => {
+  beforeEach(() => {
+    ctx.config.getAll.mockReset().mockResolvedValue([]);
+    ctx.config.put
+      .mockReset()
+      .mockImplementation(async (key: string, value: unknown, updatedAt: string) => ({
+        key,
+        value,
+        updatedAt,
+      }));
+    ctx.audit.write.mockReset().mockResolvedValue(undefined);
+  });
+
+  it("GET derives margin+split from the shipped defaults (referrer 5000 / consumer 0)", async () => {
+    const res = await app.request("/admin/config/margins", {}, adminEnv);
+    expect(res.status).toBe(200);
+    const { item } = (await res.json()) as { item: Record<string, number | string> };
+    expect(item).toMatchObject({
+      marginBps: 5000,
+      recommenderSplitBps: 10000,
+      referrerBps: 5000,
+      consumerBps: 0,
+    });
+  });
+
+  it("GET reflects stored rates and reports the later of the two updatedAt stamps", async () => {
+    ctx.config.getAll.mockResolvedValue([
+      { key: "cashback.referrerBps", value: 4800, updatedAt: "2026-08-01T00:00:00.000Z" },
+      { key: "cashback.consumerBps", value: 3200, updatedAt: "2026-08-05T00:00:00.000Z" },
+    ]);
+    const res = await app.request("/admin/config/margins", {}, adminEnv);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      item: {
+        marginBps: 2000,
+        recommenderSplitBps: 6000,
+        referrerBps: 4800,
+        consumerBps: 3200,
+        updatedAt: "2026-08-05T00:00:00.000Z",
+      },
+    });
+  });
+
+  it("PUT derives both cashback rates, persists them, and audits each write", async () => {
+    const res = await app.request(
+      "/admin/config/margins",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ marginBps: 2000, recommenderSplitBps: 6000 }),
+      },
+      adminEnv,
+    );
+    expect(res.status).toBe(200);
+    // 20% margin, 60% of the remaining 80% to the recommender → referrer 4800 / consumer 3200.
+    expect(ctx.config.put).toHaveBeenCalledWith("cashback.referrerBps", 4800, expect.any(String));
+    expect(ctx.config.put).toHaveBeenCalledWith("cashback.consumerBps", 3200, expect.any(String));
+    expect(ctx.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "config_changed",
+        key: "cashback.referrerBps",
+        value: 4800,
+      }),
+    );
+    expect(ctx.audit.write).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: "config_changed",
+        key: "cashback.consumerBps",
+        value: 3200,
+      }),
+    );
+    expect(await res.json()).toEqual({
+      item: {
+        marginBps: 2000,
+        recommenderSplitBps: 6000,
+        referrerBps: 4800,
+        consumerBps: 3200,
+        updatedAt: expect.any(String),
+      },
+    });
+  });
+
+  it("PUT fails loudly (500 audit_failed) when an audit invoke fails", async () => {
+    ctx.audit.write.mockRejectedValueOnce(new Error("audit-writer down"));
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    const res = await app.request(
+      "/admin/config/margins",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ marginBps: 2000, recommenderSplitBps: 6000 }),
+      },
+      adminEnv,
+    );
+    expect(res.status).toBe(500);
+    expect(((await res.json()) as { error: string }).error).toBe("audit_failed");
+    error.mockRestore();
+  });
+
+  it("PUT 400s an out-of-range body without writing", async () => {
+    const res = await app.request(
+      "/admin/config/margins",
+      {
+        method: "PUT",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ marginBps: 20000, recommenderSplitBps: 6000 }),
+      },
+      adminEnv,
+    );
+    expect(res.status).toBe(400);
+    expect(ctx.config.put).not.toHaveBeenCalled();
+  });
+
+  it("403s a non-admin on GET and PUT", async () => {
+    expect((await app.request("/admin/config/margins", {}, memberEnv)).status).toBe(403);
+    expect(
+      (
+        await app.request(
+          "/admin/config/margins",
+          {
+            method: "PUT",
+            headers: { "content-type": "application/json" },
+            body: JSON.stringify({ marginBps: 2000, recommenderSplitBps: 6000 }),
+          },
+          memberEnv,
+        )
+      ).status,
+    ).toBe(403);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // Users (Cognito) + moderation with audit-or-fail
 // ---------------------------------------------------------------------------
 
