@@ -16,7 +16,9 @@ import type {
   ListOtpSinkResponse,
   ListUnattributedOrdersResponse,
   ListUsersResponse,
+  MarginSplitResponse,
   PutConfigResponse,
+  PutMarginSplitBody,
   PutRetailerCredentialsBody,
   RefreshFxRatesResponse,
   RetailerCredentialsStatus,
@@ -129,6 +131,11 @@ export const adminApi = {
     ),
   getConfig: (token: string, key: ConfigKey) =>
     adminRequest<GetConfigResponse>(`/admin/config/${key}`, token),
+  // Operational margin + buyer<>recommender split — a server-derived view over the two stored
+  // cashback rates (no dedicated storage). The margin math lives server-side (@wanthat/domain).
+  getMargins: (token: string) => adminRequest<MarginSplitResponse>("/admin/config/margins", token),
+  putMargins: (token: string, body: PutMarginSplitBody) =>
+    adminRequest<MarginSplitResponse>("/admin/config/margins", token, { method: "PUT", body }),
   putConfig: (token: string, key: ConfigKey, value: ConfigValue) =>
     adminRequest<PutConfigResponse>(`/admin/config/${key}`, token, {
       method: "PUT",

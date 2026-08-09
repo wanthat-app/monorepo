@@ -18,6 +18,8 @@
  * hash-chained audit_log the activity feed reads, instead of loose CloudWatch log lines.
  */
 import {
+  CashbackConsumerBps,
+  CashbackReferrerBps,
   CatalogStats,
   CONFIG_DEFAULTS,
   CONFIG_KEYS,
@@ -34,14 +36,17 @@ import {
   ListOtpSinkResponse,
   ListUsersQuery,
   ListUsersResponse,
+  MarginSplitResponse,
   PutConfigBody,
   PutConfigResponse,
+  PutMarginSplitBody,
   PutRetailerCredentialsBody,
   RefreshFxRatesResponse,
   RetailerCredentialsStatus,
   UsersStats,
   Uuid,
 } from "@wanthat/contracts";
+import { deriveBpsFromMarginSplit, deriveMarginSplitFromBps } from "@wanthat/domain";
 import { lastNDates } from "@wanthat/dynamo";
 import { type Context, Hono } from "hono";
 import { handle } from "hono/aws-lambda";
@@ -104,6 +109,79 @@ app.get("/admin/config", async (c) => {
     (k) => byKey.get(k) ?? { key: k, value: CONFIG_DEFAULTS[k], updatedAt: EPOCH0 },
   );
   return c.json(ListConfigResponse.parse({ items }));
+});
+
+// The margins view — operational margin + buyer<>recommender split (spec 2026-08-09). Registered
+// BEFORE /admin/config/:key so "margins" isn't read as a config key: it is a server-side
+// reparameterization of the two stored cashback rates, not a stored key of its own (no new config
+// key, schema, or migration — the per-recommendation snapshot lock is unchanged). The derivation
+// lives in @wanthat/domain so the SPA never does the money math.
+
+// GET /admin/config/margins — the two stored cashback rates, presented as margin + split.
+app.get("/admin/config/margins", async (c) => {
+  const stored = await getContext().config.getAll();
+  const byKey = new Map(stored.map((i) => [i.key, i]));
+  const ref = byKey.get("cashback.referrerBps");
+  const con = byKey.get("cashback.consumerBps");
+  const referrerBps = CashbackReferrerBps.parse(
+    ref?.value ?? CONFIG_DEFAULTS["cashback.referrerBps"],
+  );
+  const consumerBps = CashbackConsumerBps.parse(
+    con?.value ?? CONFIG_DEFAULTS["cashback.consumerBps"],
+  );
+  const { marginBps, recommenderSplitBps } = deriveMarginSplitFromBps(referrerBps, consumerBps);
+  const updatedAt =
+    [ref?.updatedAt, con?.updatedAt]
+      .filter((s): s is string => Boolean(s))
+      .sort()
+      .at(-1) ?? EPOCH0;
+  return c.json(
+    MarginSplitResponse.parse({
+      item: { marginBps, recommenderSplitBps, referrerBps, consumerBps, updatedAt },
+    }),
+  );
+});
+
+// PUT /admin/config/margins — set the margin + split. Derives the two cashback rates and writes
+// BOTH (the canonical stored keys), each chained to a config_changed audit event (audit-or-fail,
+// exactly as the per-key PUT). No cross-key transaction exists here (DynamoDB); the rates are
+// derived up front and written referrer-then-consumer, so a mid-write audit failure leaves two
+// independently-valid rates (a transiently skewed margin) until the admin retries — 500 loud.
+app.put("/admin/config/margins", async (c) => {
+  const body = PutMarginSplitBody.safeParse(await c.req.json().catch(() => null));
+  if (!body.success) return c.json({ error: "invalid_request" }, 400);
+  const { referrerBps, consumerBps } = deriveBpsFromMarginSplit(
+    body.data.marginBps,
+    body.data.recommenderSplitBps,
+  );
+
+  const ctx = getContext();
+  const byKey = new Map((await ctx.config.getAll()).map((i) => [i.key, i]));
+  const now = new Date().toISOString();
+  const writes = [
+    { key: "cashback.referrerBps", value: referrerBps },
+    { key: "cashback.consumerBps", value: consumerBps },
+  ] as const;
+  for (const w of writes) {
+    const previous = byKey.get(w.key)?.value ?? CONFIG_DEFAULTS[w.key];
+    const item = await ctx.config.put(w.key, w.value, now);
+    const ok = await audited(() =>
+      ctx.audit.write({
+        event: "config_changed",
+        key: w.key,
+        value: item.value,
+        previous,
+        actor: actorFrom(c),
+      }),
+    );
+    if (!ok) return c.json({ error: "audit_failed" }, 500);
+  }
+  const { marginBps, recommenderSplitBps } = deriveMarginSplitFromBps(referrerBps, consumerBps);
+  return c.json(
+    MarginSplitResponse.parse({
+      item: { marginBps, recommenderSplitBps, referrerBps, consumerBps, updatedAt: now },
+    }),
+  );
 });
 
 // GET /admin/config/:key — one entry (default if never set).
