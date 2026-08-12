@@ -86,9 +86,13 @@ async function audited(write: () => Promise<void>): Promise<boolean> {
     await write();
     return true;
   } catch (err) {
+    // `name` distinguishes the modes at a glance: `TimeoutError`/`AbortError` = the writer stalled
+    // (Aurora cold resume) and the client-side budget tripped; anything else = the append itself
+    // failed. Either way it is a caught, logged miss — never a silent Lambda timeout.
     console.error(
       JSON.stringify({
         error: "audit_append_failed",
+        name: err instanceof Error ? err.name : undefined,
         message: err instanceof Error ? err.message : String(err),
         at: new Date().toISOString(),
       }),
@@ -142,11 +146,12 @@ app.get("/admin/config/margins", async (c) => {
   );
 });
 
-// PUT /admin/config/margins — set the margin + split. Derives the two cashback rates and writes
-// BOTH (the canonical stored keys), each chained to a config_changed audit event (audit-or-fail,
-// exactly as the per-key PUT). No cross-key transaction exists here (DynamoDB); the rates are
-// derived up front and written referrer-then-consumer, so a mid-write audit failure leaves two
-// independently-valid rates (a transiently skewed margin) until the admin retries — 500 loud.
+// PUT /admin/config/margins — set the margin + split. Derives the two cashback rates and persists
+// BOTH canonical stored keys in ONE all-or-nothing DynamoDB transaction (config.putMany), so the
+// pair can never be half-written into a skewed margin — the failure mode of the old per-key loop.
+// Cross-store atomicity with the hash-chained audit log is impossible (Aurora vs DynamoDB), so we
+// commit the config first, THEN chain a config_changed event per key (audit-or-fail, as the per-key
+// PUT). A failed audit is a loud 500 over an already-consistent config — never a partial policy.
 app.put("/admin/config/margins", async (c) => {
   const body = PutMarginSplitBody.safeParse(await c.req.json().catch(() => null));
   if (!body.success) return c.json({ error: "invalid_request" }, 400);
@@ -158,17 +163,20 @@ app.put("/admin/config/margins", async (c) => {
   const ctx = getContext();
   const byKey = new Map((await ctx.config.getAll()).map((i) => [i.key, i]));
   const now = new Date().toISOString();
-  const writes = [
-    { key: "cashback.referrerBps", value: referrerBps },
-    { key: "cashback.consumerBps", value: consumerBps },
-  ] as const;
-  for (const w of writes) {
-    const previous = byKey.get(w.key)?.value ?? CONFIG_DEFAULTS[w.key];
-    const item = await ctx.config.put(w.key, w.value, now);
+  // Both rates land together or neither does (all-or-nothing).
+  const items = await ctx.config.putMany(
+    [
+      { key: "cashback.referrerBps", value: referrerBps },
+      { key: "cashback.consumerBps", value: consumerBps },
+    ],
+    now,
+  );
+  for (const item of items) {
+    const previous = byKey.get(item.key)?.value ?? CONFIG_DEFAULTS[item.key];
     const ok = await audited(() =>
       ctx.audit.write({
         event: "config_changed",
-        key: w.key,
+        key: item.key,
         value: item.value,
         previous,
         actor: actorFrom(c),

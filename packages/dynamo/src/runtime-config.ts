@@ -1,5 +1,11 @@
 import type { BatchGetCommandOutput, DynamoDBDocumentClient } from "@aws-sdk/lib-dynamodb";
-import { BatchGetCommand, GetCommand, PutCommand, ScanCommand } from "@aws-sdk/lib-dynamodb";
+import {
+  BatchGetCommand,
+  GetCommand,
+  PutCommand,
+  ScanCommand,
+  TransactWriteCommand,
+} from "@aws-sdk/lib-dynamodb";
 import {
   CONFIG_DEFAULTS,
   type ConfigItem,
@@ -104,6 +110,41 @@ export class RuntimeConfigRepo {
       }),
     );
     return { key, value: validated, updatedAt };
+  }
+
+  /**
+   * Validate and upsert SEVERAL keys in ONE all-or-nothing DynamoDB transaction
+   * (TransactWriteItems): either every key lands or none does. This is the write door for an edit
+   * that reparameterises multiple stored keys at once — e.g. the operator margin/split, which
+   * derives `cashback.referrerBps` + `cashback.consumerBps` and must never leave the pair
+   * half-written into a skewed policy. Validation runs UP FRONT, so an invalid value throws before
+   * anything is sent (all-or-nothing includes "validate all first"). Keys must be distinct —
+   * DynamoDB rejects two writes to the same item in one transaction, so this catches it early with
+   * a clear message rather than a late `TransactionCanceledException`. TransactWriteItems allows up
+   * to 100 items; callers here pass a handful.
+   */
+  async putMany(
+    entries: readonly { key: ConfigKey; value: unknown }[],
+    updatedAt: string,
+  ): Promise<ConfigItem[]> {
+    if (entries.length === 0) return [];
+    const seen = new Set<ConfigKey>();
+    const validated = entries.map((e) => {
+      if (seen.has(e.key)) throw new Error(`putMany: duplicate key ${e.key}`);
+      seen.add(e.key);
+      return { key: e.key, value: parseConfigValue(e.key, e.value), updatedAt };
+    });
+    await this.doc.send(
+      new TransactWriteCommand({
+        TransactItems: validated.map((e) => ({
+          Put: {
+            TableName: this.tableName,
+            Item: { configKey: e.key, value: e.value, updatedAt: e.updatedAt },
+          },
+        })),
+      }),
+    );
+    return validated;
   }
 }
 

@@ -21,6 +21,15 @@ function requireEnv(name: string): string {
   return value;
 }
 
+/**
+ * Client-side ceiling on the synchronous audit-writer invoke. Kept UNDER admin-console's own
+ * Lambda timeout (10s, `infra/lib/admin-stack.ts`) so a stalled writer — typically a scale-to-zero
+ * Aurora cold resume — aborts here and surfaces as a caught, logged `audit_append_failed` + 500,
+ * instead of running out this function's clock into a silent `Status: timeout` kill. A warm append
+ * is sub-second, so this only ever trips on the genuinely-degraded path.
+ */
+const AUDIT_INVOKE_TIMEOUT_MS = 8_000;
+
 export interface AdminConsoleContext {
   retailerSecret: RetailerSecretWriter;
   cognitoUsers: CognitoUserAdmin;
@@ -64,12 +73,22 @@ export function getContext(): AdminConsoleContext {
   const lambda = new LambdaClient({ region });
   // RequestResponse (the default) — the caller must see the outcome. A handler exception
   // surfaces as FunctionError on a 200 invoke, so it is checked and thrown explicitly.
-  const invokeSync = async (functionName: string, payload?: unknown): Promise<unknown> => {
+  //
+  // `timeoutMs` bounds the wait with a client-side AbortSignal: without it, a callee that stalls
+  // (e.g. the in-VPC audit-writer resuming a scale-to-zero Aurora, ~30s) would run past this
+  // function's own Lambda timeout and be force-killed — no catch, no log, just `Status: timeout`.
+  // A budget UNDER the Lambda timeout turns that stall into a catchable, logged rejection instead.
+  const invokeSync = async (
+    functionName: string,
+    payload?: unknown,
+    opts?: { timeoutMs?: number },
+  ): Promise<unknown> => {
     const res = await lambda.send(
       new InvokeCommand({
         FunctionName: functionName,
         ...(payload !== undefined ? { Payload: Buffer.from(JSON.stringify(payload)) } : {}),
       }),
+      opts?.timeoutMs ? { abortSignal: AbortSignal.timeout(opts.timeoutMs) } : undefined,
     );
     if (res.FunctionError) {
       throw new Error(`invoke of ${functionName} failed: ${res.FunctionError}`);
@@ -96,7 +115,7 @@ export function getContext(): AdminConsoleContext {
     otpSink: new OtpSinkRepo(doc, requireEnv("OTP_SINK_TABLE")),
     audit: {
       write: async (request) => {
-        await invokeSync(auditWriterFn, request);
+        await invokeSync(auditWriterFn, request, { timeoutMs: AUDIT_INVOKE_TIMEOUT_MS });
       },
     },
     fxRates: { refresh: () => invokeSync(fxRatesFn) },
