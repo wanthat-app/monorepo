@@ -109,8 +109,12 @@ export class AdminStack extends Stack {
     props.cluster.grantConnect(auditWriterFn, "audit_writer");
 
     // --- admin-console: ALL admin actions + ALL Dynamo-backed views (non-VPC) ---
+    // 29s (just under the 30s HTTP API integration cap): a config change SYNCHRONOUSLY invokes the
+    // in-VPC audit-writer (audit-or-fail), and on a scale-to-zero Aurora cold resume that append
+    // needs ~25s. This budget lets the first save after an idle period ride the resume out and
+    // succeed, rather than aborting early into a 500. Warm saves still return in well under a second.
     const consoleFn = makeServiceFunction(this, wanthatEnv, "admin-console", {
-      timeout: Duration.seconds(10),
+      timeout: Duration.seconds(29),
       environment: {
         WANTHAT_ENV: wanthatEnv.name,
         RETAILER_SECRET_ARN: props.retailerSecret.secretArn,

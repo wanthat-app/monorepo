@@ -22,13 +22,14 @@ function requireEnv(name: string): string {
 }
 
 /**
- * Client-side ceiling on the synchronous audit-writer invoke. Kept UNDER admin-console's own
- * Lambda timeout (10s, `infra/lib/admin-stack.ts`) so a stalled writer — typically a scale-to-zero
- * Aurora cold resume — aborts here and surfaces as a caught, logged `audit_append_failed` + 500,
- * instead of running out this function's clock into a silent `Status: timeout` kill. A warm append
- * is sub-second, so this only ever trips on the genuinely-degraded path.
+ * Client-side ceiling on the synchronous audit-writer invoke, kept just UNDER admin-console's own
+ * Lambda timeout (29s, `infra/lib/admin-stack.ts`). The budget is deliberately long enough to ride
+ * out a scale-to-zero Aurora cold resume (~25s): the first config save after an idle period WAITS
+ * for the append to land and succeeds, instead of aborting early into a 500. Only a resume that
+ * overruns even this budget trips the abort — and then it surfaces as a caught, logged
+ * `audit_append_failed` + 500 (never a silent `Status: timeout` kill). Warm appends are sub-second.
  */
-const AUDIT_INVOKE_TIMEOUT_MS = 8_000;
+const AUDIT_INVOKE_TIMEOUT_MS = 28_000;
 
 export interface AdminConsoleContext {
   retailerSecret: RetailerSecretWriter;
