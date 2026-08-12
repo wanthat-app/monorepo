@@ -132,6 +132,78 @@ describe("RuntimeConfigRepo.put", () => {
   });
 });
 
+describe("RuntimeConfigRepo.putMany", () => {
+  it("writes every key in ONE all-or-nothing TransactWriteItems", async () => {
+    const { doc, calls } = stub(() => ({}));
+    const repo = new RuntimeConfigRepo(doc, "config");
+    const items = await repo.putMany(
+      [
+        { key: "cashback.referrerBps", value: 4800 },
+        { key: "cashback.consumerBps", value: 3200 },
+      ],
+      ISO,
+    );
+    expect(items).toEqual([
+      { key: "cashback.referrerBps", value: 4800, updatedAt: ISO },
+      { key: "cashback.consumerBps", value: 3200, updatedAt: ISO },
+    ]);
+    // A single transactional round trip — not one PutCommand per key.
+    expect(calls).toHaveLength(1);
+    expect(calls[0]?.name).toBe("TransactWriteCommand");
+    expect(calls[0]?.input.TransactItems).toEqual([
+      {
+        Put: {
+          TableName: "config",
+          Item: { configKey: "cashback.referrerBps", value: 4800, updatedAt: ISO },
+        },
+      },
+      {
+        Put: {
+          TableName: "config",
+          Item: { configKey: "cashback.consumerBps", value: 3200, updatedAt: ISO },
+        },
+      },
+    ]);
+  });
+
+  it("validates EVERY value before sending — one bad value writes nothing", async () => {
+    const { doc, calls } = stub(() => ({}));
+    const repo = new RuntimeConfigRepo(doc, "config");
+    await expect(
+      repo.putMany(
+        [
+          { key: "cashback.referrerBps", value: 4800 },
+          { key: "cashback.consumerBps", value: 99999 }, // out of range
+        ],
+        ISO,
+      ),
+    ).rejects.toThrow();
+    expect(calls).toHaveLength(0);
+  });
+
+  it("rejects a duplicate key (DynamoDB cannot write the same item twice per transaction)", async () => {
+    const { doc, calls } = stub(() => ({}));
+    const repo = new RuntimeConfigRepo(doc, "config");
+    await expect(
+      repo.putMany(
+        [
+          { key: "cashback.referrerBps", value: 4800 },
+          { key: "cashback.referrerBps", value: 3200 },
+        ],
+        ISO,
+      ),
+    ).rejects.toThrow(/duplicate/);
+    expect(calls).toHaveLength(0);
+  });
+
+  it("no-ops on an empty entry list", async () => {
+    const { doc, calls } = stub(() => ({}));
+    const repo = new RuntimeConfigRepo(doc, "config");
+    expect(await repo.putMany([], ISO)).toEqual([]);
+    expect(calls).toHaveLength(0);
+  });
+});
+
 describe("RuntimeConfigRepo.getAll", () => {
   it("maps stored rows and skips unknown keys", async () => {
     const { doc } = stub(() => ({

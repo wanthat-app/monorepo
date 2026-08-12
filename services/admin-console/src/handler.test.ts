@@ -25,7 +25,7 @@ const { ctx } = vi.hoisted(() => ({
       ),
       countActiveSince: vi.fn().mockResolvedValue(0),
     },
-    config: { getAll: vi.fn().mockResolvedValue([]), put: vi.fn(), get: vi.fn() },
+    config: { getAll: vi.fn().mockResolvedValue([]), put: vi.fn(), putMany: vi.fn(), get: vi.fn() },
     products: { count: vi.fn().mockResolvedValue(0) },
     otpSink: { scanAll: vi.fn().mockResolvedValue([]) },
     audit: { write: vi.fn().mockResolvedValue(undefined) },
@@ -297,13 +297,13 @@ describe("admin config", () => {
 describe("admin margins", () => {
   beforeEach(() => {
     ctx.config.getAll.mockReset().mockResolvedValue([]);
-    ctx.config.put
+    ctx.config.put.mockReset();
+    ctx.config.putMany
       .mockReset()
-      .mockImplementation(async (key: string, value: unknown, updatedAt: string) => ({
-        key,
-        value,
-        updatedAt,
-      }));
+      .mockImplementation(
+        async (entries: readonly { key: string; value: unknown }[], updatedAt: string) =>
+          entries.map((e) => ({ key: e.key, value: e.value, updatedAt })),
+      );
     ctx.audit.write.mockReset().mockResolvedValue(undefined);
   });
 
@@ -337,7 +337,7 @@ describe("admin margins", () => {
     });
   });
 
-  it("PUT derives both cashback rates, persists them, and audits each write", async () => {
+  it("PUT derives both cashback rates, persists them ATOMICALLY, and audits each write", async () => {
     const res = await app.request(
       "/admin/config/margins",
       {
@@ -349,8 +349,16 @@ describe("admin margins", () => {
     );
     expect(res.status).toBe(200);
     // 20% margin, 60% of the remaining 80% to the recommender → referrer 4800 / consumer 3200.
-    expect(ctx.config.put).toHaveBeenCalledWith("cashback.referrerBps", 4800, expect.any(String));
-    expect(ctx.config.put).toHaveBeenCalledWith("cashback.consumerBps", 3200, expect.any(String));
+    // Both rates go through ONE all-or-nothing putMany — never two independent writes.
+    expect(ctx.config.put).not.toHaveBeenCalled();
+    expect(ctx.config.putMany).toHaveBeenCalledTimes(1);
+    expect(ctx.config.putMany).toHaveBeenCalledWith(
+      [
+        { key: "cashback.referrerBps", value: 4800 },
+        { key: "cashback.consumerBps", value: 3200 },
+      ],
+      expect.any(String),
+    );
     expect(ctx.audit.write).toHaveBeenCalledWith(
       expect.objectContaining({
         event: "config_changed",
@@ -376,8 +384,13 @@ describe("admin margins", () => {
     });
   });
 
-  it("PUT fails loudly (500 audit_failed) when an audit invoke fails", async () => {
-    ctx.audit.write.mockRejectedValueOnce(new Error("audit-writer down"));
+  it("PUT fails loudly (500 audit_failed) AND logs when an audit invoke fails (e.g. a timeout)", async () => {
+    // A stalled/aborted audit-writer surfaces here as a rejected write — the same shape as an
+    // AbortSignal timeout. It must be caught and LOGGED, not swallowed or left to kill the Lambda.
+    const timeout = Object.assign(new Error("The operation was aborted due to timeout"), {
+      name: "TimeoutError",
+    });
+    ctx.audit.write.mockRejectedValueOnce(timeout);
     const error = vi.spyOn(console, "error").mockImplementation(() => {});
     const res = await app.request(
       "/admin/config/margins",
@@ -390,6 +403,10 @@ describe("admin margins", () => {
     );
     expect(res.status).toBe(500);
     expect(((await res.json()) as { error: string }).error).toBe("audit_failed");
+    // The miss is logged with enough to recognise a timeout at a glance.
+    expect(error).toHaveBeenCalledTimes(1);
+    const logged = JSON.parse((error.mock.calls[0]?.[0] as string) ?? "{}");
+    expect(logged).toMatchObject({ error: "audit_append_failed", name: "TimeoutError" });
     error.mockRestore();
   });
 
@@ -404,7 +421,7 @@ describe("admin margins", () => {
       adminEnv,
     );
     expect(res.status).toBe(400);
-    expect(ctx.config.put).not.toHaveBeenCalled();
+    expect(ctx.config.putMany).not.toHaveBeenCalled();
   });
 
   it("403s a non-admin on GET and PUT", async () => {
