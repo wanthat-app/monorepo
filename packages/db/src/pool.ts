@@ -79,6 +79,15 @@ export async function waitForDb(
   opts: {
     attempts?: number;
     delayMs?: number;
+    /**
+     * Client-side ceiling on a SINGLE `select 1` probe. Without it, a probe against a
+     * connected-but-not-yet-serving Aurora (mid scale-to-zero resume) can hang indefinitely — pg's
+     * `connectionTimeoutMillis` bounds the CONNECT, nothing bounds the query — and burn the whole
+     * Lambda budget (observed: a 90s ledger-writer timeout). When set, a hung probe is abandoned and
+     * the loop retries, catching the cluster once it actually serves. Opt-in: callers that make a
+     * single unbounded attempt (member-wallet) keep their current behavior.
+     */
+    probeTimeoutMs?: number;
     log?: (msg: string, ctx: Record<string, unknown>) => void;
   } = {},
 ): Promise<void> {
@@ -86,7 +95,8 @@ export async function waitForDb(
   const delayMs = opts.delayMs ?? 5_000;
   for (let attempt = 1; attempt <= attempts; attempt++) {
     try {
-      await sql`select 1`.execute(db);
+      const probe = sql`select 1`.execute(db);
+      await (opts.probeTimeoutMs ? withTimeout(probe, opts.probeTimeoutMs) : probe);
       return;
     } catch (err) {
       if (attempt === attempts) throw err;
@@ -98,4 +108,24 @@ export async function waitForDb(
       await new Promise((resolve) => setTimeout(resolve, delayMs));
     }
   }
+}
+
+/** Reject with a probe-timeout error if `p` has not settled within `ms`. */
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error(`db readiness probe timed out after ${ms}ms`)),
+      ms,
+    );
+    p.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err) => {
+        clearTimeout(timer);
+        reject(err);
+      },
+    );
+  });
 }
