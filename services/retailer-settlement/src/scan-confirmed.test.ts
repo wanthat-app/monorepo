@@ -1,9 +1,5 @@
 import { Logger } from "@aws-lambda-powertools/logger";
-import type {
-  AliExpressOrder,
-  OrderListByIndexParams,
-  OrderListPage,
-} from "@wanthat/aliexpress";
+import type { AliExpressOrder, OrderListByIndexParams, OrderListPage } from "@wanthat/aliexpress";
 import type { WriteConversionsRequest, WriteConversionsResponse } from "@wanthat/contracts";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -43,7 +39,10 @@ function order(over: Partial<AliExpressOrder> = {}): AliExpressOrder {
 }
 
 const trackedOrder = (over: Partial<AliExpressOrder> = {}) =>
-  order({ customParameters: JSON.stringify({ af: `dev:user:${REFERRER}:rec:abc123DEF45` }), ...over });
+  order({
+    customParameters: JSON.stringify({ af: `dev:user:${REFERRER}:rec:abc123DEF45` }),
+    ...over,
+  });
 
 function makeDeps(opts: {
   orders?: AliExpressOrder[];
@@ -54,10 +53,12 @@ function makeDeps(opts: {
   withWriter?: boolean;
 }) {
   const capturedWindows: OrderListByIndexParams[] = [];
-  const listOrdersByIndex = vi.fn(async (params: OrderListByIndexParams): Promise<OrderListPage> => {
-    capturedWindows.push(params);
-    return { orders: opts.orders ?? [], nextQueryIndexId: null };
-  });
+  const listOrdersByIndex = vi.fn(
+    async (params: OrderListByIndexParams): Promise<OrderListPage> => {
+      capturedWindows.push(params);
+      return { orders: opts.orders ?? [], nextQueryIndexId: null };
+    },
+  );
   const writes: WriteConversionsRequest[] = [];
   const invokeWriter = opts.withWriter
     ? vi.fn(async (req: WriteConversionsRequest): Promise<WriteConversionsResponse> => {
@@ -83,7 +84,11 @@ function makeDeps(opts: {
   const state = {
     get: vi.fn(async () =>
       opts.lastRunAt
-        ? ({ stateKey: CONFIRMED_STATE_KEY, lastRunAt: opts.lastRunAt, watermarkEndTime: opts.lastRunAt } as never)
+        ? ({
+            stateKey: CONFIRMED_STATE_KEY,
+            lastRunAt: opts.lastRunAt,
+            watermarkEndTime: opts.lastRunAt,
+          } as never)
         : undefined,
     ),
     put: vi.fn(async () => {}),
@@ -113,7 +118,16 @@ function makeDeps(opts: {
     sleep: async () => {},
     logger: new Logger({ serviceName: "test" }),
   };
-  return { deps, listOrdersByIndex, capturedWindows, writes, invokeWriter, recordSighting, state, get };
+  return {
+    deps,
+    listOrdersByIndex,
+    capturedWindows,
+    writes,
+    invokeWriter,
+    recordSighting,
+    state,
+    get,
+  };
 }
 
 describe("scanConfirmedOrders", () => {

@@ -51,7 +51,11 @@ let cached:
   | undefined;
 
 /** Per-container dependency graph; the credential fetch is memoized inside the reader. */
-function getDeps(): { poll: PollOrdersDeps; confirmed: ScanConfirmedDeps; claims: SettleClaimsDeps } {
+function getDeps(): {
+  poll: PollOrdersDeps;
+  confirmed: ScanConfirmedDeps;
+  claims: SettleClaimsDeps;
+} {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
   const doc = getDocClient(region);

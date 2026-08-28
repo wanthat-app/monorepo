@@ -25,7 +25,13 @@ import type {
   RuntimeConfigBatchReader,
   UnattributedOrderRepo,
 } from "@wanthat/dynamo";
-import { type AttributionDeps, mapStatus, orderSighting, parseGmt8, resolveOrder } from "./attribution";
+import {
+  type AttributionDeps,
+  mapStatus,
+  orderSighting,
+  parseGmt8,
+  resolveOrder,
+} from "./attribution";
 import { manualClaimWrite } from "./manual-claim";
 import { toGmt8 } from "./poll-orders";
 
