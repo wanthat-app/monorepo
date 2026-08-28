@@ -21,7 +21,11 @@ import {
   type WalletEntryStatus,
 } from "@wanthat/contracts";
 import { decodeAttribution, splitCommission } from "@wanthat/domain";
-import type { GuestAttributionRepo, RecommendationRepo } from "@wanthat/dynamo";
+import type {
+  GuestAttributionRepo,
+  RecommendationRepo,
+  UnattributedOrderSighting,
+} from "@wanthat/dynamo";
 
 export interface AttributionDeps {
   recommendations: Pick<RecommendationRepo, "get">;
@@ -39,6 +43,26 @@ export type AttributionOutcome =
       outcome: "untracked";
       reason: "no_ref" | "foreign_env" | "unknown_ref" | "no_commission" | "unknown_status";
     };
+
+/** An untracked order → the admin-queue sighting payload (shared by both scans). */
+export function orderSighting(order: AliExpressOrder, reason: string): UnattributedOrderSighting {
+  return {
+    orderId: order.orderId,
+    reason,
+    orderStatus: order.status,
+    commissionMinor: order.commissionMinor,
+    currency: order.commissionMinor ? (order.commissionCurrency ?? "USD") : null,
+    occurredAt: parseGmt8(order.orderTimeGmt8),
+    productId: order.productId,
+    productTitle: order.productTitle,
+    productImageUrl: order.productImageUrl,
+    productDetailUrl: order.productDetailUrl,
+    productCount: order.productCount,
+    paidAmountMinor: order.paidAmountMinor,
+    commissionRate: order.commissionRate,
+    subOrderId: order.subOrderId,
+  };
+}
 
 /** "2026-07-10 18:00:00" (the platform's GMT+8 clock) → ISO UTC; null when unparseable. */
 export function parseGmt8(raw: string | null): string | null {

@@ -28,7 +28,7 @@ import type {
   RuntimeConfigBatchReader,
   UnattributedOrderRepo,
 } from "@wanthat/dynamo";
-import { type AttributionDeps, parseGmt8, resolveOrder } from "./attribution";
+import { type AttributionDeps, orderSighting, resolveOrder } from "./attribution";
 
 const bigintReplacer = (_k: string, v: unknown) => (typeof v === "bigint" ? v.toString() : v);
 
@@ -170,22 +170,7 @@ export async function pollOrders(deps: PollOrdersDeps): Promise<PollOrdersRespon
           // The admin claim queue — best-effort: a projection miss never fails the poll.
           try {
             await deps.unattributed.recordSighting(
-              {
-                orderId: order.orderId,
-                reason: outcome.reason,
-                orderStatus: order.status,
-                commissionMinor: order.commissionMinor,
-                currency: order.commissionMinor ? (order.commissionCurrency ?? "USD") : null,
-                occurredAt: parseGmt8(order.orderTimeGmt8),
-                productId: order.productId,
-                productTitle: order.productTitle,
-                productImageUrl: order.productImageUrl,
-                productDetailUrl: order.productDetailUrl,
-                productCount: order.productCount,
-                paidAmountMinor: order.paidAmountMinor,
-                commissionRate: order.commissionRate,
-                subOrderId: order.subOrderId,
-              },
+              orderSighting(order, outcome.reason),
               now.toISOString(),
             );
           } catch (err) {
