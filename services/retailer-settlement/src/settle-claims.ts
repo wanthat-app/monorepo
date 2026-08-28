@@ -13,14 +13,10 @@
  * unique index makes a crash-and-retry append a no-op, so the two-step commit is safe.
  */
 import type { Logger } from "@aws-lambda-powertools/logger";
-import type {
-  ConversionWrite,
-  WriteConversionsRequest,
-  WriteConversionsResponse,
-} from "@wanthat/contracts";
-import { splitCommission } from "@wanthat/domain";
+import type { WriteConversionsRequest, WriteConversionsResponse } from "@wanthat/contracts";
 import type { RecommendationRepo, UnattributedOrderRepo } from "@wanthat/dynamo";
 import { mapStatus } from "./attribution";
+import { manualClaimWrite } from "./manual-claim";
 
 /** One heartbeat settles at most one page of claims — the queue is admin-paced, tiny by nature. */
 const CLAIM_PAGE = 25;
@@ -69,21 +65,16 @@ export async function settleClaims(deps: SettleClaimsDeps): Promise<SettleClaims
       continue;
     }
 
-    const gross = BigInt(item.commissionMinor);
-    const currency = item.currency ?? "USD";
-    const split = splitCommission(gross, rec.cashback.referrerBps, rec.cashback.consumerBps);
-    const write: ConversionWrite = {
-      resolved: {
-        orderId: item.orderId,
-        recommendationId: rec.recommendationId,
-        referrer: { sub: rec.ownerId, reward: { amountMinor: split.referrerMinor, currency } },
-        consumer: null,
-        status: mapStatus(item.orderStatus) ?? "pending",
-        occurredAt: item.occurredAt ?? deps.now().toISOString(),
-      },
-      gross: { amountMinor: gross, currency },
-      consumer: "none",
-    };
+    const write = manualClaimWrite({
+      orderId: item.orderId,
+      recommendationId: rec.recommendationId,
+      referrerSub: rec.ownerId,
+      cashback: rec.cashback,
+      gross: BigInt(item.commissionMinor),
+      currency: item.currency ?? "USD",
+      status: mapStatus(item.orderStatus) ?? "pending",
+      occurredAt: item.occurredAt ?? deps.now().toISOString(),
+    });
 
     try {
       const res = await deps.invokeWriter({ conversions: [write] });
