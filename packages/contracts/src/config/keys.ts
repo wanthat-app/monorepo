@@ -51,6 +51,18 @@ export type FxProvider = z.infer<typeof FxProvider>;
 export const PollerIntervalMinutes = z.number().int().min(1).max(1440);
 /** How far back each poll re-scans to catch status maturation, in hours — read by the poller at run time. */
 export const PollerLookbackHours = z.number().int().min(1).max(2160);
+/**
+ * Wide-window span (days) the confirmed-status scan re-reads every run to catch maturation. A
+ * "Buyer Confirmed Receipt" transition lands weeks after payment at the order's (old) paid time,
+ * so this must span the confirm latency; kept under the listbyindex max window span (empirically
+ * <90 days — probed 2026-08-26, see ADR-0009 amendment). Read by the confirmed scan at run time.
+ */
+export const PollerConfirmScanDays = z.number().int().min(1).max(85);
+/**
+ * Cadence (minutes) of the wide confirmed-status scan — slower than the new-order poll, since
+ * crediting confirmed money is not latency-sensitive and the wide window is re-read whole each run.
+ */
+export const PollerConfirmScanIntervalMinutes = z.number().int().min(15).max(10080);
 
 /**
  * SMS-OTP kill switch (ADR-0006, ADR-0006). When `false`, `app-api` short-circuits any Cognito SMS
@@ -142,6 +154,8 @@ export const CONFIG_KEYS = [
   "fx.provider",
   "poller.intervalMinutes",
   "poller.lookbackHours",
+  "poller.confirmScanDays",
+  "poller.confirmScanIntervalMinutes",
   "auth.smsEnabled",
   "auth.smsMaxPerWindow",
   "auth.smsLockoutMinutes",
@@ -170,6 +184,8 @@ export const CONFIG_SCHEMAS: Record<ConfigKey, z.ZodType<ConfigValue>> = {
   "fx.provider": FxProvider,
   "poller.intervalMinutes": PollerIntervalMinutes,
   "poller.lookbackHours": PollerLookbackHours,
+  "poller.confirmScanDays": PollerConfirmScanDays,
+  "poller.confirmScanIntervalMinutes": PollerConfirmScanIntervalMinutes,
   "auth.smsEnabled": AuthSmsEnabled,
   "auth.smsMaxPerWindow": AuthSmsMaxPerWindow,
   "auth.smsLockoutMinutes": AuthSmsLockoutMinutes,
@@ -201,6 +217,10 @@ export const CONFIG_DEFAULTS: Record<ConfigKey, ConfigValue> = {
   // Lookback must cover an order's full maturation; 72h is a placeholder — tune at integration
   // to AliExpress's confirm/return latency (see ADR-0009).
   "poller.lookbackHours": 72,
+  // The wide confirmed-status scan spans ~80 days (under the listbyindex window cap) and runs
+  // every 12h — enough to catch AliExpress buyer-confirm maturation without re-sweeping constantly.
+  "poller.confirmScanDays": 80,
+  "poller.confirmScanIntervalMinutes": 720,
   // SMS OTP on by default; the kill switch flips this to false to stop sends during an abuse spike.
   "auth.smsEnabled": true,
   // At most 5 OTP sends per phone per lockout window; tighten during an SMS-pumping spike.

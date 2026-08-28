@@ -34,6 +34,7 @@ import {
 } from "@wanthat/dynamo";
 import { applyingConversionTotals, type InvokeWriter } from "./conversion-totals";
 import { type PollOrdersDeps, pollOrders } from "./poll-orders";
+import { type ScanConfirmedDeps, scanConfirmedOrders } from "./scan-confirmed";
 import { type SettleClaimsDeps, settleClaims } from "./settle-claims";
 
 const SERVICE = "retailer-settlement";
@@ -45,10 +46,16 @@ function requireEnv(name: string): string {
   return value;
 }
 
-let cached: { poll: PollOrdersDeps; claims: SettleClaimsDeps } | undefined;
+let cached:
+  | { poll: PollOrdersDeps; confirmed: ScanConfirmedDeps; claims: SettleClaimsDeps }
+  | undefined;
 
 /** Per-container dependency graph; the credential fetch is memoized inside the reader. */
-function getDeps(): { poll: PollOrdersDeps; claims: SettleClaimsDeps } {
+function getDeps(): {
+  poll: PollOrdersDeps;
+  confirmed: ScanConfirmedDeps;
+  claims: SettleClaimsDeps;
+} {
   if (cached) return cached;
   const region = process.env.AWS_REGION ?? "il-central-1";
   const doc = getDocClient(region);
@@ -101,29 +108,42 @@ function getDeps(): { poll: PollOrdersDeps; claims: SettleClaimsDeps } {
     : null;
 
   const unattributed = new UnattributedOrderRepo(doc, requireEnv("UNATTRIBUTED_ORDER_TABLE"));
+  const state = new PollerStateRepo(doc, requireEnv("POLLER_STATE_TABLE"));
+  // Shared by the narrow poll AND the wide confirmed scan (same attribution rules).
+  const attribution = {
+    recommendations,
+    guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
+    env: requireEnv("WANTHAT_ENV"),
+    // Deleted-recommendation fallback economics: the config split as of the conversion.
+    fallbackSplit: async () => {
+      const [referrerBps, consumerBps] = await Promise.all([
+        config.get("cashback.referrerBps"),
+        config.get("cashback.consumerBps"),
+      ]);
+      return {
+        referrerBps: CashbackReferrerBps.parse(referrerBps),
+        consumerBps: CashbackConsumerBps.parse(consumerBps),
+      };
+    },
+    now: () => new Date(),
+  };
 
   cached = {
     poll: {
       client,
-      state: new PollerStateRepo(doc, requireEnv("POLLER_STATE_TABLE")),
+      state,
       config,
-      attribution: {
-        recommendations,
-        guests: new GuestAttributionRepo(doc, requireEnv("GUEST_ATTRIBUTION_TABLE")),
-        env: requireEnv("WANTHAT_ENV"),
-        // Deleted-recommendation fallback economics: the config split as of the conversion.
-        fallbackSplit: async () => {
-          const [referrerBps, consumerBps] = await Promise.all([
-            config.get("cashback.referrerBps"),
-            config.get("cashback.consumerBps"),
-          ]);
-          return {
-            referrerBps: CashbackReferrerBps.parse(referrerBps),
-            consumerBps: CashbackConsumerBps.parse(consumerBps),
-          };
-        },
-        now: () => new Date(),
-      },
+      attribution,
+      unattributed,
+      invokeWriter,
+      now: () => new Date(),
+      logger,
+    },
+    confirmed: {
+      client,
+      state,
+      config,
+      attribution,
       unattributed,
       invokeWriter,
       now: () => new Date(),
@@ -145,6 +165,11 @@ export const handler = async (): Promise<PollOrdersResponse> => {
   const deps = getDeps();
   const summary = await pollOrders(deps.poll);
   logger.info("poll_summary", { summary: JSON.stringify(summary) });
+  // The wide confirmed scan (self-gated on poller.confirmScanIntervalMinutes) promotes matured
+  // orders (tracked + manual) to `confirmed` — the narrow poll can't (listbyindex filters by paid
+  // time; a confirmation lands weeks later at an old paid time, outside the recent window).
+  const confirmed = await scanConfirmedOrders(deps.confirmed);
+  if (confirmed.ran) logger.info("confirmed_scan_summary", { ...confirmed });
   // Claim settlement rides EVERY heartbeat (retailer API untouched), so an admin claim lands
   // in the ledger within ~15 minutes regardless of the poll gate.
   const claims = await settleClaims(deps.claims);

@@ -86,6 +86,12 @@ describe("toGmt8", () => {
   });
 });
 
+describe("POLL_STATUSES", () => {
+  it("is only Payment Completed — Buyer Confirmed Receipt moved to the wide confirmed scan", () => {
+    expect(POLL_STATUSES).toEqual(["Payment Completed"]);
+  });
+});
+
 describe("pollOrders", () => {
   it("gates on poller.intervalMinutes without touching the retailer", async () => {
     const { deps, listOrdersByIndex, state } = makeDeps();

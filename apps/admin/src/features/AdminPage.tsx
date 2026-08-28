@@ -591,7 +591,7 @@ interface FieldMeta {
   min?: number;
   max?: number;
   step?: number;
-  unit?: "minutes" | "hours" | "sends";
+  unit?: "minutes" | "hours" | "days" | "sends";
 }
 
 // Bounds mirror the per-key zod schemas in @wanthat/contracts (config/keys.ts). The control choice is
@@ -639,6 +639,22 @@ const FIELDS: FieldMeta[] = [
     min: 1,
     max: 2160,
     unit: "hours",
+  },
+  {
+    key: "poller.confirmScanDays",
+    section: "automation",
+    control: "number",
+    min: 1,
+    max: 85,
+    unit: "days",
+  },
+  {
+    key: "poller.confirmScanIntervalMinutes",
+    section: "automation",
+    control: "number",
+    min: 15,
+    max: 10080,
+    unit: "minutes",
   },
   // The OTP delivery kill switches + default channel (ADR-0019): both switches surface here so
   // an abuse spike (or Meta onboarding) is flippable without a redeploy; the sign-up screen
