@@ -205,7 +205,7 @@ const en = {
       automationTitle: "Automation & features",
       automationDesc: "Conversion polling and consumer-facing sign-in controls.",
     },
-    units: { minutes: "min", hours: "hrs", sends: "sends" },
+    units: { minutes: "min", hours: "hrs", days: "days", sends: "sends" },
     fxProvider: { ecb: "ECB", boi: "BoI" },
     otpChannel: { whatsapp: "WhatsApp", sms: "SMS" },
     countingIndicator: { chip: "Corner chip", hero: "Full takeover" },
@@ -288,6 +288,14 @@ const en = {
       poller_lookbackHours: {
         title: "Poller lookback",
         desc: "How far back each poll re-scans for status changes.",
+      },
+      poller_confirmScanDays: {
+        title: "Confirmed-scan window",
+        desc: "How many days back the wide scan re-reads to catch orders confirmed after payment.",
+      },
+      poller_confirmScanIntervalMinutes: {
+        title: "Confirmed-scan interval",
+        desc: "How often the wide confirmed-order scan runs (confirmed money is not latency-sensitive).",
       },
       auth_whatsappEnabled: {
         title: "WhatsApp one-time codes",
@@ -519,7 +527,7 @@ const he: typeof en = {
       automationTitle: "אוטומציה ותכונות",
       automationDesc: "סקירת המרות ובקרות כניסה הפונות למשתמש.",
     },
-    units: { minutes: "דק׳", hours: "שע׳", sends: "שליחות" },
+    units: { minutes: "דק׳", hours: "שע׳", days: "ימים", sends: "שליחות" },
     fxProvider: { ecb: "ECB", boi: "בנק ישראל" },
     otpChannel: { whatsapp: "וואטסאפ", sms: "SMS" },
     countingIndicator: { chip: "תג פינתי", hero: "החלפת הסכום" },
@@ -600,6 +608,14 @@ const he: typeof en = {
       poller_lookbackHours: {
         title: "טווח סריקה לאחור",
         desc: "כמה אחורה כל סריקה בודקת שינויי סטטוס.",
+      },
+      poller_confirmScanDays: {
+        title: "חלון סריקת אישורים",
+        desc: "כמה ימים אחורה הסריקה הרחבה בודקת הזמנות שאושרו לאחר התשלום.",
+      },
+      poller_confirmScanIntervalMinutes: {
+        title: "תדירות סריקת אישורים",
+        desc: "כל כמה זמן רצה הסריקה הרחבה של הזמנות שאושרו.",
       },
       auth_whatsappEnabled: {
         title: "קודים חד-פעמיים בוואטסאפ",
