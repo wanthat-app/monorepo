@@ -18,8 +18,11 @@ import { writeConversions } from "./writer";
 export const handler = async (event: unknown): Promise<WriteConversionsResponse> => {
   const request = WriteConversionsRequest.parse(event);
   const ctx = getContext();
-  // Ride out an Aurora scale-to-zero resume before the first insert (60s connect budget).
-  await waitForDb(ctx.db);
+  // Ride out an Aurora scale-to-zero resume before the first insert. Bounded probes (6s each,
+  // ~78s total under the 90s Lambda budget) so a resuming-but-not-serving cluster can't hang one
+  // probe for the whole invocation — the prod 90s-timeout failure mode. A never-waking cluster
+  // throws cleanly here and the caller's next heartbeat retries (idempotent on the unique index).
+  await waitForDb(ctx.db, { attempts: 12, delayMs: 500, probeTimeoutMs: 6_000 });
   return writeConversions(request.conversions, {
     db: ctx.db,
     now: () => new Date(),
