@@ -36,6 +36,7 @@ retailer API throttling; **0006** carries the full auth + customer-PII story (Co
 | [0019](0019-whatsapp-messaging-capability.md) | WhatsApp messaging capability: reusable `@wanthat/whatsapp` + Cognito Custom SMS Sender (`otp-sender`) over AWS End User Messaging Social (WhatsApp-default OTP + `optin_welcome`); notifications via direct async invoke of `notification-sender` + SQS DLQ — the outbox table/stream is retired (refines [0006](0006-cognito-native-auth-and-pii.md)) |
 | [0020](0020-canonical-user-identifier.md) | Canonical user identifier: the Cognito `sub` everywhere (DynamoDB items, attribution `custom_parameters`, invoke payloads, Aurora money rows — no `customer` table since 0006) |
 | [0021](0021-retailer-api-throttling-interim.md) | Retailer API throttling, INTERIM: sequential calls in dependency order + one ban-window retry on `ApiCallLimit`; no cross-invoke limiter — revise at poller slice / real traffic / app approval *(Accepted, temporary)* |
+| [0022](0022-conversion-promotion-split-window.md) | Conversion promotion: split the poll window by status — `listbyindex` filters by PAID time, so a narrow watermark scan ingests new orders (`pending`) while a wide, slow-cadence scan re-reads maturation (`confirmed`); manual orders inject the stored claim (refines [0009](0009-conversion-ingestion-poller.md)) |
 
 ## Status & change policy
 
