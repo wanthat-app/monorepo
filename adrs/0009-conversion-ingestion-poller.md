@@ -2,6 +2,9 @@
 
 - **Status:** Accepted
 - **Date:** 2026-06-28
+- **Refined by:** [ADR-0022](0022-conversion-promotion-split-window.md) (resolves the open
+  integration point below: `listbyindex` filters by PAID time, so the promotion mechanism splits
+  the poll window by status)
 - **Related:** [ADR-0002](0002-app-compute-topology.md) (fetcher/writer split), [ADR-0004](0004-network-topology-nat-free-egress.md) (egress), [ADR-0008](0008-consumer-attribution-model.md) (attribution resolved here)
 
 ## Context
