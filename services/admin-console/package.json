@@ -16,6 +16,6 @@
     "@wanthat/contracts": "workspace:*",
     "@wanthat/domain": "workspace:*",
     "@wanthat/dynamo": "workspace:*",
-    "hono": "^4.6.0"
+    "hono": "^4.13.7"
   }
 }
